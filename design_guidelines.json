@@ -1,0 +1,232 @@
+{
+  "brand_identity": {
+    "name": "UNIVERSE",
+    "core_values": ["Independent", "Immersive", "Cinematic", "Mysterious"],
+    "target_audience": "Cinema enthusiasts, creators, 18-35",
+    "aesthetic": "Deep Space, Neon Noir, High Contrast, Gradient-rich"
+  },
+  "design_system": {
+    "colors": {
+      "palette": {
+        "void_black": "#000000",
+        "deep_space": "#0B0014",
+        "nebula_violet": "#8C2EBA",
+        "galactic_purple": "#240056",
+        "starlight_white": "#FFFFFF",
+        "moon_grey": "#B0A0C0",
+        "success": "#00E096",
+        "error": "#FF3B30",
+        "warning": "#FFD60A"
+      },
+      "usage": {
+        "background": "#000000",
+        "surface": "#0B0014",
+        "surface_highlight": "#1A052E",
+        "primary": "#8C2EBA",
+        "secondary": "#240056",
+        "border": "rgba(140, 46, 186, 0.3)",
+        "text_primary": "#FFFFFF",
+        "text_secondary": "#B0A0C0",
+        "text_tertiary": "#685080"
+      },
+      "gradients": {
+        "primary_action": ["#8C2EBA", "#240056"],
+        "hero_overlay": ["transparent", "#000000"],
+        "galaxy_fade": ["#240056", "#000000"]
+      }
+    },
+    "typography": {
+      "families": {
+        "main": "Montserrat",
+        "secondary": "Inter",
+        "display": "SG Display"
+      },
+      "weights": {
+        "light": "300",
+        "regular": "400",
+        "medium": "500",
+        "semiBold": "600",
+        "bold": "700",
+        "black": "900"
+      },
+      "scale": {
+        "display1": { "fontSize": 48, "lineHeight": 56, "fontFamily": "SG Display", "letterSpacing": -1 },
+        "h1": { "fontSize": 32, "lineHeight": 40, "fontFamily": "Montserrat", "fontWeight": "700" },
+        "h2": { "fontSize": 24, "lineHeight": 32, "fontFamily": "Montserrat", "fontWeight": "600" },
+        "h3": { "fontSize": 20, "lineHeight": 28, "fontFamily": "Montserrat", "fontWeight": "600" },
+        "body1": { "fontSize": 16, "lineHeight": 24, "fontFamily": "Inter", "fontWeight": "400" },
+        "body2": { "fontSize": 14, "lineHeight": 20, "fontFamily": "Inter", "fontWeight": "400" },
+        "caption": { "fontSize": 12, "lineHeight": 16, "fontFamily": "Inter", "fontWeight": "400", "color": "#B0A0C0" },
+        "button": { "fontSize": 16, "lineHeight": 24, "fontFamily": "Montserrat", "fontWeight": "600", "textTransform": "uppercase" }
+      }
+    },
+    "spacing": {
+      "xs": 4,
+      "sm": 8,
+      "md": 12,
+      "lg": 16,
+      "xl": 24,
+      "xxl": 32,
+      "section": 48,
+      "screen_edge": 20
+    },
+    "borders": {
+      "radius": {
+        "sm": 8,
+        "md": 12,
+        "lg": 20,
+        "full": 9999
+      },
+      "width": {
+        "hairline": 0.5,
+        "thin": 1,
+        "thick": 2
+      }
+    },
+    "shadows": {
+      "neon_glow": {
+        "shadowColor": "#8C2EBA",
+        "shadowOffset": { "width": 0, "height": 0 },
+        "shadowOpacity": 0.6,
+        "shadowRadius": 10,
+        "elevation": 5
+      },
+      "deep": {
+        "shadowColor": "#000000",
+        "shadowOffset": { "width": 0, "height": 4 },
+        "shadowOpacity": 0.5,
+        "shadowRadius": 8,
+        "elevation": 8
+      }
+    }
+  },
+  "ui_components": {
+    "buttons": {
+      "primary": {
+        "background": "Linear Gradient #8C2EBA -> #240056",
+        "borderRadius": 9999,
+        "paddingVertical": 16,
+        "paddingHorizontal": 32,
+        "textStyle": "button",
+        "shadow": "neon_glow"
+      },
+      "secondary": {
+        "background": "transparent",
+        "borderWidth": 1,
+        "borderColor": "#8C2EBA",
+        "borderRadius": 9999,
+        "paddingVertical": 14,
+        "paddingHorizontal": 30,
+        "textStyle": "button"
+      },
+      "ghost": {
+        "background": "transparent",
+        "padding": 8,
+        "textStyle": { "color": "#B0A0C0" }
+      }
+    },
+    "cards": {
+      "glass": {
+        "backgroundColor": "rgba(20, 0, 40, 0.6)",
+        "borderColor": "rgba(140, 46, 186, 0.2)",
+        "borderWidth": 1,
+        "borderRadius": 20,
+        "backdropFilter": "blur(20px)"
+      },
+      "solid": {
+        "backgroundColor": "#0B0014",
+        "borderRadius": 16,
+        "padding": 16
+      }
+    },
+    "inputs": {
+      "default": {
+        "backgroundColor": "rgba(255, 255, 255, 0.05)",
+        "borderColor": "#240056",
+        "borderWidth": 1,
+        "borderRadius": 12,
+        "padding": 16,
+        "color": "#FFFFFF",
+        "placeholderTextColor": "#685080"
+      }
+    }
+  },
+  "screen_layouts": {
+    "onboarding": {
+      "description": "Immersive galaxy background, slow zoom animation, centered logo, bottom auth buttons",
+      "elements": ["Logo (SG Display)", "Animated Stars Background", "Login Button", "Register Button"]
+    },
+    "home": {
+      "structure": "Bento Grid",
+      "thumbnail_logic": {
+        "short": { "aspectRatio": 1, "width": "48%", "label": "< 10m" },
+        "medium": { "aspectRatio": 1.5, "width": "100%", "label": "10-40m" },
+        "long": { "aspectRatio": 0.6, "width": "48%", "height": 280, "label": "40m+" }
+      }
+    },
+    "feed": {
+      "style": "TikTok Vertical Snap",
+      "elements": ["FullScreen Video/Poster", "Right Sidebar Actions (Like, Comment, Share)", "Bottom Info Overlay"]
+    },
+    "profile": {
+      "header": "Instagram-style stats (Followers, Following, Films)",
+      "navigation": "Horizontal Scroll Tabs (Top 10, Reviews, Seen, Directed)",
+      "grid": "3-column uniform grid for 'Seen', List for 'Reviews'"
+    }
+  },
+  "assets": {
+    "images": {
+      "backgrounds": [
+        "https://images.unsplash.com/photo-1754851539824-5a87c5c7cb86?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHw0fHxnYWxheHklMjBzcGFjZSUyMG5lYnVsYSUyMGJhY2tncm91bmQlMjBkYXJrJTIwcHVycGxlJTIwc3RhciUyMGZpZWxkfGVufDB8fHx8MTc3MzgzNzIwMnww&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1710270822096-ccfa274be004?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwyfHxnYWxheHklMjBzcGFjZSUyMG5lYnVsYSUyMGJhY2tncm91bmQlMjBkYXJrJTIwcHVycGxlJTIwc3RhciUyMGZpZWxkfGVufDB8fHx8MTc3MzgzNzIwMnww&ixlib=rb-4.1.0&q=85"
+      ],
+      "posters": [
+        "https://images.unsplash.com/photo-1760806676091-27f34cb0e624?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwxfHxjaW5lbWF0aWMlMjBtb3ZpZSUyMHBvc3RlciUyMGluZGllJTIwZmlsbSUyMGRhcmslMjBkcmFtYXRpY3xlbnwwfHx8fDE3NzM4MzcyMDJ8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1611673982355-adb732def1ba?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHw0fHxjaW5lbWF0aWMlMjBtb3ZpZSUyMHBvc3RlciUyMGluZGllJTIwZmlsbSUyMGRhcmslMjBkcmFtYXRpY3xlbnwwfHx8fDE3NzM4MzcyMDJ8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1765326543981-8119b0bf68e6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwzfHxjaW5lbWF0aWMlMjBtb3ZpZSUyMHBvc3RlciUyMGluZGllJTIwZmlsbSUyMGRhcmslMjBkcmFtYXRpY3xlbnwwfHx8fDE3NzM4MzcyMDJ8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1773019007542-bb9bd980f2e0?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzOTB8MHwxfHNlYXJjaHwyfHxjaW5lbWF0aWMlMjBtb3ZpZSUyMHBvc3RlciUyMGluZGllJTIwZmlsbSUyMGRhcmslMjBkcmFtYXRpY3xlbnwwfHx8fDE3NzM4MzcyMDJ8MA&ixlib=rb-4.1.0&q=85"
+      ],
+      "avatars": [
+        "https://images.unsplash.com/photo-1740578650291-eba5216fad09?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwyfHxmaWxtJTIwZGlyZWN0b3IlMjBwb3J0cmFpdCUyMGFydGlzdGljJTIwYmxhY2slMjBhbmQlMjB3aGl0ZXxlbnwwfHx8fDE3NzM4MzcyMDN8MA&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1649614787215-1031917f2b01?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODd8MHwxfHNlYXJjaHwxfHxmaWxtJTIwZGlyZWN0b3IlMjBwb3J0cmFpdCUyMGFydGlzdGljJTIwYmxhY2slMjBhbmQlMjB3aGl0ZXxlbnwwfHx8fDE3NzM4MzcyMDN8MA&ixlib=rb-4.1.0&q=85"
+      ],
+      "production": [
+        "https://images.unsplash.com/photo-1730890754711-25ccad324305?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwxfHxmaWxtJTIwc2V0JTIwYmVoaW5kJTIwdGhlJTIwc2NlbmVzJTIwaW5kaWUlMjBtb3ZpZSUyMHByb2R1Y3Rpb258ZW58MHx8fHwxNzczODM3MjE0fDA&ixlib=rb-4.1.0&q=85"
+      ]
+    },
+    "icons": {
+      "library": "Ionicons (via @expo/vector-icons)",
+      "home": "planet-outline",
+      "feed": "play-circle-outline",
+      "social": "people-outline",
+      "search": "telescope-outline",
+      "profile": "person-circle-outline"
+    }
+  },
+  "implementation_guidelines": {
+    "tech_stack": {
+      "framework": "React Native (Expo SDK 54)",
+      "navigation": "Expo Router",
+      "styling": "StyleSheet.create (NO TAILWIND)",
+      "animations": "react-native-reanimated",
+      "gestures": "react-native-gesture-handler"
+    },
+    "best_practices": [
+      "Use SafeAreaView for all screens",
+      "Implement Expo BlurView for glass effects",
+      "Use FlatList for all feeds with windowSize optimization",
+      "Wrap text in Text components with predefined styles",
+      "Use Pressable for interactions with ripple config",
+      "All interactive elements MUST have testID prop"
+    ]
+  },
+  "universal_guidelines": [
+    "Always use Dark Mode. There is no Light Mode in space.",
+    "Borders should be subtle and colored (Purple/Violet), not grey.",
+    "Use high contrast text (White on Black).",
+    "Avoid system default blue. Use Nebula Violet for links/actions.",
+    "Images should have a subtle overlay gradient if text is placed on top.",
+    "Scroll views should have `showsVerticalScrollIndicator={false}` for immersion.",
+    "Bottom Tab Bar should have a glass effect (BlurView) and float above content."
+  ]
+}
