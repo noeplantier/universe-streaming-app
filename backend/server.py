@@ -16,7 +16,7 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-JWT_SECRET = "universe_secret_2024_xk9"
+JWT_SECRET = "universe_secret_2024_xk9_independent_cinema_platform_key"
 JWT_ALGO = "HS256"
 
 app = FastAPI()
