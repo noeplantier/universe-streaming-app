@@ -342,6 +342,93 @@ MOCK_POSTS = [
     {"id": "post5", "user_id": "user1", "content": "En cours de visionnage de 'Fragments d'Été'... Luca Moretti a cette capacité rare à capturer des silences qui parlent plus fort que tous les dialogues. Chef d'œuvre en attente 🌅", "film_id": "film2", "likes_count": 38, "liked_by": [], "comments_count": 7, "created_at": datetime.now(timezone.utc).isoformat()},
 ]
 
+# ─── Watchlist Routes ─────────────────────────────────────────────────────────
+
+@api_router.get("/watchlist")
+async def get_watchlist(user_id: str):
+    items = await db.watchlist.find({"user_id": user_id}, {"_id": 0}).to_list(100)
+    result = []
+    for item in items:
+        film = await db.films.find_one({"id": item["film_id"]}, {"_id": 0})
+        if film:
+            result.append(film)
+    return result
+
+@api_router.post("/watchlist")
+async def add_to_watchlist(data: FilmSeenCreate, current_user: dict = Depends(get_current_user)):
+    existing = await db.watchlist.find_one({"user_id": current_user["id"], "film_id": data.film_id})
+    if existing:
+        return {"added": True, "message": "Déjà dans la watchlist"}
+    await db.watchlist.insert_one({"id": str(uuid.uuid4()), "user_id": current_user["id"], "film_id": data.film_id, "created_at": datetime.now(timezone.utc).isoformat()})
+    return {"added": True}
+
+@api_router.delete("/watchlist/{film_id}")
+async def remove_from_watchlist(film_id: str, current_user: dict = Depends(get_current_user)):
+    await db.watchlist.delete_one({"user_id": current_user["id"], "film_id": film_id})
+    return {"removed": True}
+
+# ─── Comments Routes ───────────────────────────────────────────────────────────
+
+class CommentCreate(BaseModel):
+    post_id: str
+    content: str
+
+@api_router.get("/comments")
+async def get_comments(post_id: str):
+    comments = await db.comments.find({"post_id": post_id}, {"_id": 0}).sort("created_at", 1).to_list(100)
+    for c in comments:
+        user = await db.users.find_one({"id": c["user_id"]}, {"_id": 0, "password_hash": 0})
+        c["user"] = user
+    return comments
+
+@api_router.post("/comments")
+async def create_comment(data: CommentCreate, current_user: dict = Depends(get_current_user)):
+    comment = {"id": str(uuid.uuid4()), "post_id": data.post_id, "user_id": current_user["id"], "content": data.content, "likes_count": 0, "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.comments.insert_one(comment)
+    await db.posts.update_one({"id": data.post_id}, {"$inc": {"comments_count": 1}})
+    comment_out = {k: v for k, v in comment.items() if k != "_id"}
+    comment_out["user"] = {k: v for k, v in current_user.items() if k != "password_hash"}
+    return comment_out
+
+# ─── Notifications Routes ──────────────────────────────────────────────────────
+
+@api_router.get("/notifications")
+async def get_notifications(current_user: dict = Depends(get_current_user)):
+    notifications = [
+        {"id": "n1", "type": "like", "message": f"NoirCinema a liké votre critique sur L'Ombre de Minuit", "read": False, "created_at": datetime.now(timezone.utc).isoformat(), "avatar": "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=60"},
+        {"id": "n2", "type": "follow", "message": f"IndieWatcher vous suit maintenant", "read": False, "created_at": datetime.now(timezone.utc).isoformat(), "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=60"},
+        {"id": "n3", "type": "new_film", "message": "Nouveau film disponible : Au-delà du Cadre", "read": True, "created_at": datetime.now(timezone.utc).isoformat(), "avatar": "https://images.unsplash.com/photo-1568111561564-08726a1563e1?w=60"},
+        {"id": "n4", "type": "comment", "message": "CineManiac a commenté votre post", "read": True, "created_at": datetime.now(timezone.utc).isoformat(), "avatar": "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=60"},
+        {"id": "n5", "type": "review_like", "message": "Votre critique de 'Silence d'Or' a reçu 5 nouveaux j'aimes", "read": True, "created_at": datetime.now(timezone.utc).isoformat(), "avatar": None},
+    ]
+    return notifications
+
+# ─── Trending & Featured ───────────────────────────────────────────────────────
+
+@api_router.get("/trending")
+async def get_trending():
+    films = await db.films.find({}, {"_id": 0}).sort("views_count", -1).limit(10).to_list(10)
+    return films
+
+@api_router.get("/featured")
+async def get_featured():
+    film = await db.films.find_one({"id": "film7"}, {"_id": 0})
+    if not film:
+        film = await db.films.find_one({}, {"_id": 0})
+    return film
+
+@api_router.get("/posts/{post_id}")
+async def get_post(post_id: str):
+    post = await db.posts.find_one({"id": post_id}, {"_id": 0})
+    if not post:
+        raise HTTPException(404, "Post introuvable")
+    user = await db.users.find_one({"id": post["user_id"]}, {"_id": 0, "password_hash": 0})
+    post["user"] = user
+    if post.get("film_id"):
+        film = await db.films.find_one({"id": post["film_id"]}, {"_id": 0})
+        post["film"] = film
+    return post
+
 @api_router.post("/seed")
 async def seed_data():
     users_count = await db.users.count_documents({})

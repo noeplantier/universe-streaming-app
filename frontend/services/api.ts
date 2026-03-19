@@ -66,6 +66,32 @@ export const seenAPI = {
   getByUser: (userId: string) => request(`/films-seen?user_id=${userId}`),
 };
 
+// Watchlist
+export const watchlistAPI = {
+  get: (userId: string) => request(`/watchlist?user_id=${userId}`),
+  add: (filmId: string) => request('/watchlist', { method: 'POST', body: JSON.stringify({ film_id: filmId }) }),
+  remove: (filmId: string) => request(`/watchlist/${filmId}`, { method: 'DELETE' }),
+};
+
+// Comments
+export const commentsAPI = {
+  getByPost: (postId: string) => request(`/comments?post_id=${postId}`),
+  create: (data: { post_id: string; content: string }) =>
+    request('/comments', { method: 'POST', body: JSON.stringify(data) }),
+};
+
+// Notifications
+export const notificationsAPI = {
+  getAll: () => request('/notifications'),
+};
+
+// Trending & Featured
+export const discoverAPI = {
+  trending: () => request('/trending'),
+  featured: () => request('/featured'),
+  getPost: (id: string) => request(`/posts/${id}`),
+};
+
 // Token management
 export const tokenAPI = {
   save: (token: string) => AsyncStorage.setItem('universe_token', token),

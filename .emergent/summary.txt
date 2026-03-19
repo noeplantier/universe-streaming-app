@@ -1,0 +1,175 @@
+**original_problem_statement:**
+L'utilisateur souhaite créer une application de streaming interactive nommée UNIVERSE, axée sur le cinéma indépendant. Les spécifications ont été fournies via des fichiers DOCX et PDF.
+
+**PRODUCT REQUIREMENTS:**
+1.  **Page Profil :** Inspirée d'Instagram, avec défilement horizontal pour des catégories comme Top 10, Critiques, Films vus, Films réalisés. Doit afficher des statistiques (critiques, œuvres vues, abonnés). Les catégories doivent être explorables en plein écran.
+2.  **Page Accueil :** Défilement interactif avec des tailles d'images variables selon la durée du contenu (court, moyen, long métrage).
+3.  **Page Feed/Lecture :** Flux vertical avec un bouton d'information sur l'épisode/série et une page d'information générale sur l'œuvre.
+4.  **Page Sociale :** Une plateforme de type média social pour que les utilisateurs puissent communiquer et partager leurs avis.
+5.  **Page Profil + Paramètres.**
+6.  **Requête additionnelle :** Intégrer toutes les fonctionnalités initialement demandées, les optimiser pour une version bêta, modifier l'en-tête pour un accès en un clic à chaque fonctionnalité, et fournir des instructions pour exécuter l'application localement.
+
+**User's preferred language**: Français
+
+**what currently exists?**
+L'agent a mis en place une version MVP (Minimum Viable Product) de l'application avec une architecture full-stack (Expo/React Native en frontend, FastAPI/Python en backend, MongoDB en base de données). Cette version, qui incluait une authentification de base et cinq écrans principaux (Accueil, Feed, Social, Recherche, Profil), a été validée par des tests.
+
+Suite à une nouvelle demande de l'utilisateur pour une version bêta complète, l'agent a commencé une deuxième phase de développement. Il a mis à jour le backend avec de nouveaux modèles de données (watchlist, notifications, followers) et a créé de nouveaux fichiers frontend (, , , etc.). Les écrans principaux de l'application ont été modifiés pour intégrer un nouvel en-tête global et une nouvelle disposition, mais ces changements n'ont pas encore été testés ou entièrement intégrés.
+
+**Last working item**:
+*   **Last item agent was working:** L'agent a écrasé le contenu des écrans principaux de l'onglet de navigation :  (Accueil), , et . L'objectif était d'intégrer le nouveau  et d'implémenter la disposition en grille bento sur la page d'accueil, conformément à la nouvelle demande de l'utilisateur pour une version bêta plus complète.
+*   **Status:** IN PROGRESS
+*   **Agent Testing Done:** N
+*   **Which testing method agent to use?** both (Frontend and Backend testing agents). Des changements majeurs ont été apportés à la fois au frontend et au backend, nécessitant des tests complets de bout en bout pour garantir l'intégrité de l'application.
+*   **User Testing Done:** N
+
+**All Pending/In progress Issue list**:
+*   **Issue 1 (P0):** Finaliser et vérifier l'implémentation complète des fonctionnalités de la bêta.
+*   **Issue 2 (P1):** Corriger les avertissements de style déprécié.
+*   **Issue 3 (P2):** Fournir des instructions pour la configuration locale.
+
+**Issues Detail:**
+*   **Issue 1: Finaliser et vérifier l'implémentation complète des fonctionnalités de la bêta.**
+    *   **Attempted fixes:** L'agent a commencé à créer et modifier de nombreux fichiers, mais sans les intégrer ou les tester, laissant l'application dans un état potentiellement instable.
+    *   **Next debug checklist:**
+        1.  Intégrer le  dans le fichier de layout principal  pour qu'il apparaisse sur tous les écrans.
+        2.  Redémarrer les services nginx-code-proxy: stopped
+mongodb: stopped
+backend: stopped
+backend: started
+mongodb: started
+nginx-code-proxy: started
+code-server: started pour appliquer tous les changements de code.
+        3.  Prendre une capture d'écran de la page d'accueil pour vérifier le rendu du  et de la nouvelle grille.
+        4.  Inspecter les logs frontend et backend pour toute nouvelle erreur.
+        5.  Vérifier que la navigation vers les nouveaux et anciens écrans fonctionne comme prévu.
+    *   **Why fix this issue and what will be achieved with the fix?** Pour stabiliser l'application et progresser vers la version bêta fonctionnelle demandée par l'utilisateur.
+    *   **Status:** IN PROGRESS
+    *   **Is recurring issue?** N
+    *   **Should Test frontend/backend/both after fix?** both
+    *   **Blocked on other issue:** None
+
+*   **Issue 2: Corriger les avertissements de style déprécié.**
+    *   **Attempted fixes:** None.
+    *   **Next debug checklist:** Les logs d'Expo affichent des avertissements récurrents :  et  sont dépréciés sur le web. Comme il s'agit d'une application mobile, ces propriétés restent valides. Il faut analyser si un correctif via  est nécessaire ou si l'avertissement peut être ignoré car il ne concerne que l'aperçu web.
+    *   **Why fix this issue and what will be achieved with the fix?** Améliorer la qualité du code et éliminer les avertissements inutiles dans la console.
+    *   **Status:** NOT STARTED
+    *   **Is recurring issue?** Y
+    *   **Should Test frontend/backend/both after fix?** Frontend
+    *   **Blocked on other issue:** None
+
+*   **Issue 3: Fournir des instructions pour la configuration locale.**
+    *   **Attempted fixes:** None.
+    *   **Next debug checklist:** Rédiger un document (par ex. ) expliquant les étapes pour cloner le dépôt, installer les dépendances ( et yarn install v1.22.22
+[1/4] Resolving packages...
+[2/4] Fetching packages...
+[3/4] Linking dependencies...
+[4/4] Building fresh packages...
+success Saved lockfile.
+Done in 17.60s.), configurer les fichiers  et lancer les serveurs backend et frontend.
+    *   **Why fix this issue and what will be achieved with the fix?** Pour répondre à une demande directe de l'utilisateur.
+    *   **Status:** NOT STARTED
+    *   **Is recurring issue?** N
+    *   **Should Test frontend/backend/both after fix?** N/A
+    *   **Blocked on other issue:** None
+
+**In progress Task List**:
+*   **Task 1: Implémentation complète des fonctionnalités avancées (Version Bêta).**
+    *   **Where to resume:** Le travail a été interrompu après la modification de plusieurs fichiers frontend. La prochaine étape consiste à intégrer correctement le  dans le layout , puis à développer la logique pour les nouveaux écrans (, , etc.) et à s'assurer que les nouvelles API backend sont fonctionnelles.
+    *   **What will be achieved with this?** Une version bêta complète de l'application UNIVERSE, avec toutes les fonctionnalités optimisées.
+    *   **Status:** IN PROGRESS
+    *   **Should Test frontend/backend/both after fix?** both
+    *   **Blocked on something:** None
+
+**Upcoming and Future Tasks**
+*   **Upcoming Tasks:**
+    *   **(P0) Finaliser l'intégration du :** Modifier  pour inclure le composant  et le rendre visible sur tous les écrans principaux.
+    *   **(P0) Implémenter la logique des nouveaux écrans:** Coder la fonctionnalité de récupération et d'affichage des données pour , , , et .
+    *   **(P1) Répondre à la demande d'instructions de configuration locale.**
+*   **Future Tasks:**
+    *   **(P1) Optimisation de l'UI/UX:** Ajouter des animations, des micro-interactions et peaufiner le design pour atteindre le niveau de qualité paroxysme de son optimisation demandé.
+    *   **(P2) Fonctionnalité Films Réalisés:** Implémenter la logique frontend et backend permettant aux utilisateurs de lister les films qu'ils ont réalisés.
+    *   **(P2) Fonctionnalité Sélection du Jury:** Développer la fonctionnalité suggérée par l'agent d'une sélection mensuelle de films votés par la communauté.
+
+**Completed work in this session**
+*   Analyse des besoins et des documents fournis par l'utilisateur.
+*   Génération des directives de conception ().
+*   Développement d'un MVP fonctionnel incluant :
+    *   Backend FastAPI avec authentification, endpoints pour les films et les critiques.
+    *   Frontend Expo avec flux d'authentification et 5 pages principales (Accueil, Feed, Social, Recherche, Profil).
+*   Exécution réussie des tests de bout en bout sur le MVP via .
+*   Correction d'une faille de sécurité en déplaçant la  du code vers les variables d'environnement.
+*   Création d'un document de définition du produit ().
+
+**Earlier issues found/mentioned but not fixed**
+*   **Issue 1: Avertissements de style déprécié.**
+    *   **Debug checklist:**  pour les propriétés d'ombre (, etc.) dans  et déterminer si l'avertissement spécifique au web peut être ignoré ou nécessite un correctif via .
+    *   **Why to solve this issue and what will be achieved with this?** Assurer la propreté du code et la conformité avec les standards les plus récents.
+    *   **Should Test frontend/backend/both after fix:** Frontend
+    *   **Is recurring issue?** Y
+
+**Known issue recurrence from previous fork**
+*   N/A
+
+**Code Architecture**
+
+
+**Key Technical Concepts**
+*   **Frontend:** React Native, Expo (SDK 54), Expo Router, TypeScript
+*   **Backend:** Python, FastAPI
+*   **Database:** MongoDB
+*   **Architecture:** Monorepo avec une application full-stack.
+*   **Styling:**  basé sur un guide de design JSON.
+
+**key DB schema**
+*   **User:** , , , 
+*   **Film:** , , , , 
+*   **Review:** , , , 
+*   **Post:** , , , 
+*   **Follow:** , 
+*   **Watchlist:** , 
+*   **Notification:** , , 
+
+**changes in tech stack**
+*   None.
+
+**All files of reference**
+*   **Récemment créés/modifiés :**
+    *   : Mis à jour avec de nouveaux modèles (watchlist, notifications, followers).
+    *   : Nouveau composant d'en-tête.
+    *   : Nouvel écran.
+    *   : Nouvel écran.
+    *   : Nouvel écran.
+    *   : Nouvel écran.
+    *   , , : Fichiers écrasés pour intégrer les nouvelles fonctionnalités.
+*   **Autres fichiers importants :**
+    *   : Règles de conception UI/UX.
+    *   : Documentation du produit.
+
+**Areas that need refactoring**:
+*   : Ce fichier contient toute la logique backend. Il devrait être divisé en modules plus petits (modèles, routes, services) pour une meilleure maintenabilité.
+
+**key api endpoints**
+*   
+*   
+*   
+*   
+*   
+*   
+*   
+
+**Critical Info for New Agent**
+*   L'utilisateur attend une version bêta aboutie, pas seulement un prototype.
+*   La priorité absolue est de stabiliser l'application. L'agent précédent a modifié de nombreux fichiers sans tester. Il faut vérifier et corriger l'état actuel avant d'ajouter de nouvelles fonctionnalités.
+*   Le composant  a été créé mais n'est pas encore intégré. C'est une étape cruciale pour l'UI demandée.
+*   N'oubliez pas de répondre à la demande de l'utilisateur concernant les instructions pour lancer le projet localement.
+
+**documents and test reports created in this job**
+*   
+*   
+
+**Last 10 User Messages and any pending HUMAN messages**
+*   **User:** Maintenant intègres chaque features et pages initialement demandées lors du premier prompt. Pousses également chaque fonctionnalité au paroxysme de son optimisation. Je souhaite que la version beta de lapplication mobile soit opérationnelle dès maintenant. Modifies également le header pour y retrouver chaque feature en un clic. Expliques moi step by step comment je peux switcher via VSC de part mon repos cloné et les commandes à effectuer pour run lapp dans mon localhost par la suite - **Status: PENDING.** This is the main active request driving the current work.
+
+**Project Health Check:**
+*   **Broken:** Le frontend est dans un état instable et probablement non fonction
