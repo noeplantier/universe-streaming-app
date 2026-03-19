@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { useAuth } from '../contexts/AuthContext';
+import EditProfileModal from '../components/EditProfileModal';
 
 function SettingsItem({ icon, title, subtitle, onPress, danger, rightElement }: {
   icon: string; title: string; subtitle?: string;
@@ -33,10 +34,19 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const [notifications, setNotifications] = useState(true);
   const [autoPlay, setAutoPlay] = useState(true);
   const [language, setLanguage] = useState<'fr' | 'en'>('fr');
+  const [showEditProfile, setShowEditProfile] = useState(false);
+
+  async function handleSaveProfile(data: { username: string; bio: string }) {
+    // In production, this would call the API to update the profile
+    // For now, we just update the local state
+    if (updateUser) {
+      updateUser({ ...user!, ...data });
+    }
+  }
 
   async function handleLogout() {
     Alert.alert(
@@ -99,7 +109,7 @@ export default function SettingsScreen() {
         {/* Account */}
         <SectionHeader title="Compte" />
         <View style={styles.settingsGroup}>
-          <SettingsItem icon="person-outline" title="Modifier le profil" onPress={() => {}} />
+          <SettingsItem icon="person-outline" title="Modifier le profil" onPress={() => setShowEditProfile(true)} />
           <SettingsItem icon="lock-closed-outline" title="Changer le mot de passe" onPress={() => {}} />
           <SettingsItem icon="card-outline" title="Abonnement & Facturation" onPress={() => {}} />
         </View>
@@ -148,7 +158,7 @@ export default function SettingsScreen() {
         <SectionHeader title="Communauté" />
         <View style={styles.settingsGroup}>
           <SettingsItem icon="people-outline" title="Gérer les abonnements" onPress={() => {}} />
-          <SettingsItem icon="bookmark-outline" title="Ma Watchlist" onPress={() => {}} />
+          <SettingsItem icon="bookmark-outline" title="Ma Watchlist" onPress={() => router.push('/watchlist')} />
           <SettingsItem icon="trophy-outline" title="Mes badges" subtitle="Voir vos accomplissements" onPress={() => {}} />
         </View>
 
@@ -171,6 +181,16 @@ export default function SettingsScreen() {
           <Text style={styles.footerSubText}>Fait avec 💜 pour les artistes</Text>
         </View>
       </ScrollView>
+
+      {/* Edit Profile Modal */}
+      {user && (
+        <EditProfileModal
+          visible={showEditProfile}
+          onClose={() => setShowEditProfile(false)}
+          user={user}
+          onSave={handleSaveProfile}
+        />
+      )}
     </View>
   );
 }

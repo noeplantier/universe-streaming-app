@@ -35,10 +35,11 @@ const ROLE_BADGES: Record<string, { label: string; color: string; bg: string }> 
   viewer:   { label: '👁️ Spectateur', color: COLORS.textTertiary, bg: 'rgba(255,255,255,0.08)' },
 };
 
-function PostCard({ post, currentUserId, onLike, onComment }: {
+function PostCard({ post, currentUserId, onLike, onComment, onUserPress }: {
   post: Post; currentUserId?: string;
   onLike: (id: string) => void;
   onComment: (post: Post) => void;
+  onUserPress: (userId: string) => void;
 }) {
   const router = useRouter();
   const isLiked = post.liked_by?.includes(currentUserId || '') || false;
@@ -46,7 +47,7 @@ function PostCard({ post, currentUserId, onLike, onComment }: {
 
   return (
     <View testID={`post-${post.id}`} style={styles.postCard}>
-      <View style={styles.postHeader}>
+      <TouchableOpacity onPress={() => post.user && onUserPress(post.user.id)} style={styles.postHeader}>
         <Image source={{ uri: post.user?.avatar_url || '' }} style={styles.postAvatar} />
         <View style={{ flex: 1 }}>
           <View style={styles.usernameRow}>
@@ -58,7 +59,7 @@ function PostCard({ post, currentUserId, onLike, onComment }: {
           <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
         </View>
         <Ionicons name="ellipsis-horizontal" size={18} color={COLORS.textTertiary} />
-      </View>
+      </TouchableOpacity>
 
       <Text style={styles.postContent}>{post.content}</Text>
 
@@ -158,7 +159,7 @@ export default function SocialScreen() {
           contentContainerStyle={{ paddingBottom: 100 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchPosts(); }} tintColor={COLORS.primary} />}
           renderItem={({ item }) => (
-            <PostCard post={item} currentUserId={user?.id} onLike={handleLike} onComment={handleComment} />
+            <PostCard post={item} currentUserId={user?.id} onLike={handleLike} onComment={handleComment} onUserPress={(uid) => router.push(`/user/${uid}`)} />
           )}
           ListHeaderComponent={
             <>

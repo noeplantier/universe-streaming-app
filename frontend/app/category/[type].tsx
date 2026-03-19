@@ -7,9 +7,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { COLORS, SPACING, RADIUS, GRADIENTS, GENRE_COLORS, DURATION_LABELS } from '../constants/theme';
-import { reviewsAPI, seenAPI } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
+import { COLORS, SPACING, RADIUS, GRADIENTS, GENRE_COLORS, DURATION_LABELS } from '../../constants/theme';
+import { reviewsAPI, seenAPI } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
 

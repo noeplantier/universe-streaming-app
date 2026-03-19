@@ -7,9 +7,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
-import { discoverAPI, commentsAPI, postsAPI } from '../services/api';
-import { useAuth } from '../contexts/AuthContext';
+import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
+import { discoverAPI, commentsAPI, postsAPI } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Post {
   id: string; user_id: string; content: string; film_id?: string;
@@ -108,13 +108,13 @@ export default function PostDetailScreen() {
             <View>
               {/* Post card */}
               <View style={styles.postCard}>
-                <View style={styles.postHeader}>
+                <TouchableOpacity onPress={() => post.user && router.push(`/user/${post.user.id}`)} style={styles.postHeader}>
                   <Image source={{ uri: post.user?.avatar_url || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=60' }} style={styles.postAvatar} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.postUsername}>{post.user?.username}</Text>
                     <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
                 <Text style={styles.postContent}>{post.content}</Text>
 
                 {post.film && (

@@ -8,8 +8,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { COLORS, SPACING, RADIUS, GRADIENTS, DURATION_LABELS, GENRE_COLORS, SHADOWS } from '../../constants/theme';
-import { filmsAPI, reviewsAPI, seenAPI } from '../../services/api';
+import { filmsAPI, reviewsAPI, seenAPI, watchlistAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { VideoPlayerModal } from '../../components/VideoPlayer';
 
 interface Film {
   id: string; title: string; director: string; duration_minutes: number;
@@ -56,6 +57,8 @@ export default function FilmDetailScreen() {
   const [reviewRating, setReviewRating] = useState(4);
   const [submitting, setSubmitting] = useState(false);
   const [seen, setSeen] = useState(false);
+  const [inWatchlist, setInWatchlist] = useState(false);
+  const [showVideo, setShowVideo] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!id) return;
@@ -80,6 +83,19 @@ export default function FilmDetailScreen() {
     try {
       await seenAPI.markSeen(id!);
       setSeen(true);
+    } catch {}
+  }
+
+  async function handleWatchlist() {
+    if (!user) { Alert.alert('', 'Connectez-vous pour ajouter à votre watchlist'); return; }
+    try {
+      if (inWatchlist) {
+        await watchlistAPI.remove(id!);
+        setInWatchlist(false);
+      } else {
+        await watchlistAPI.add(id!);
+        setInWatchlist(true);
+      }
     } catch {}
   }
 
@@ -174,11 +190,16 @@ export default function FilmDetailScreen() {
 
         {/* Action Buttons */}
         <View style={styles.actionRow}>
-          <TouchableOpacity testID="film-watch-btn" style={styles.watchBtn} activeOpacity={0.85}>
+          <TouchableOpacity testID="film-watch-btn" onPress={() => setShowVideo(true)} style={styles.watchBtn} activeOpacity={0.85}>
             <LinearGradient colors={GRADIENTS.primary} style={styles.watchBtnGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
               <Ionicons name="play" size={18} color="#fff" />
               <Text style={styles.watchBtnText}>Regarder</Text>
             </LinearGradient>
+          </TouchableOpacity>
+
+          <TouchableOpacity testID="film-watchlist-btn" onPress={handleWatchlist} style={[styles.iconBtn, inWatchlist && styles.iconBtnActive]}>
+            <Ionicons name={inWatchlist ? 'bookmark' : 'bookmark-outline'} size={22} color={inWatchlist ? COLORS.primary : COLORS.textSecondary} />
+            <Text style={[styles.iconBtnText, inWatchlist && { color: COLORS.primary }]}>Watchlist</Text>
           </TouchableOpacity>
 
           <TouchableOpacity testID="film-seen-btn" onPress={handleMarkSeen} style={[styles.iconBtn, seen && styles.iconBtnActive]}>
@@ -189,11 +210,6 @@ export default function FilmDetailScreen() {
           <TouchableOpacity testID="film-review-btn" onPress={() => setShowReviewModal(true)} style={styles.iconBtn}>
             <Ionicons name="star-outline" size={22} color="#FFD60A" />
             <Text style={[styles.iconBtnText, { color: '#FFD60A' }]}>Critique</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.iconBtn}>
-            <Ionicons name="share-social-outline" size={22} color={COLORS.textSecondary} />
-            <Text style={styles.iconBtnText}>Partager</Text>
           </TouchableOpacity>
         </View>
 
@@ -295,6 +311,15 @@ export default function FilmDetailScreen() {
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Video Player Modal */}
+      <VideoPlayerModal
+        visible={showVideo}
+        onClose={() => setShowVideo(false)}
+        filmId={film.id}
+        filmTitle={film.title}
+        posterUrl={film.poster_url}
+      />
     </View>
   );
 }
