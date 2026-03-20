@@ -98,7 +98,7 @@ export default function SettingsScreen() {
               <Text style={styles.premiumTitle}>✨ UNIVERSE Premium</Text>
               <Text style={styles.premiumSub}>Sans pub · HD · Contenu exclusif</Text>
             </View>
-            <TouchableOpacity testID="settings-premium-btn" activeOpacity={0.85}>
+            <TouchableOpacity testID="settings-premium-btn" onPress={() => router.push('/premium')} activeOpacity={0.85}>
               <LinearGradient colors={GRADIENTS.primary} style={styles.premiumBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
                 <Text style={styles.premiumBtnText}>3,99€/mois</Text>
               </LinearGradient>

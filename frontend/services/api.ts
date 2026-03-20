@@ -90,6 +90,23 @@ export const discoverAPI = {
   trending: () => request('/trending'),
   featured: () => request('/featured'),
   getPost: (id: string) => request(`/posts/${id}`),
+  newReleases: (limit: number = 10) => request(`/new-releases?limit=${limit}`),
+  genres: () => request('/genres'),
+};
+
+// Watch History & Continue Watching
+export const watchHistoryAPI = {
+  get: (userId: string, limit: number = 20) => request(`/watch-history?user_id=${userId}&limit=${limit}`),
+  add: (data: { user_id: string; film_id: string; progress: number; episode_number?: number }) =>
+    request('/watch-history', { method: 'POST', body: JSON.stringify(data) }),
+  continueWatching: (userId: string, limit: number = 10) => request(`/continue-watching?user_id=${userId}&limit=${limit}`),
+};
+
+// Recommendations & Premium
+export const premiumAPI = {
+  getRecommendations: (userId?: string, limit: number = 10) => 
+    request(`/recommendations?${userId ? `user_id=${userId}&` : ''}limit=${limit}`),
+  getPremiumContent: () => request('/premium-content'),
 };
 
 // Token management

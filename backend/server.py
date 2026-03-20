@@ -308,16 +308,41 @@ async def get_films_seen(user_id: str):
 # ─── Seed Data ────────────────────────────────────────────────────────────────
 
 MOCK_FILMS = [
-    {"id": "film1", "title": "L'Ombre de Minuit", "director": "Sofia Castellano", "duration_minutes": 87, "duration_type": "long", "genre": "Thriller", "synopsis": "Dans une ville nocturne sans loi, une détective aux méthodes radicales traque un fantôme qui efface les souvenirs. Un voyage hallucinant entre réel et illusion.", "poster_url": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 8, "content_type": "series", "tags": ["sombre", "psychologique", "urbain"], "rating": 4.2, "views_count": 12450, "video_id": "aF4M0JtoIPk", "trailer_url": "https://www.youtube.com/watch?v=aF4M0JtoIPk"},
-    {"id": "film2", "title": "Fragments d'Été", "director": "Luca Moretti", "duration_minutes": 24, "duration_type": "medium", "genre": "Drame", "synopsis": "Un été. Trois familles. Des secrets qui se tissent silencieusement dans la chaleur d'une ville italienne endormie.", "poster_url": "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=500&q=80", "year": 2024, "language": "it", "episodes_count": 6, "content_type": "series", "tags": ["famille", "été", "nostalgie"], "rating": 4.5, "views_count": 8920, "video_id": "b9fL7JKrFEU", "trailer_url": "https://www.youtube.com/watch?v=b9fL7JKrFEU"},
-    {"id": "film3", "title": "Nuit Blanche", "director": "Emma Lefebvre", "duration_minutes": 6, "duration_type": "short", "genre": "Romance", "synopsis": "Une nuit d'insomnie transformée en rencontre inattendue. Un court métrage sur la solitude et la connexion humaine.", "poster_url": "https://images.unsplash.com/photo-1524985069026-dd778a71c7b4?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 1, "content_type": "short", "tags": ["nuit", "amour", "urban"], "rating": 4.7, "views_count": 22100, "video_id": "K1KqcSLPhak", "trailer_url": "https://www.youtube.com/watch?v=K1KqcSLPhak"},
-    {"id": "film4", "title": "La Dernière Bobine", "director": "Marcus Chen", "duration_minutes": 95, "duration_type": "long", "genre": "Documentaire", "synopsis": "Un documentaire intime sur les derniers projectionnistes de film analogique. Un hommage au cinéma d'avant.", "poster_url": "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=500&q=80", "year": 2023, "language": "en", "episodes_count": 1, "content_type": "film", "tags": ["cinéma", "analogique", "patrimoine"], "rating": 4.8, "views_count": 5640, "video_id": "dcZqgfekL9I", "trailer_url": "https://www.youtube.com/watch?v=dcZqgfekL9I"},
-    {"id": "film5", "title": "Entre Chien et Loup", "director": "Ayasha Wolf", "duration_minutes": 32, "duration_type": "medium", "genre": "Fantasy", "synopsis": "Au crépuscule, l'heure où les mondes se superposent, une chamane moderne tente de sauver l'âme d'une ville.", "poster_url": "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 4, "content_type": "series", "tags": ["mystique", "nature", "magie"], "rating": 4.3, "views_count": 15780, "video_id": "ByeHaZL2K7A", "trailer_url": "https://www.youtube.com/watch?v=ByeHaZL2K7A"},
-    {"id": "film6", "title": "Au-delà du Cadre", "director": "Ryo Nakamura", "duration_minutes": 4, "duration_type": "short", "genre": "Thriller", "synopsis": "Quatre minutes. Une caméra. Un appartement vide. Ce qui se passe hors-champ est plus terrifiant que tout.", "poster_url": "https://images.unsplash.com/photo-1568111561564-08726a1563e1?w=500&q=80", "year": 2024, "language": "ja", "episodes_count": 1, "content_type": "short", "tags": ["tension", "minimaliste", "huis-clos"], "rating": 4.6, "views_count": 18900, "video_id": "nWgNpB8R8fs", "trailer_url": "https://www.youtube.com/watch?v=nWgNpB8R8fs"},
-    {"id": "film7", "title": "Le Voyageur du Chaos", "director": "Ibrahim Osei", "duration_minutes": 112, "duration_type": "long", "genre": "Science-Fiction", "synopsis": "Un physicien découvre que chaque décision crée un univers parallèle. Il décide de tous les traverser pour retrouver celle qu'il aime.", "poster_url": "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=500&q=80", "year": 2024, "language": "en", "episodes_count": 12, "content_type": "series", "tags": ["multivers", "amour", "physique"], "rating": 4.4, "views_count": 9870, "video_id": "wxN1T1uxQ2g", "trailer_url": "https://www.youtube.com/watch?v=wxN1T1uxQ2g"},
-    {"id": "film8", "title": "Pluie de Septembre", "director": "Céline Dubois", "duration_minutes": 18, "duration_type": "medium", "genre": "Romance", "synopsis": "Une photographe et un musicien de rue se retrouvent chaque septembre sous la même pluie. Hasard ou destin ?", "poster_url": "https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=500&q=80", "year": 2023, "language": "fr", "episodes_count": 5, "content_type": "series", "tags": ["poétique", "pluie", "rencontre"], "rating": 4.1, "views_count": 11230, "video_id": "UtF6Jej8yb4", "trailer_url": "https://www.youtube.com/watch?v=UtF6Jej8yb4"},
-    {"id": "film9", "title": "Silence d'Or", "director": "Ana Reyes", "duration_minutes": 8, "duration_type": "short", "genre": "Drame", "synopsis": "La dernière répétition d'un orchestre qui se dissout. En huit minutes, toute une vie musicale prend fin.", "poster_url": "https://images.unsplash.com/photo-1518929458119-e5bf444c30f4?w=500&q=80", "year": 2024, "language": "es", "episodes_count": 1, "content_type": "short", "tags": ["musique", "fin", "émotion"], "rating": 4.9, "views_count": 7650, "video_id": "8oVN2PfRzOU", "trailer_url": "https://www.youtube.com/watch?v=8oVN2PfRzOU"},
-    {"id": "film10", "title": "L'Instant Présent", "director": "Jules Beaumont", "duration_minutes": 45, "duration_type": "long", "genre": "Drame", "synopsis": "Un médecin urgentiste passe une nuit à traiter des patients dont les histoires s'entrelacent mystérieusement.", "poster_url": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 3, "content_type": "series", "tags": ["humain", "nuit", "destin"], "rating": 4.3, "views_count": 14320, "video_id": "KA0WBJyF_MI", "trailer_url": "https://www.youtube.com/watch?v=KA0WBJyF_MI"},
+    # === LONGS MÉTRAGES (40+ min) ===
+    {"id": "film1", "title": "L'Ombre de Minuit", "director": "Sofia Castellano", "duration_minutes": 87, "duration_type": "long", "genre": "Thriller", "synopsis": "Dans une ville nocturne sans loi, une détective aux méthodes radicales traque un fantôme qui efface les souvenirs. Un voyage hallucinant entre réel et illusion.", "poster_url": "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 8, "content_type": "series", "tags": ["sombre", "psychologique", "urbain"], "rating": 4.2, "views_count": 12450, "video_id": "aF4M0JtoIPk", "exclusive": False},
+    {"id": "film4", "title": "La Dernière Bobine", "director": "Marcus Chen", "duration_minutes": 95, "duration_type": "long", "genre": "Documentaire", "synopsis": "Un documentaire intime sur les derniers projectionnistes de film analogique. Un hommage au cinéma d'avant.", "poster_url": "https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=500&q=80", "year": 2023, "language": "en", "episodes_count": 1, "content_type": "film", "tags": ["cinéma", "analogique", "patrimoine"], "rating": 4.8, "views_count": 5640, "video_id": "dcZqgfekL9I", "exclusive": False},
+    {"id": "film7", "title": "Le Voyageur du Chaos", "director": "Ibrahim Osei", "duration_minutes": 112, "duration_type": "long", "genre": "Science-Fiction", "synopsis": "Un physicien découvre que chaque décision crée un univers parallèle. Il décide de tous les traverser pour retrouver celle qu'il aime.", "poster_url": "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=500&q=80", "year": 2024, "language": "en", "episodes_count": 12, "content_type": "series", "tags": ["multivers", "amour", "physique"], "rating": 4.4, "views_count": 9870, "video_id": "wxN1T1uxQ2g", "exclusive": False},
+    {"id": "film10", "title": "L'Instant Présent", "director": "Jules Beaumont", "duration_minutes": 45, "duration_type": "long", "genre": "Drame", "synopsis": "Un médecin urgentiste passe une nuit à traiter des patients dont les histoires s'entrelacent mystérieusement.", "poster_url": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 3, "content_type": "series", "tags": ["humain", "nuit", "destin"], "rating": 4.3, "views_count": 14320, "video_id": "KA0WBJyF_MI", "exclusive": False},
+    {"id": "film11", "title": "Échos du Futur", "director": "Naomi Park", "duration_minutes": 78, "duration_type": "long", "genre": "Science-Fiction", "synopsis": "En 2089, une archéologue découvre des messages laissés par elle-même dans le passé. Le temps est une boucle.", "poster_url": "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=500&q=80", "year": 2024, "language": "en", "episodes_count": 6, "content_type": "series", "tags": ["temps", "mystère", "futuriste"], "rating": 4.5, "views_count": 8340, "video_id": "Scxs7L0vhZ4", "exclusive": True},
+    {"id": "film12", "title": "Le Dernier Acte", "director": "François Delorme", "duration_minutes": 92, "duration_type": "long", "genre": "Drame", "synopsis": "Un acteur de théâtre vieillissant monte une dernière pièce avec ses anciens élèves. Hommage au spectacle vivant.", "poster_url": "https://images.unsplash.com/photo-1503095396549-807759245b35?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 1, "content_type": "film", "tags": ["théâtre", "transmission", "art"], "rating": 4.7, "views_count": 6120, "video_id": "8oVN2PfRzOU", "exclusive": False},
+    {"id": "film13", "title": "Territoires Perdus", "director": "Aisha Mbeki", "duration_minutes": 105, "duration_type": "long", "genre": "Documentaire", "synopsis": "Voyage au cœur des communautés qui résistent à l'urbanisation sauvage. Une ode à la résilience humaine.", "poster_url": "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 4, "content_type": "series", "tags": ["documentaire", "social", "nature"], "rating": 4.6, "views_count": 4890, "video_id": "ByeHaZL2K7A", "exclusive": True},
+    
+    # === MOYENS MÉTRAGES (10-40 min) ===
+    {"id": "film2", "title": "Fragments d'Été", "director": "Luca Moretti", "duration_minutes": 24, "duration_type": "medium", "genre": "Drame", "synopsis": "Un été. Trois familles. Des secrets qui se tissent silencieusement dans la chaleur d'une ville italienne endormie.", "poster_url": "https://images.unsplash.com/photo-1485846234645-a62644f84728?w=500&q=80", "year": 2024, "language": "it", "episodes_count": 6, "content_type": "series", "tags": ["famille", "été", "nostalgie"], "rating": 4.5, "views_count": 8920, "video_id": "b9fL7JKrFEU", "exclusive": False},
+    {"id": "film5", "title": "Entre Chien et Loup", "director": "Ayasha Wolf", "duration_minutes": 32, "duration_type": "medium", "genre": "Fantasy", "synopsis": "Au crépuscule, l'heure où les mondes se superposent, une chamane moderne tente de sauver l'âme d'une ville.", "poster_url": "https://images.unsplash.com/photo-1501854140801-50d01698950b?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 4, "content_type": "series", "tags": ["mystique", "nature", "magie"], "rating": 4.3, "views_count": 15780, "video_id": "ByeHaZL2K7A", "exclusive": False},
+    {"id": "film8", "title": "Pluie de Septembre", "director": "Céline Dubois", "duration_minutes": 18, "duration_type": "medium", "genre": "Romance", "synopsis": "Une photographe et un musicien de rue se retrouvent chaque septembre sous la même pluie. Hasard ou destin ?", "poster_url": "https://images.unsplash.com/photo-1478720568477-152d9b164e26?w=500&q=80", "year": 2023, "language": "fr", "episodes_count": 5, "content_type": "series", "tags": ["poétique", "pluie", "rencontre"], "rating": 4.1, "views_count": 11230, "video_id": "UtF6Jej8yb4", "exclusive": False},
+    {"id": "film14", "title": "La Mélodie du Silence", "director": "Yuki Tanaka", "duration_minutes": 28, "duration_type": "medium", "genre": "Drame", "synopsis": "Une pianiste sourde apprend à ressentir la musique différemment. Un voyage sensoriel unique.", "poster_url": "https://images.unsplash.com/photo-1520523839897-bd0b52f945a0?w=500&q=80", "year": 2024, "language": "ja", "episodes_count": 3, "content_type": "series", "tags": ["musique", "handicap", "sensibilité"], "rating": 4.8, "views_count": 12540, "video_id": "8oVN2PfRzOU", "exclusive": False},
+    {"id": "film15", "title": "Neon Dreams", "director": "Max Rivera", "duration_minutes": 22, "duration_type": "medium", "genre": "Thriller", "synopsis": "Dans les ruelles de Hong Kong, un hacker poursuit la vérité sur la mort de sa sœur. Cyberpunk poétique.", "poster_url": "https://images.unsplash.com/photo-1563089145-599997674d42?w=500&q=80", "year": 2024, "language": "zh", "episodes_count": 8, "content_type": "series", "tags": ["cyberpunk", "néon", "vengeance"], "rating": 4.4, "views_count": 18920, "video_id": "nWgNpB8R8fs", "exclusive": False},
+    {"id": "film16", "title": "Les Gardiens du Phare", "director": "Bjorn Eriksen", "duration_minutes": 35, "duration_type": "medium", "genre": "Drame", "synopsis": "Deux gardiens de phare isolés sur une île nordique. L'isolement révèle leurs secrets les plus sombres.", "poster_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&q=80", "year": 2024, "language": "no", "episodes_count": 1, "content_type": "film", "tags": ["isolement", "mer", "secrets"], "rating": 4.5, "views_count": 7650, "video_id": "dcZqgfekL9I", "exclusive": True},
+    {"id": "film17", "title": "Café Luna", "director": "Isabella Santos", "duration_minutes": 15, "duration_type": "medium", "genre": "Romance", "synopsis": "Chaque nuit, un café de Buenos Aires réunit des âmes perdues. Cinq histoires d'amour impossibles.", "poster_url": "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=500&q=80", "year": 2024, "language": "es", "episodes_count": 5, "content_type": "series", "tags": ["café", "nuit", "rencontres"], "rating": 4.2, "views_count": 9870, "video_id": "K1KqcSLPhak", "exclusive": False},
+    {"id": "film18", "title": "Metro Boulot Dodo", "director": "Pierre Dumont", "duration_minutes": 25, "duration_type": "medium", "genre": "Comédie", "synopsis": "Les tribulations absurdes de cinq Parisiens dans le métro. Humour noir et tendresse.", "poster_url": "https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 10, "content_type": "series", "tags": ["paris", "humour", "quotidien"], "rating": 4.0, "views_count": 21340, "video_id": "b9fL7JKrFEU", "exclusive": False},
+    
+    # === COURTS MÉTRAGES (< 10 min) ===
+    {"id": "film3", "title": "Nuit Blanche", "director": "Emma Lefebvre", "duration_minutes": 6, "duration_type": "short", "genre": "Romance", "synopsis": "Une nuit d'insomnie transformée en rencontre inattendue. Un court métrage sur la solitude et la connexion humaine.", "poster_url": "https://images.unsplash.com/photo-1524985069026-dd778a71c7b4?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 1, "content_type": "short", "tags": ["nuit", "amour", "urban"], "rating": 4.7, "views_count": 22100, "video_id": "K1KqcSLPhak", "exclusive": False},
+    {"id": "film6", "title": "Au-delà du Cadre", "director": "Ryo Nakamura", "duration_minutes": 4, "duration_type": "short", "genre": "Thriller", "synopsis": "Quatre minutes. Une caméra. Un appartement vide. Ce qui se passe hors-champ est plus terrifiant que tout.", "poster_url": "https://images.unsplash.com/photo-1568111561564-08726a1563e1?w=500&q=80", "year": 2024, "language": "ja", "episodes_count": 1, "content_type": "short", "tags": ["tension", "minimaliste", "huis-clos"], "rating": 4.6, "views_count": 18900, "video_id": "nWgNpB8R8fs", "exclusive": False},
+    {"id": "film9", "title": "Silence d'Or", "director": "Ana Reyes", "duration_minutes": 8, "duration_type": "short", "genre": "Drame", "synopsis": "La dernière répétition d'un orchestre qui se dissout. En huit minutes, toute une vie musicale prend fin.", "poster_url": "https://images.unsplash.com/photo-1518929458119-e5bf444c30f4?w=500&q=80", "year": 2024, "language": "es", "episodes_count": 1, "content_type": "short", "tags": ["musique", "fin", "émotion"], "rating": 4.9, "views_count": 7650, "video_id": "8oVN2PfRzOU", "exclusive": False},
+    {"id": "film19", "title": "Premier Pas", "director": "Kofi Asante", "duration_minutes": 3, "duration_type": "short", "genre": "Drame", "synopsis": "Un enfant fait ses premiers pas. Son père pleure. Trois minutes de pure émotion universelle.", "poster_url": "https://images.unsplash.com/photo-1476703993599-0035a21b17a9?w=500&q=80", "year": 2024, "language": "en", "episodes_count": 1, "content_type": "short", "tags": ["famille", "enfance", "émotion"], "rating": 4.9, "views_count": 45230, "video_id": "UtF6Jej8yb4", "exclusive": False},
+    {"id": "film20", "title": "Le Dernier Message", "director": "Clara Wei", "duration_minutes": 5, "duration_type": "short", "genre": "Thriller", "synopsis": "Un homme reçoit un message vocal de lui-même. Il a 24 heures pour empêcher sa propre mort.", "poster_url": "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=500&q=80", "year": 2024, "language": "en", "episodes_count": 1, "content_type": "short", "tags": ["suspense", "temps", "mystère"], "rating": 4.5, "views_count": 28760, "video_id": "aF4M0JtoIPk", "exclusive": False},
+    {"id": "film21", "title": "Couleurs d'Automne", "director": "Marie Duval", "duration_minutes": 7, "duration_type": "short", "genre": "Romance", "synopsis": "Deux inconnus partagent un banc dans un parc en automne. Sans un mot, tout est dit.", "poster_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=500&q=80", "year": 2024, "language": "fr", "episodes_count": 1, "content_type": "short", "tags": ["automne", "silence", "rencontre"], "rating": 4.4, "views_count": 15670, "video_id": "K1KqcSLPhak", "exclusive": False},
+    {"id": "film22", "title": "404 Not Found", "director": "Alex Kim", "duration_minutes": 4, "duration_type": "short", "genre": "Science-Fiction", "synopsis": "Dans un monde où les humains peuvent être supprimés comme des fichiers, une erreur système sauve une vie.", "poster_url": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=500&q=80", "year": 2024, "language": "ko", "episodes_count": 1, "content_type": "short", "tags": ["tech", "dystopie", "humanité"], "rating": 4.7, "views_count": 32450, "video_id": "wxN1T1uxQ2g", "exclusive": True},
+    {"id": "film23", "title": "Le Goût du Café", "director": "Hassan Ali", "duration_minutes": 6, "duration_type": "short", "genre": "Drame", "synopsis": "Un réfugié retrouve le goût de son pays dans une tasse de café préparée par un inconnu.", "poster_url": "https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=500&q=80", "year": 2024, "language": "ar", "episodes_count": 1, "content_type": "short", "tags": ["exil", "mémoire", "humanité"], "rating": 4.8, "views_count": 19870, "video_id": "dcZqgfekL9I", "exclusive": False},
+    {"id": "film24", "title": "Loop", "director": "Nina Voronova", "duration_minutes": 5, "duration_type": "short", "genre": "Fantasy", "synopsis": "Une danseuse revit la même minute encore et encore. Seule la perfection peut la libérer.", "poster_url": "https://images.unsplash.com/photo-1508700929628-666bc8bd84ea?w=500&q=80", "year": 2024, "language": "ru", "episodes_count": 1, "content_type": "short", "tags": ["danse", "boucle", "perfection"], "rating": 4.6, "views_count": 24560, "video_id": "8oVN2PfRzOU", "exclusive": False},
+    {"id": "film25", "title": "Gravité Zéro", "director": "Tom Fischer", "duration_minutes": 8, "duration_type": "short", "genre": "Science-Fiction", "synopsis": "Seul dans une station spatiale, un astronaute reçoit un appel de sa fille. Connexion fragile dans l'infini.", "poster_url": "https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=500&q=80", "year": 2024, "language": "de", "episodes_count": 1, "content_type": "short", "tags": ["espace", "famille", "solitude"], "rating": 4.7, "views_count": 31240, "video_id": "Scxs7L0vhZ4", "exclusive": False},
+    
+    # === NOUVEAUTÉS EXCLUSIVES PREMIUM ===
+    {"id": "film26", "title": "Miroirs Brisés", "director": "Elena Vasquez", "duration_minutes": 68, "duration_type": "long", "genre": "Thriller", "synopsis": "Une psychologue découvre que tous ses patients partagent le même rêve. La frontière entre réalité et illusion s'effondre.", "poster_url": "https://images.unsplash.com/photo-1509347528160-9a9e33742cdb?w=500&q=80", "year": 2025, "language": "es", "episodes_count": 6, "content_type": "series", "tags": ["psychologie", "rêve", "mystère"], "rating": 4.8, "views_count": 3240, "video_id": "nWgNpB8R8fs", "exclusive": True, "premium_only": True},
+    {"id": "film27", "title": "L'Archipel des Âmes", "director": "Kenji Watanabe", "duration_minutes": 85, "duration_type": "long", "genre": "Fantasy", "synopsis": "Sur des îles flottantes, les morts et les vivants coexistent. Un jeune marin cherche sa mère disparue.", "poster_url": "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?w=500&q=80", "year": 2025, "language": "ja", "episodes_count": 10, "content_type": "series", "tags": ["fantasy", "mort", "quête"], "rating": 4.9, "views_count": 2890, "video_id": "ByeHaZL2K7A", "exclusive": True, "premium_only": True},
+    {"id": "film28", "title": "Signal", "director": "Petra Novak", "duration_minutes": 5, "duration_type": "short", "genre": "Science-Fiction", "synopsis": "Premier contact. Cinq minutes pour décider si l'humanité répond au signal extraterrestre.", "poster_url": "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=500&q=80", "year": 2025, "language": "en", "episodes_count": 1, "content_type": "short", "tags": ["alien", "décision", "humanité"], "rating": 4.7, "views_count": 1560, "video_id": "wxN1T1uxQ2g", "exclusive": True, "premium_only": True},
 ]
 
 MOCK_USERS = [
@@ -432,12 +457,19 @@ async def get_post(post_id: str):
 @api_router.post("/seed")
 async def seed_data():
     users_count = await db.users.count_documents({})
-    if users_count > 0:
+    films_count = await db.films.count_documents({})
+    logger.info(f"Seed check - Users: {users_count}, Films: {films_count}")
+    if users_count > 0 or films_count > 0:
         return {"message": "Data already seeded", "seeded": False}
+    
+    logger.info(f"Seeding {len(MOCK_FILMS)} films...")
     for f in MOCK_FILMS:
         await db.films.insert_one(dict(f))
+    
+    logger.info(f"Seeding {len(MOCK_USERS)} users...")
     for u in MOCK_USERS:
         await db.users.insert_one(dict(u))
+    
     for r in MOCK_REVIEWS:
         await db.reviews.insert_one(dict(r))
     for p in MOCK_POSTS:
@@ -445,11 +477,103 @@ async def seed_data():
     # Mark films seen for users
     for fid in ["film1", "film3", "film4", "film6"]:
         await db.films_seen.insert_one({"id": str(uuid.uuid4()), "user_id": "user1", "film_id": fid, "created_at": datetime.now(timezone.utc).isoformat()})
+    
+    logger.info("Seed completed!")
     return {"message": "Data seeded successfully", "seeded": True}
+
+# ─── Watch History & Progress ─────────────────────────────────────────────────
+
+@api_router.get("/watch-history")
+async def get_watch_history(user_id: str, limit: int = 20):
+    history = await db.watch_history.find({"user_id": user_id}, {"_id": 0}).sort("watched_at", -1).limit(limit).to_list(limit)
+    for h in history:
+        film = await db.films.find_one({"id": h["film_id"]}, {"_id": 0})
+        h["film"] = film
+    return history
+
+@api_router.post("/watch-history")
+async def add_watch_history(data: dict):
+    user_id = data.get("user_id")
+    film_id = data.get("film_id")
+    progress = data.get("progress", 0)
+    episode_number = data.get("episode_number")
+    
+    # Upsert watch history
+    existing = await db.watch_history.find_one({"user_id": user_id, "film_id": film_id})
+    if existing:
+        await db.watch_history.update_one(
+            {"user_id": user_id, "film_id": film_id},
+            {"$set": {"progress": progress, "watched_at": datetime.now(timezone.utc).isoformat(), "episode_number": episode_number}}
+        )
+    else:
+        await db.watch_history.insert_one({
+            "id": str(uuid.uuid4()),
+            "user_id": user_id,
+            "film_id": film_id,
+            "progress": progress,
+            "episode_number": episode_number,
+            "watched_at": datetime.now(timezone.utc).isoformat()
+        })
+    return {"success": True}
+
+@api_router.get("/continue-watching")
+async def get_continue_watching(user_id: str, limit: int = 10):
+    # Get films with progress < 95%
+    history = await db.watch_history.find(
+        {"user_id": user_id, "progress": {"$lt": 95, "$gt": 0}},
+        {"_id": 0}
+    ).sort("watched_at", -1).limit(limit).to_list(limit)
+    
+    for h in history:
+        film = await db.films.find_one({"id": h["film_id"]}, {"_id": 0})
+        h["film"] = film
+    return history
+
+# ─── Premium & Recommendations ────────────────────────────────────────────────
+
+@api_router.get("/recommendations")
+async def get_recommendations(user_id: str = None, limit: int = 10):
+    # Get films not seen by user, sorted by rating
+    seen_ids = []
+    if user_id:
+        seen = await db.films_seen.find({"user_id": user_id}, {"film_id": 1}).to_list(100)
+        seen_ids = [s["film_id"] for s in seen]
+    
+    films = await db.films.find(
+        {"id": {"$nin": seen_ids}, "premium_only": {"$ne": True}},
+        {"_id": 0}
+    ).sort("rating", -1).limit(limit).to_list(limit)
+    return films
+
+@api_router.get("/premium-content")
+async def get_premium_content():
+    films = await db.films.find({"exclusive": True}, {"_id": 0}).to_list(20)
+    return {
+        "exclusive_films": films,
+        "features": {
+            "no_ads": True,
+            "hd_quality": True,
+            "offline_downloads": True,
+            "early_access": True,
+            "multiple_devices": 4
+        },
+        "price": {"monthly": 3.99, "yearly": 39.99, "currency": "EUR"}
+    }
+
+@api_router.get("/new-releases")
+async def get_new_releases(limit: int = 10):
+    films = await db.films.find({"year": {"$gte": 2024}}, {"_id": 0}).sort("views_count", -1).limit(limit).to_list(limit)
+    return films
+
+@api_router.get("/genres")
+async def get_genres():
+    films = await db.films.find({}, {"genre": 1}).to_list(100)
+    genres = list(set(f["genre"] for f in films if f.get("genre")))
+    return sorted(genres)
 
 @api_router.get("/")
 async def root():
-    return {"message": "UNIVERSE API v1.0", "status": "ok"}
+    return {"message": "UNIVERSE API v2.0", "status": "ok", "features": ["streaming", "social", "premium"]}
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 app.include_router(api_router)
