@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
-  ActivityIndicator, Dimensions,
+  ActivityIndicator, Dimensions, Linking, Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { getPremiumStatus, activatePremium, PREMIUM_PLANS, PremiumStatus } from '../services/premium';
+import { stripeService, SUBSCRIPTION_PLANS } from '../services/stripe';
+import { useAuth } from '../contexts/AuthContext';
 
 const { width } = Dimensions.get('window');
 
@@ -23,14 +25,24 @@ const PREMIUM_FEATURES = [
 
 export default function PremiumScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ session_id?: string; success?: string; cancelled?: string }>();
+  const { user } = useAuth();
   const [status, setStatus] = useState<PremiumStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [activating, setActivating] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<'premium' | 'premium_annual'>('premium');
+  const [selectedPlan, setSelectedPlan] = useState<'premium_monthly' | 'premium_annual'>('premium_monthly');
+  const [paymentChecking, setPaymentChecking] = useState(false);
 
   useEffect(() => {
     loadStatus();
   }, []);
+
+  // Check for return from Stripe
+  useEffect(() => {
+    if (params.session_id && params.success === 'true') {
+      checkPaymentStatus(params.session_id);
+    }
+  }, [params.session_id, params.success]);
 
   async function loadStatus() {
     const s = await getPremiumStatus();
@@ -38,21 +50,51 @@ export default function PremiumScreen() {
     setLoading(false);
   }
 
+  async function checkPaymentStatus(sessionId: string) {
+    setPaymentChecking(true);
+    try {
+      stripeService.pollPaymentStatus(
+        sessionId,
+        async (paymentStatus) => {
+          // Payment successful
+          const newStatus = await activatePremium(selectedPlan === 'premium_monthly' ? 'premium' : 'premium_annual');
+          setStatus(newStatus);
+          setPaymentChecking(false);
+          Alert.alert(
+            '🎉 Bienvenue dans Premium!',
+            'Votre abonnement est maintenant actif. Profitez de tous les avantages!',
+            [{ text: 'Explorer', onPress: () => router.push('/(tabs)') }]
+          );
+        },
+        (error) => {
+          setPaymentChecking(false);
+          Alert.alert('Erreur', error.message);
+        }
+      );
+    } catch (e: any) {
+      setPaymentChecking(false);
+      Alert.alert('Erreur', e.message);
+    }
+  }
+
   async function handleActivate() {
     setActivating(true);
     try {
-      // Simulate payment process
-      await new Promise(r => setTimeout(r, 1500));
-      const newStatus = await activatePremium(selectedPlan);
-      setStatus(newStatus);
-      Alert.alert(
-        '🎉 Bienvenue dans Premium!',
-        'Votre abonnement est maintenant actif. Profitez de tous les avantages!',
-        [{ text: 'Explorer', onPress: () => router.back() }]
+      const originUrl = stripeService.getOriginUrl();
+      const session = await stripeService.createCheckoutSession(
+        selectedPlan,
+        user?.id || 'guest',
+        originUrl
       );
+      
+      // Open Stripe Checkout
+      if (Platform.OS === 'web') {
+        window.location.href = session.url;
+      } else {
+        await Linking.openURL(session.url);
+      }
     } catch (e: any) {
-      Alert.alert('Erreur', e.message || 'Impossible d\'activer l\'abonnement');
-    } finally {
+      Alert.alert('Erreur', e.message || 'Impossible de créer la session de paiement');
       setActivating(false);
     }
   }

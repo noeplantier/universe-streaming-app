@@ -573,7 +573,176 @@ async def get_genres():
 
 @api_router.get("/")
 async def root():
-    return {"message": "UNIVERSE API v2.0", "status": "ok", "features": ["streaming", "social", "premium"]}
+    return {"message": "UNIVERSE API v2.0", "status": "ok", "features": ["streaming", "social", "premium", "payments"]}
+
+# ─── Stripe Payments ───────────────────────────────────────────────────────────
+
+from fastapi import Request
+
+# Subscription Plans (fixed pricing - never accept from frontend)
+SUBSCRIPTION_PLANS = {
+    "premium_monthly": {"name": "Premium Mensuel", "price": 3.99, "currency": "eur", "period": "month"},
+    "premium_annual": {"name": "Premium Annuel", "price": 39.99, "currency": "eur", "period": "year"},
+}
+
+@api_router.post("/payments/checkout")
+async def create_checkout_session(request: Request, data: dict):
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
+    
+    plan_id = data.get("plan_id")
+    user_id = data.get("user_id", "guest")
+    origin_url = data.get("origin_url", "")
+    
+    if plan_id not in SUBSCRIPTION_PLANS:
+        raise HTTPException(400, "Invalid subscription plan")
+    
+    plan = SUBSCRIPTION_PLANS[plan_id]
+    
+    # Get Stripe API key from environment
+    stripe_api_key = os.environ.get("STRIPE_API_KEY", "sk_test_emergent")
+    
+    # Build URLs dynamically
+    success_url = f"{origin_url}/premium?session_id={{CHECKOUT_SESSION_ID}}&success=true"
+    cancel_url = f"{origin_url}/premium?cancelled=true"
+    
+    # Webhook URL
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    
+    try:
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+        
+        checkout_request = CheckoutSessionRequest(
+            amount=float(plan["price"]),
+            currency=plan["currency"],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "plan_id": plan_id,
+                "user_id": user_id,
+                "plan_name": plan["name"],
+            }
+        )
+        
+        session = await stripe_checkout.create_checkout_session(checkout_request)
+        
+        # Save payment transaction
+        await db.payment_transactions.insert_one({
+            "id": str(uuid.uuid4()),
+            "session_id": session.session_id,
+            "user_id": user_id,
+            "plan_id": plan_id,
+            "amount": plan["price"],
+            "currency": plan["currency"],
+            "payment_status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        
+        return {"url": session.url, "session_id": session.session_id}
+        
+    except Exception as e:
+        logger.error(f"Stripe checkout error: {e}")
+        raise HTTPException(500, f"Payment error: {str(e)}")
+
+@api_router.get("/payments/status/{session_id}")
+async def get_payment_status(session_id: str):
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+    
+    stripe_api_key = os.environ.get("STRIPE_API_KEY", "sk_test_emergent")
+    
+    try:
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url="")
+        status = await stripe_checkout.get_checkout_status(session_id)
+        
+        # Update transaction in database
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {
+                "payment_status": status.payment_status,
+                "status": status.status,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }}
+        )
+        
+        # If payment successful, update user premium status
+        if status.payment_status == "paid":
+            transaction = await db.payment_transactions.find_one({"session_id": session_id})
+            if transaction and transaction.get("user_id") != "guest":
+                user_id = transaction["user_id"]
+                plan_id = transaction.get("plan_id", "premium_monthly")
+                
+                # Calculate expiration date
+                if plan_id == "premium_annual":
+                    expires_at = datetime.now(timezone.utc) + timedelta(days=365)
+                else:
+                    expires_at = datetime.now(timezone.utc) + timedelta(days=30)
+                
+                await db.users.update_one(
+                    {"id": user_id},
+                    {"$set": {
+                        "is_premium": True,
+                        "premium_expires_at": expires_at.isoformat(),
+                        "premium_plan": plan_id,
+                    }}
+                )
+        
+        return {
+            "status": status.status,
+            "payment_status": status.payment_status,
+            "amount_total": status.amount_total,
+            "currency": status.currency,
+            "metadata": status.metadata,
+        }
+        
+    except Exception as e:
+        logger.error(f"Payment status error: {e}")
+        raise HTTPException(500, f"Status check error: {str(e)}")
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+    
+    stripe_api_key = os.environ.get("STRIPE_API_KEY", "sk_test_emergent")
+    
+    try:
+        body = await request.body()
+        signature = request.headers.get("Stripe-Signature", "")
+        
+        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url="")
+        webhook_response = await stripe_checkout.handle_webhook(body, signature)
+        
+        logger.info(f"Stripe webhook: {webhook_response.event_type} - {webhook_response.session_id}")
+        
+        # Update transaction based on webhook
+        if webhook_response.session_id:
+            await db.payment_transactions.update_one(
+                {"session_id": webhook_response.session_id},
+                {"$set": {
+                    "payment_status": webhook_response.payment_status,
+                    "webhook_event": webhook_response.event_type,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }}
+            )
+        
+        return {"received": True}
+        
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"received": False, "error": str(e)}
+
+# ─── Push Token ────────────────────────────────────────────────────────────────
+
+@api_router.post("/users/{user_id}/push-token")
+async def save_push_token(user_id: str, data: dict):
+    push_token = data.get("push_token")
+    if not push_token:
+        raise HTTPException(400, "push_token required")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"push_token": push_token, "push_token_updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"success": True}
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 app.include_router(api_router)
