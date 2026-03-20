@@ -26,25 +26,46 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
+// Guest user for bypass auth mode
+const GUEST_USER: User = {
+  id: 'guest',
+  username: 'Invité',
+  email: 'guest@universe.com',
+  avatar_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&q=80',
+  bio: 'Bienvenue dans UNIVERSE 🌌',
+  role: 'viewer',
+  followers_count: 0,
+  following_count: 0,
+  films_seen_count: 0,
+  reviews_count: 0,
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkToken();
+    autoLogin();
   }, []);
 
-  async function checkToken() {
+  async function autoLogin() {
     try {
+      // Check for existing token first
       const savedToken = await tokenAPI.get();
       if (savedToken) {
         setToken(savedToken);
         const me = await authAPI.me();
         setUser(me);
+      } else {
+        // Auto-login as guest for seamless experience
+        setUser(GUEST_USER);
+        setToken('guest-token');
       }
     } catch {
-      await tokenAPI.remove();
+      // Fallback to guest user
+      setUser(GUEST_USER);
+      setToken('guest-token');
     } finally {
       setLoading(false);
     }
@@ -66,8 +87,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function logout() {
     await tokenAPI.remove();
-    setToken(null);
-    setUser(null);
+    // Return to guest mode instead of null
+    setToken('guest-token');
+    setUser(GUEST_USER);
   }
 
   function updateUser(data: Partial<User>) {

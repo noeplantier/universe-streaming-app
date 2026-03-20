@@ -10,26 +10,11 @@ import { COLORS, RADIUS, GRADIENTS } from '../constants/theme';
 
 const { width, height } = Dimensions.get('window');
 
-// Mock YouTube video IDs for demo (independent cinema trailers)
-const DEMO_VIDEO_IDS = [
-  'dQw4w9WgXcQ', // Placeholder - would be real indie film trailers
-  'L_jWHffIx5E',
-  'YoHD9XEInc0',
-  'fJ9rUzIMcZQ',
-  '2Vv-BfVoq4g',
-];
-
-function getVideoId(filmId: string): string {
-  // In production, this would fetch from your backend
-  // For demo, we use deterministic selection based on film ID
-  const index = filmId.charCodeAt(filmId.length - 1) % DEMO_VIDEO_IDS.length;
-  return DEMO_VIDEO_IDS[index];
-}
-
 interface Props {
   filmId: string;
   filmTitle: string;
   posterUrl: string;
+  videoId?: string;
   onClose?: () => void;
 }
 
@@ -44,13 +29,14 @@ export function VideoPlayerButton({ filmId, filmTitle, onPress }: { filmId: stri
   );
 }
 
-export default function VideoPlayer({ filmId, filmTitle, posterUrl, onClose }: Props) {
+export default function VideoPlayer({ filmId, filmTitle, posterUrl, videoId, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const webViewRef = useRef<WebView>(null);
 
-  const videoId = getVideoId(filmId);
-  const embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1&controls=1`;
+  // Use provided videoId or fallback to a default
+  const actualVideoId = videoId || 'aF4M0JtoIPk';
+  const embedUrl = `https://www.youtube.com/embed/${actualVideoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1&controls=1`;
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -94,7 +80,7 @@ export default function VideoPlayer({ filmId, filmTitle, posterUrl, onClose }: P
         {loading && (
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Chargement de la vidéo...</Text>
+            <Text style={styles.loadingText}>Chargement...</Text>
           </View>
         )}
 
@@ -122,15 +108,24 @@ export default function VideoPlayer({ filmId, filmTitle, posterUrl, onClose }: P
         )}
       </View>
 
-      {/* Bottom Info */}
+      {/* Bottom Controls */}
       <View style={styles.bottomInfo}>
-        <View style={styles.infoRow}>
-          <Ionicons name="information-circle-outline" size={18} color={COLORS.textTertiary} />
-          <Text style={styles.infoText}>Contenu de démonstration — Vidéo YouTube intégrée</Text>
+        <View style={styles.controlsRow}>
+          <TouchableOpacity style={styles.controlBtn}>
+            <Ionicons name="play-skip-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.controlBtn}>
+            <View style={styles.pauseBtn}>
+              <Ionicons name="pause" size={28} color="#fff" />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.controlBtn}>
+            <Ionicons name="play-skip-forward" size={24} color="#fff" />
+          </TouchableOpacity>
         </View>
-        <Text style={styles.disclaimer}>
-          En production, ce lecteur diffuserait le contenu original du film depuis votre CDN.
-        </Text>
+        <View style={styles.progressBar}>
+          <View style={styles.progressFill} />
+        </View>
       </View>
     </View>
   );
@@ -195,9 +190,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  infoText: { color: COLORS.textTertiary, fontSize: 12, flex: 1 },
-  disclaimer: { color: COLORS.textTertiary, fontSize: 11, lineHeight: 16 },
+  controlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 32, marginBottom: 16 },
+  controlBtn: { padding: 8 },
+  pauseBtn: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+  progressBar: { height: 4, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden' },
+  progressFill: { width: '35%', height: '100%', backgroundColor: COLORS.primary, borderRadius: 2 },
   playButton: { flex: 1 },
   playBtnGrad: {
     flexDirection: 'row',

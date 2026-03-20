@@ -4,7 +4,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants/theme';
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
 
   if (loading) {
     return (
@@ -14,9 +14,6 @@ export default function Index() {
     );
   }
 
-  if (user) {
-    return <Redirect href="/(tabs)" />;
-  }
-
-  return <Redirect href="/(auth)/welcome" />;
+  // Always redirect to tabs - bypass auth for streaming experience
+  return <Redirect href="/(tabs)" />;
 }

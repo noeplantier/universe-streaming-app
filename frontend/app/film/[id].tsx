@@ -16,7 +16,8 @@ interface Film {
   id: string; title: string; director: string; duration_minutes: number;
   duration_type: string; genre: string; synopsis: string; poster_url: string;
   year: number; language: string; rating: number; views_count: number;
-  tags?: string[]; content_type: string;
+  tags?: string[]; content_type: string; episodes_count?: number;
+  video_id?: string; trailer_url?: string;
 }
 interface Review {
   id: string; user_id: string; content: string; rating: number;
@@ -319,6 +320,7 @@ export default function FilmDetailScreen() {
         filmId={film.id}
         filmTitle={film.title}
         posterUrl={film.poster_url}
+        videoId={film.video_id}
       />
     </View>
   );
