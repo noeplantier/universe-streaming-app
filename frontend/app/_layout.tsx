@@ -6,6 +6,7 @@ import { View, ActivityIndicator } from 'react-native';
 import { COLORS } from '../constants/theme';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+
 function RootLayoutNav() {
   const { loading } = useAuth();
 

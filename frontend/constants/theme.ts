@@ -1,82 +1,118 @@
-import { Dimensions } from 'react-native';
-
-export const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// ─────────────────────────────────────────────
+//  UNIVERSE — Design Tokens  (Galaxy Aesthetic)
+// ─────────────────────────────────────────────
 
 export const COLORS = {
-  background: '#000000',
-  surface: '#0B0014',
-  surfaceHighlight: '#1A052E',
-  primary: '#8C2EBA',
-  secondary: '#240056',
-  border: 'rgba(140, 46, 186, 0.3)',
-  borderLight: 'rgba(140, 46, 186, 0.15)',
-  textPrimary: '#FFFFFF',
-  textSecondary: '#B0A0C0',
-  textTertiary: '#685080',
-  success: '#00E096',
-  error: '#FF3B30',
-  warning: '#FFD60A',
-  overlay: 'rgba(0,0,0,0.6)',
-  glass: 'rgba(11, 0, 20, 0.7)',
+  // Backgrounds — deep space
+  background:     '#080010',
+  backgroundMid:  '#0D0020',
+  backgroundDeep: '#050008',
+  surface:        '#110022',
+  surfaceElevated:'#180030',
+  surfaceGlass:   'rgba(255,255,255,0.04)',
+
+  // Primary — nebula purple
+  primary:        '#9B3FDE',
+  primaryLight:   '#C060FF',
+  primaryDark:    '#6B1FB0',
+  primaryGlow:    'rgba(155,63,222,0.35)',
+
+  // Accent — electric violet
+  accent:         '#BF5FFF',
+  accentGlow:     'rgba(191,95,255,0.4)',
+
+  // Star white
+  starWhite:      '#F0E8FF',
+
+  // Text
+  textPrimary:    '#F0E8FF',
+  textSecondary:  'rgba(240,232,255,0.65)',
+  textTertiary:   'rgba(240,232,255,0.38)',
+  textDisabled:   'rgba(240,232,255,0.22)',
+
+  // Semantic
+  success:  '#34D399',
+  warning:  '#FBBF24',
+  error:    '#F87171',
+  gold:     '#FFD60A',
+
+  // Borders
+  border:       'rgba(155,63,222,0.25)',
+  borderLight:  'rgba(255,255,255,0.08)',
+  borderGlow:   'rgba(155,63,222,0.6)',
 };
 
 export const GRADIENTS = {
-  primary: ['#8C2EBA', '#240056'] as const,
-  galaxy: ['#240056', '#000000'] as const,
-  heroOverlay: ['transparent', 'rgba(0,0,0,0.95)'] as const,
-  cardOverlay: ['transparent', 'rgba(0,0,0,0.8)'] as const,
-  surface: ['#1A052E', '#0B0014'] as const,
-  purpleGlow: ['rgba(140, 46, 186, 0.4)', 'transparent'] as const,
+  primary:       ['#7B2FBE', '#C060FF'] as const,
+  primaryGlow:   ['#9B3FDE', '#E080FF'] as const,
+  darkOverlay:   ['transparent', 'rgba(8,0,16,0.97)'] as const,
+  cardOverlay:   ['transparent', 'rgba(8,0,16,0.92)'] as const,
+  heroOverlay:   ['rgba(8,0,16,0.1)', 'rgba(8,0,16,0.92)'] as const,
+  galaxy:        ['#1A0035', '#08001A', '#000010'] as const,
+  nebula:        ['#240056', '#8C2EBA', '#000000'] as const,
+  surface:       ['rgba(155,63,222,0.12)', 'rgba(8,0,16,0.6)'] as const,
+  goldStar:      ['#FFD60A', '#FF9500'] as const,
 };
 
 export const SPACING = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
-  screenEdge: 20,
+  xs:          4,
+  sm:          8,
+  md:          12,
+  lg:          16,
+  xl:          20,
+  xxl:         28,
+  screenEdge:  18,
 };
 
 export const RADIUS = {
-  sm: 8,
-  md: 12,
-  lg: 20,
-  xl: 28,
-  full: 9999,
+  sm:   8,
+  md:   14,
+  lg:   20,
+  xl:   28,
+  full: 999,
 };
 
 export const SHADOWS = {
-  neonGlow: {
-    shadowColor: '#8C2EBA',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 10,
-    elevation: 5,
+  primary: {
+    shadowColor:   '#9B3FDE',
+    shadowOffset:  { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius:  16,
+    elevation:     12,
   },
   card: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor:   '#000',
+    shadowOffset:  { width: 0, height: 8 },
     shadowOpacity: 0.5,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowRadius:  16,
+    elevation:     10,
   },
 };
 
-export const DURATION_LABELS: Record<string, string> = {
-  short: 'Court Métrage',
-  medium: 'Moyen Métrage',
-  long: 'Long Métrage',
+export const TYPOGRAPHY = {
+  display:    { fontSize: 32, fontWeight: '900' as const, letterSpacing: -0.5, color: COLORS.textPrimary },
+  h1:         { fontSize: 26, fontWeight: '800' as const, letterSpacing: -0.3, color: COLORS.textPrimary },
+  h2:         { fontSize: 20, fontWeight: '800' as const, letterSpacing: -0.2, color: COLORS.textPrimary },
+  h3:         { fontSize: 16, fontWeight: '700' as const, color: COLORS.textPrimary },
+  body:       { fontSize: 14, fontWeight: '400' as const, lineHeight: 21, color: COLORS.textSecondary },
+  caption:    { fontSize: 11, fontWeight: '500' as const, color: COLORS.textTertiary },
+  label:      { fontSize: 10, fontWeight: '800' as const, letterSpacing: 2, color: COLORS.textTertiary },
 };
 
 export const GENRE_COLORS: Record<string, string> = {
-  Thriller: '#FF6B6B',
-  Romance: '#FF8FAB',
-  Drame: '#A78BFA',
-  Fantasy: '#34D399',
-  'Science-Fiction': '#60A5FA',
-  Documentaire: '#FBBF24',
-  Horreur: '#EF4444',
-  Comédie: '#F59E0B',
+  'Thriller':         '#DC2626',
+  'Drame':            '#2563EB',
+  'Romance':          '#DB2777',
+  'Fantasy':          '#7C3AED',
+  'Science-Fiction':  '#0891B2',
+  'Documentaire':     '#059669',
+  'Horreur':          '#991B1B',
+  'Comédie':          '#D97706',
+  'Action':           '#EA580C',
+};
+
+export const DURATION_LABELS: Record<string, string> = {
+  short:  '< 10 min',
+  medium: '10–40 min',
+  long:   '40+ min',
 };

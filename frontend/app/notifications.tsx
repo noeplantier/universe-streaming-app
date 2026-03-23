@@ -79,7 +79,7 @@ export default function NotificationsScreen() {
                 </View>
                 <View style={styles.notifContent}>
                   <Text style={styles.notifMessage}>{item.message}</Text>
-                  <Text style={styles.notifTime}>À l'instant</Text>
+                  <Text style={styles.notifTime}>À l&aposinstant</Text>
                 </View>
                 {item.avatar && (
                   <Image source={{ uri: item.avatar }} style={styles.notifAvatar} />

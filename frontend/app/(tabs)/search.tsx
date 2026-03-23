@@ -159,7 +159,7 @@ export default function SearchScreen() {
             <View style={styles.emptyContainer}>
               <Ionicons name="film-outline" size={48} color={COLORS.textTertiary} />
               <Text style={styles.emptyText}>Aucun film trouvé</Text>
-              <Text style={styles.emptySubText}>Essayez d'autres filtres</Text>
+              <Text style={styles.emptySubText}>Essayez d&aposautres filtres</Text>
             </View>
           }
         />
