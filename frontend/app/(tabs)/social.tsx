@@ -1,276 +1,388 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// ═══════════════════════════════════════════════════════════════════
+//  social.tsx — UNIVERSE  /  Communauté & Débats
+//  ─────────────────────────────────────────────────────────────────
+//  Réseau social dédié au cinéma indépendant.
+//  Base graphique : Galaxy System (identique Search).
+//  Performance : Animated FlatList + Memoization.
+// ═══════════════════════════════════════════════════════════════════
+
+import React, {
+  useState, useEffect, useRef, useMemo,
+  useCallback, memo,
+} from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  FlatList, RefreshControl, ActivityIndicator, Modal, KeyboardAvoidingView, Platform, TextInput, Alert,
+  View, Text, StyleSheet, Image, TouchableOpacity,
+  TextInput, Animated, Easing, Dimensions, ActivityIndicator,
+  StatusBar, FlatList, RefreshControl
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../../constants/theme';
-import { postsAPI } from '../../services/api';
-import { useAuth } from '../../contexts/AuthContext';
-import GlobalHeader from '../../components/GlobalHeader';
+import { SafeAreaView }   from 'react-native-safe-area-context';
+import { Ionicons }       from '@expo/vector-icons';
+import { useRouter }      from 'expo-router';
+import { SPACING, RADIUS, COLORS } from '../../constants/theme';
+import { postsAPI } from '../../services/api'; // Assurez-vous d'avoir ce service ou simulez-le
 
-interface Post {
-  id: string; user_id: string; content: string; film_id?: string;
-  likes_count: number; liked_by?: string[]; comments_count: number; created_at: string;
-  user?: { id: string; username: string; avatar_url: string; role: string };
-  film?: { id: string; title: string; poster_url: string; genre: string };
-}
+const { width: W, height: H } = Dimensions.get('window');
 
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  return `${Math.floor(hrs / 24)}j`;
-}
+// ─── Constants ─────────────────────────────────────────────────────
+const EDGE      = SPACING.screenEdge ?? 18;
+const AVATAR_SZ = 44;
 
-const ROLE_BADGES: Record<string, { label: string; color: string; bg: string }> = {
-  director: { label: '🎬 Réalisateur', color: COLORS.primary, bg: 'rgba(140,46,186,0.15)' },
-  critic:   { label: '✍️ Critique',    color: '#FFD60A',        bg: 'rgba(255,214,10,0.15)' },
-  creator:  { label: '⭐ Créateur',    color: '#00E096',        bg: 'rgba(0,224,150,0.15)' },
-  viewer:   { label: '👁️ Spectateur', color: COLORS.textTertiary, bg: 'rgba(255,255,255,0.08)' },
+// ─── Palette Galaxy (Identique Search) ─────────────────────────────
+const G = {
+  bg0: '#060010',  bg1: '#0A001E',  bg2: '#070014',
+  neb0: 'rgba(108,16,195,0.32)', neb1: 'rgba(172,24,160,0.20)',
+  neb2: 'rgba(22, 14,185,0.16)', neb3: 'rgba(55,  0, 95,0.26)',
+  sW: '#F3EDFF',  sB: '#B2CCFF',
+  sG: '#FFE270',  sP: '#CF98FF',  sCy: '#86EEFF',
+  glass: 'rgba(255,255,255,0.056)',
+  glassBorder: 'rgba(255,255,255,0.09)',
+  primary: '#C060FF',
 };
 
-function PostCard({ post, currentUserId, onLike, onComment, onUserPress }: {
-  post: Post; currentUserId?: string;
-  onLike: (id: string) => void;
-  onComment: (post: Post) => void;
-  onUserPress: (userId: string) => void;
-}) {
+// ─── Badges Rôles ──────────────────────────────────────────────────
+const ROLES: Record<string, { label:string; color:string; bg:string }> = {
+  director: { label:'PROD',      color:'#FFD60A', bg:'rgba(255,214,10,0.15)' },
+  critic:   { label:'CRITIQUE',  color:'#86EEFF', bg:'rgba(134,238,255,0.15)' },
+  dop:      { label:'IMAGE',     color:'#CF98FF', bg:'rgba(207,152,255,0.15)' },
+  viewer:   { label:'',          color:'transparent', bg:'transparent' },
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  ░░░  GALAXY ANIMATION ENGINE (Portage Intégral)  ░░░
+// ═══════════════════════════════════════════════════════════════════
+
+const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
+const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+
+interface Pt  { id:number; x:number; y:number; sz:number; col:string; del:number; dur:number; mn:number; mx:number; }
+interface Met { id:number; sx:number; sy:number; ang:number; len:number; }
+
+// Génération statique
+const STARS: Pt[] = Array.from({ length: 50 }, (_, i) => ({
+  id:i, x:rnd(0,W), y:rnd(0,H*1.5), sz:rnd(1.0,2.3),
+  col:pick([G.sW,G.sB,G.sP,G.sG]), del:rnd(0,4200), dur:rnd(2000,5000), mn:0.25, mx:0.95,
+}));
+
+// Composant Étoile
+const StarDot = memo(({ p }: { p:Pt }) => {
+  const op = useRef(new Animated.Value(p.mn)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.delay(p.del % p.dur),
+      Animated.timing(op, { toValue:p.mx, duration:p.dur*0.5, useNativeDriver:true }),
+      Animated.timing(op, { toValue:p.mn, duration:p.dur*0.5, useNativeDriver:true }),
+    ])).start();
+  }, []); // eslint-disable-line
+  return <Animated.View style={{ position:'absolute', left:p.x, top:p.y, width:p.sz, height:p.sz, borderRadius:p.sz, backgroundColor:p.col, opacity:op }} />;
+});
+StarDot.displayName = 'StarDot';
+
+// Composant Météore
+const ShootingStar = memo(({ m, onDone }: { m:Met; onDone:()=>void }) => {
+  const prog = useRef(new Animated.Value(0)).current;
+  const op   = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(op, { toValue:1, duration:100, useNativeDriver:true }),
+        Animated.timing(op, { toValue:0, duration:500, delay:200, useNativeDriver:true }),
+      ]),
+      Animated.timing(prog, { toValue:1, duration:800, easing:Easing.out(Easing.quad), useNativeDriver:true }),
+    ]).start(onDone);
+  }, []); // eslint-disable-line
+  const tx = prog.interpolate({ inputRange:[0,1], outputRange:[0, Math.cos(m.ang*Math.PI/180)*200] });
+  const ty = prog.interpolate({ inputRange:[0,1], outputRange:[0, Math.sin(m.ang*Math.PI/180)*200] });
+  return (
+    <Animated.View style={{ position:'absolute', left:m.sx, top:m.sy, opacity:op, transform:[{translateX:tx},{translateY:ty},{rotate:`${m.ang}deg`}] }}>
+      <LinearGradient colors={['rgba(255,255,255,0)','rgba(175,110,255,0.8)','#fff']} start={{x:0,y:0}} end={{x:1,y:0}} style={{width:m.len,height:2,borderRadius:1}} />
+    </Animated.View>
+  );
+});
+ShootingStar.displayName = 'ShootingStar';
+
+// Gestionnaire Météores
+const GalaxyBackground = memo(() => {
+  const [meteors, setMeteors] = useState<Met[]>([]);
+  useEffect(() => {
+    const i = setInterval(() => {
+      if(Math.random()>0.7) setMeteors(m => [...m, { id:Date.now(), sx:rnd(0,W), sy:rnd(0,H*0.4), ang:rnd(20,50), len:rnd(80,150) }]);
+    }, 2000);
+    return () => clearInterval(i);
+  }, []);
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <LinearGradient colors={[G.bg0,G.bg1,G.bg2]} style={StyleSheet.absoluteFill} />
+      {STARS.map(s => <StarDot key={s.id} p={s} />)}
+      {meteors.map(m => <ShootingStar key={m.id} m={m} onDone={()=>setMeteors(prev=>prev.filter(x=>x.id!==m.id))} />)}
+    </View>
+  );
+});
+GalaxyBackground.displayName = 'GalaxyBackground';
+
+// ═══════════════════════════════════════════════════════════════════
+//  ░░░  COMPOSANTS UI  ░░░
+// ═══════════════════════════════════════════════════════════════════
+
+// ─── Header Principal ──────────────────────────────────────────────
+const SocialHeader = memo(() => (
+  <View style={h.row}>
+    <View>
+      <Text style={h.title}>Communauté</Text>
+      <Text style={h.sub}>Le QG du cinéma indé</Text>
+    </View>
+   
+  </View>
+));
+SocialHeader.displayName = 'SocialHeader';
+
+const h = StyleSheet.create({
+  row: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:EDGE, paddingTop:10, paddingBottom:16 },
+  title: { fontSize:28, fontWeight:'800', color:G.sW, letterSpacing:-0.5 },
+  sub: { fontSize:12, color:G.sB, opacity:0.6, marginTop:2 },
+  actions: { flexDirection:'row', gap:10 },
+  btn: { width:40, height:40, borderRadius:20, bg:G.glass, borderWidth:1, borderColor:G.glassBorder, alignItems:'center', justifyContent:'center', backgroundColor:'rgba(255,255,255,0.06)' },
+  dot: { position:'absolute', top:10, right:10, width:8, height:8, borderRadius:4, backgroundColor:'#FF3B30', borderWidth:1.5, borderColor:G.bg1 },
+});
+
+
+
+const cp = StyleSheet.create({
+  wrap: { flexDirection:'row', paddingHorizontal:EDGE, gap:12, marginBottom:20, alignItems:'center' },
+  avi: { width:42, height:42, borderRadius:21, borderWidth:1, borderColor:'rgba(255,255,255,0.2)' },
+  box: { flex:1, height:44, borderRadius:22, backgroundColor:G.glass, borderWidth:1, borderColor:G.glassBorder, flexDirection:'row', alignItems:'center', paddingHorizontal:16, justifyContent:'space-between' },
+  ph: { color:'rgba(237,232,255,0.4)', fontSize:14 },
+});
+
+// ─── Tabs Filtres ──────────────────────────────────────────────────
+const TABS = ['Pour vous', 'Abonnements', 'Tendances'];
+function FilterTabs({ active, set }: { active:string; set:(a:string)=>void }) {
+  return (
+    <View style={ft.row}>
+      {TABS.map(t => {
+        const on = active===t;
+        return (
+          <TouchableOpacity key={t} onPress={()=>set(t)} style={[ft.pill, on && ft.pillOn]}>
+            <Text style={[ft.txt, on && ft.txtOn]}>{t}</Text>
+            {on && <View style={ft.line} />}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  root: { flex:1, backgroundColor:G.bg0 },
+});
+const ft = StyleSheet.create({
+  row: { flexDirection:'row', paddingHorizontal:EDGE, gap:20, marginBottom:8, borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.1)', paddingBottom:0 },
+  pill: { paddingBottom:14, alignItems:'center' },
+  pillOn: {},
+  txt: { color:'rgba(237,232,255,0.5)', fontSize:15, fontWeight:'600' },
+  txtOn: { color:G.sW, fontWeight:'700' },
+  line: { position:'absolute', bottom:0, width:'100%', height:2, backgroundColor:G.primary, borderRadius:2 },
+});
+
+// ─── Carte de Post (The Core) ──────────────────────────────────────
+interface PostData {
+  id:string; user:{name:string; handle:string; avi:string; role:string};
+  content:string; time:string; likes:number; comments:number; film?:{title:string; poster:string; year:string};
+}
+
+const PostCard = memo(({ post }: { post:PostData }) => {
   const router = useRouter();
-  const isLiked = post.liked_by?.includes(currentUserId || '') || false;
-  const roleMeta = ROLE_BADGES[post.user?.role || 'viewer'];
+  const [liked, setLiked] = useState(false);
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const toggleLike = () => {
+    setLiked(!liked);
+    Animated.sequence([
+      Animated.spring(scale, { toValue:1.2, useNativeDriver:true, speed:50 }),
+      Animated.spring(scale, { toValue:1, useNativeDriver:true, speed:50 }),
+    ]).start();
+  };
+
+  const role = ROLES[post.user.role] || ROLES.viewer;
 
   return (
-    <View testID={`post-${post.id}`} style={styles.postCard}>
-      <TouchableOpacity onPress={() => post.user && onUserPress(post.user.id)} style={styles.postHeader}>
-        <Image source={{ uri: post.user?.avatar_url || '' }} style={styles.postAvatar} />
-        <View style={{ flex: 1 }}>
-          <View style={styles.usernameRow}>
-            <Text style={styles.postUsername}>{post.user?.username}</Text>
-            <View style={[styles.roleBadge, { backgroundColor: roleMeta.bg }]}>
-              <Text style={[styles.roleBadgeText, { color: roleMeta.color }]}>{roleMeta.label}</Text>
+    <View style={pc.root}>
+      {/* Header User */}
+      <View style={pc.head}>
+        <Image source={{ uri:post.user.avi }} style={pc.avi} />
+        <View style={{flex:1}}>
+          <View style={{flexDirection:'row', alignItems:'center', gap:6}}>
+            <Text style={pc.name}>{post.user.name}</Text>
+            {role.label !== '' && (
+              <View style={[pc.badge, { backgroundColor:role.bg }]}>
+                <Text style={[pc.badgeTxt, { color:role.color }]}>{role.label}</Text>
+              </View>
+            )}
+            <Text style={pc.handle}>@{post.user.handle} • {post.time}</Text>
+          </View>
+        </View>
+        <Ionicons name="ellipsis-horizontal" size={18} color="rgba(255,255,255,0.4)" />
+      </View>
+
+      {/* Content */}
+      <Text style={pc.content}>{post.content}</Text>
+
+      {/* Embedded Film (Optional) */}
+      {post.film && (
+        <TouchableOpacity style={pc.filmEmbed} activeOpacity={0.9} onPress={()=>router.push(`/film/1`)}>
+          <Image source={{ uri:post.film.poster }} style={pc.filmPoster} />
+          <View style={pc.filmInfo}>
+            <Text style={pc.filmTitle}>{post.film.title}</Text>
+            <Text style={pc.filmMeta}>Film • {post.film.year}</Text>
+            <View style={pc.watchBtn}>
+              <Ionicons name="play" size={10} color="#000" />
+              <Text style={pc.watchTxt}>Voir</Text>
             </View>
           </View>
-          <Text style={styles.postTime}>{timeAgo(post.created_at)}</Text>
-        </View>
-        <Ionicons name="ellipsis-horizontal" size={18} color={COLORS.textTertiary} />
-      </TouchableOpacity>
-
-      <Text style={styles.postContent}>{post.content}</Text>
-
-      {post.film && (
-        <TouchableOpacity onPress={() => router.push(`/film/${post.film!.id}`)} style={styles.filmRef}>
-          <Image source={{ uri: post.film.poster_url }} style={styles.filmRefImage} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.filmRefTitle} numberOfLines={1}>{post.film.title}</Text>
-            <Text style={styles.filmRefGenre}>{post.film.genre}</Text>
-          </View>
-          <Ionicons name="play-circle" size={26} color={COLORS.primary} />
+          <View style={pc.blurBg} />
         </TouchableOpacity>
       )}
 
-      <View style={styles.postActions}>
-        <TouchableOpacity testID={`like-${post.id}`} onPress={() => onLike(post.id)} style={styles.actionBtn}>
-          <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={22} color={isLiked ? '#FF3B30' : COLORS.textSecondary} />
-          <Text style={[styles.actionCount, isLiked && { color: '#FF3B30' }]}>{post.likes_count}</Text>
+      {/* Actions */}
+      <View style={pc.actions}>
+        <TouchableOpacity style={pc.actBtn} onPress={toggleLike}>
+          <Animated.View style={{ transform:[{scale}] }}>
+            <Ionicons name={liked?"heart":"heart-outline"} size={20} color={liked?"#FF453A":"rgba(237,232,255,0.5)"} />
+          </Animated.View>
+          <Text style={[pc.actTxt, liked&&{color:'#FF453A'}]}>{post.likes + (liked?1:0)}</Text>
         </TouchableOpacity>
-        <TouchableOpacity testID={`comment-${post.id}`} onPress={() => onComment(post)} style={styles.actionBtn}>
-          <Ionicons name="chatbubble-outline" size={20} color={COLORS.textSecondary} />
-          <Text style={styles.actionCount}>{post.comments_count}</Text>
+        <TouchableOpacity style={pc.actBtn}>
+          <Ionicons name="chatbubble-outline" size={19} color="rgba(237,232,255,0.5)" />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn}>
-          <Ionicons name="share-social-outline" size={20} color={COLORS.textSecondary} />
-          <Text style={styles.actionCount}>Partager</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push(`/post/${post.id}`)} style={styles.actionBtn}>
-          <Ionicons name="open-outline" size={18} color={COLORS.textTertiary} />
-          <Text style={styles.actionCount}>Ouvrir</Text>
+        <TouchableOpacity style={pc.actBtn}>
+          <Ionicons name="share-social-outline" size={19} color="rgba(237,232,255,0.5)" />
         </TouchableOpacity>
       </View>
     </View>
   );
-}
+});
+PostCard.displayName = 'PostCard';
+
+
+const pc = StyleSheet.create({
+  root: { padding:EDGE, borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.06)' },
+  head: { flexDirection:'row', gap:10, marginBottom:8 },
+  avi:  { width:AVATAR_SZ, height:AVATAR_SZ, borderRadius:AVATAR_SZ/2, borderWidth:1, borderColor:'rgba(255,255,255,0.1)' },
+  name: { color:G.sW, fontWeight:'700', fontSize:15 },
+  handle:{ color:'rgba(237,232,255,0.4)', fontSize:12 },
+  badge: { paddingHorizontal:5, paddingVertical:2, borderRadius:4 },
+  badgeTxt:{ fontSize:9, fontWeight:'800' },
+  content:{ color:'rgba(237,232,255,0.9)', fontSize:15, lineHeight:22, marginBottom:12 },
+  
+  // Film Embed
+  filmEmbed: { flexDirection:'row', height:80, borderRadius:12, overflow:'hidden', backgroundColor:'rgba(255,255,255,0.03)', borderWidth:1, borderColor:'rgba(255,255,255,0.08)', marginBottom:12 },
+  filmPoster:{ width:56, height:'100%', resizeMode:'cover' },
+  filmInfo:  { flex:1, padding:10, justifyContent:'center' },
+  filmTitle: { color:'#fff', fontWeight:'700', fontSize:14 },
+  filmMeta:  { color:'rgba(255,255,255,0.5)', fontSize:11, marginTop:2, marginBottom:6 },
+  watchBtn:  { flexDirection:'row', alignItems:'center', backgroundColor:G.sG, paddingHorizontal:8, paddingVertical:3, borderRadius:99, alignSelf:'flex-start', gap:3 },
+  watchTxt:  { fontSize:10, fontWeight:'700', color:'#000' },
+  blurBg:    { ...StyleSheet.absoluteFillObject, backgroundColor:'rgba(0,0,0,0.3)', zIndex:-1 },
+
+  // Actions
+  actions: { flexDirection:'row', justifyContent:'space-between', paddingRight:40, marginTop:4 },
+  actBtn:  { flexDirection:'row', alignItems:'center', gap:6 },
+  actTxt:  { color:'rgba(237,232,255,0.5)', fontSize:13 },
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  ░░░  ECRAN PRINCIPAL  ░░░
+// ═══════════════════════════════════════════════════════════════════
 
 export default function SocialScreen() {
-  const router = useRouter();
-  const { user } = useAuth();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('Pour vous');
   const [refreshing, setRefreshing] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [newContent, setNewContent] = useState('');
-  const [posting, setPosting] = useState(false);
-  const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
+  const [posts, setPosts] = useState<PostData[]>([]);
 
-  const fetchPosts = useCallback(async () => {
-    try { const data = await postsAPI.getAll(); setPosts(data || []); }
-    catch {} finally { setLoading(false); setRefreshing(false); }
+  // Simulation Data Load
+  const loadPosts = useCallback(() => {
+    // Fake API delays
+    setTimeout(() => {
+      setPosts([
+        {
+          id:'1', user:{name:'Nolan R.', handle:'cinenolan', avi:'https://i.pravatar.cc/150?u=a042581f4e29026024d', role:'director'},
+          content:'La photographie dans "The Lighthouse" est une masterclass de contraste. Le ration 1.19:1 enferme littéralement les personnages. Des avis ? 🎥',
+          time:'2h', likes:1240, comments:85,
+          film:{title:'The Lighthouse', poster:'https://image.tmdb.org/t/p/w200/3nk9UoepYmv1G9oP18q6JJCeYMB.jpg', year:'2019'}
+        },
+        {
+          id:'2', user:{name:'Sarah K.', handle:'sarah_cuts', avi:'https://i.pravatar.cc/150?u=a042581f4e29026704d', role:'critic'},
+          content:'Je reviens de Cannes. Le cinéma coréen est encore en train de redéfinir les codes du thriller. Incroyable énergie.',
+          time:'4h', likes:856, comments:42
+        },
+        {
+          id:'3', user:{name:'Marc D.', handle:'marcdop', avi:'https://i.pravatar.cc/150?u=a04258114e29026302d', role:'dop'},
+          content:'Petit thread sur l’utilisation des lentilles anamorphiques chez Wes Anderson 👇',
+          time:'5h', likes:2100, comments:120,
+          film:{title:'Asteroid City', poster:'https://image.tmdb.org/t/p/w200/qfgysK1I5s2m86e1hQY6k3qK5q8.jpg', year:'2023'}
+        },
+        {
+
+          id:'4', user:{name:'Julie M.', handle:'julie_viewer', avi:'https://i.pravatar.cc/150?u=a042581f4e29026502d', role:'viewer'},
+          content:'Quelqu’un a vu le dernier film de Céline Sciamma ? J’ai adoré la narration visuelle, c’est du grand art.',
+          time:'6h', likes:430, comments:18,
+          film:{title:'Petite Maman', poster:'https://image.tmdb.org/t/p/w200/8jHqvXnXlG9Z2nQeBzZtXjYp5s.jpg', year:'2021'}
+        },
+        {
+          id:'5', user:{name:'Alex P.', handle:'alexcinephile', avi:'https://i.pravatar.cc/150?u=a042581f4e29026102d', role:'viewer'},
+          content:'Thread : les meilleurs films de science-fiction des 20 dernières années. Prêts ? 🚀',
+          time:'8h', likes:980, comments:60,
+          film:{title:'Ex Machina', poster:'https://image.tmdb.org/t/p/w200/4yFoXqD3qL2aYpUjYlFvQ9r5sA.jpg', year:'2014'}
+        },
+        {
+          id:'6', user:{name:'Emma L.', handle:'emma_cinephile', avi:'https://i.pravatar.cc/150?u=a042581f4e29026602d', role:'viewer'},
+          content:'Je viens de découvrir "The Farewell" de Lulu Wang. Un mélange parfait d’humour et d’émotion. À voir absolument !',
+          time:'10h', likes:670, comments:30,
+          film:{title:'The Farewell', poster:'https://image.tmdb.org/t/p/w200/1E5aYlXq8bLzjH2rjZt9l7sK3.jpg', year:'2019'}
+        }
+      ]);
+      setRefreshing(false);
+    }, 1000);
   }, []);
 
-  useEffect(() => { fetchPosts(); }, [fetchPosts]);
+  useEffect(() => { loadPosts(); }, []);
 
-  async function handleLike(postId: string) {
-    if (!user) return;
-    try {
-      await postsAPI.like(postId);
-      setLikedPosts(prev => { const n = new Set(prev); n.has(postId) ? n.delete(postId) : n.add(postId); return n; });
-      setPosts(prev => prev.map(p => p.id === postId ? { ...p, likes_count: likedPosts.has(postId) ? p.likes_count - 1 : p.likes_count + 1 } : p));
-    } catch {}
-  }
+  const onRefresh = () => { setRefreshing(true); loadPosts(); };
 
-  function handleComment(post: Post) {
-    router.push(`/post/${post.id}`);
-  }
-
-  async function handlePost() {
-    if (!newContent.trim()) return;
-    setPosting(true);
-    try {
-      const post = await postsAPI.create({ content: newContent.trim() });
-      setPosts(prev => [{ ...post, user: { id: user!.id, username: user!.username, avatar_url: user!.avatar_url, role: user!.role } }, ...prev]);
-      setNewContent('');
-      setShowCreate(false);
-    } catch (e: any) { Alert.alert('Erreur', e.message); }
-    finally { setPosting(false); }
-  }
-
-  const STORIES = posts.slice(0, 7).map(p => p.user).filter(Boolean);
+  // Scroll Sync
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   return (
-    <View style={styles.container}>
-      <SafeAreaView edges={['top']}>
-        <GlobalHeader notificationCount={2} />
-      </SafeAreaView>
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" />
+      <GalaxyBackground />
 
-      {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      ) : (
-        <FlatList
+      <SafeAreaView style={{flex:1}} edges={['top']}>
+        {/* En-tête Fixe */}
+        <SocialHeader />
+
+        {/* Liste Feed */}
+        <Animated.FlatList
           data={posts}
           keyExtractor={item => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchPosts(); }} tintColor={COLORS.primary} />}
-          renderItem={({ item }) => (
-            <PostCard post={item} currentUserId={user?.id} onLike={handleLike} onComment={handleComment} onUserPress={(uid) => router.push(`/user/${uid}`)} />
-          )}
+          renderItem={({ item }) => <PostCard post={item} />}
+          contentContainerStyle={{ paddingBottom:100 }}
+          onScroll={Animated.event([{nativeEvent:{contentOffset:{y:scrollY}}}],{useNativeDriver:false})}
+          
           ListHeaderComponent={
-            <>
-              {/* Social header row */}
-              <View style={styles.socialHeader}>
-                <Text style={styles.socialTitle}>Social</Text>
-                <TouchableOpacity testID="social-create-btn" onPress={() => setShowCreate(true)}>
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.createBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Ionicons name="add" size={18} color="#fff" />
-                    <Text style={styles.createBtnText}>Poster</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
+            <View>
+              <FilterTabs active={tab} set={setTab} />
+            </View>
+          }
 
-              {/* Stories row */}
-              <View style={styles.storiesRow}>
-                <Text style={styles.storiesLabel}>EN LIGNE</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: SPACING.screenEdge }}>
-                  {STORIES.map((u, i) => u && (
-                    <View key={i} style={styles.storyItem}>
-                      <LinearGradient colors={GRADIENTS.primary} style={styles.storyRing} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                        <Image source={{ uri: u.avatar_url }} style={styles.storyAvatar} />
-                      </LinearGradient>
-                      <Text style={styles.storyName} numberOfLines={1}>{u.username.slice(0, 9)}</Text>
-                    </View>
-                  ))}
-                </ScrollView>
-              </View>
-              <View style={styles.divider} />
-            </>
+         
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={G.primary} titleColor={G.primary} />
           }
         />
-      )}
-
-      {/* FAB */}
-      <TouchableOpacity testID="social-fab-btn" onPress={() => setShowCreate(true)} style={styles.fab}>
-        <LinearGradient colors={GRADIENTS.primary} style={styles.fabGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-          <Ionicons name="create-outline" size={24} color="#fff" />
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {/* Create Post Modal */}
-      <Modal visible={showCreate} transparent animationType="slide" onRequestClose={() => setShowCreate(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowCreate(false)}>
-            <View style={styles.createSheet} onStartShouldSetResponder={() => true}>
-              <View style={styles.sheetHandle} />
-              <Text style={styles.sheetTitle}>Nouveau Post</Text>
-              <View style={styles.createRow}>
-                <Image source={{ uri: user?.avatar_url }} style={styles.createAvatar} />
-                <TextInput
-                  testID="social-post-input"
-                  style={styles.postInput}
-                  placeholder="Partagez votre avis sur le cinéma indépendant..."
-                  placeholderTextColor={COLORS.textTertiary}
-                  value={newContent}
-                  onChangeText={setNewContent}
-                  multiline autoFocus
-                />
-              </View>
-              <TouchableOpacity testID="social-post-submit" onPress={handlePost} disabled={posting || !newContent.trim()} activeOpacity={0.85}>
-                <LinearGradient colors={!newContent.trim() ? ['#333','#222'] : GRADIENTS.primary} style={styles.postSubmitBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                  {posting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.postSubmitText}>Publier</Text>}
-                </LinearGradient>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </KeyboardAvoidingView>
-      </Modal>
+      </SafeAreaView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  socialHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.screenEdge, paddingVertical: 14 },
-  socialTitle: { fontSize: 22, fontWeight: '800', color: COLORS.textPrimary },
-  createBtn: { flexDirection: 'row', gap: 5, alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.full },
-  createBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
-  storiesRow: { paddingBottom: 14 },
-  storiesLabel: { fontSize: 10, fontWeight: '800', color: COLORS.textTertiary, letterSpacing: 2, paddingHorizontal: SPACING.screenEdge, marginBottom: 12 },
-  storyItem: { alignItems: 'center', gap: 6 },
-  storyRing: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  storyAvatar: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: COLORS.background },
-  storyName: { color: COLORS.textSecondary, fontSize: 10, maxWidth: 52, textAlign: 'center' },
-  divider: { height: 1, backgroundColor: COLORS.borderLight, marginHorizontal: SPACING.screenEdge },
-  postCard: { backgroundColor: COLORS.surface, marginHorizontal: SPACING.screenEdge, marginTop: 14, borderRadius: RADIUS.lg, padding: 14, borderWidth: 1, borderColor: COLORS.borderLight },
-  postHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  postAvatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, borderColor: COLORS.border },
-  usernameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  postUsername: { color: COLORS.textPrimary, fontSize: 14, fontWeight: '700' },
-  roleBadge: { borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 2 },
-  roleBadgeText: { fontSize: 10, fontWeight: '600' },
-  postTime: { color: COLORS.textTertiary, fontSize: 11, marginTop: 2 },
-  postContent: { color: COLORS.textPrimary, fontSize: 14, lineHeight: 22, marginBottom: 10 },
-  filmRef: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: RADIUS.md, padding: 10, gap: 10, marginBottom: 12, borderWidth: 1, borderColor: COLORS.borderLight },
-  filmRefImage: { width: 42, height: 58, borderRadius: 6 },
-  filmRefTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '600' },
-  filmRefGenre: { color: COLORS.textTertiary, fontSize: 11, marginTop: 2 },
-  postActions: { flexDirection: 'row', gap: 16, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.borderLight },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  actionCount: { color: COLORS.textSecondary, fontSize: 13 },
-  fab: { position: 'absolute', right: 20, bottom: 90, borderRadius: 28 },
-  fabGrad: { width: 56, height: 56, borderRadius: 28, alignItems: 'center', justifyContent: 'center' },
-  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
-  createSheet: { backgroundColor: '#0B0014', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40, borderTopWidth: 1, borderTopColor: COLORS.border },
-  sheetHandle: { width: 40, height: 4, borderRadius: 2, backgroundColor: COLORS.border, alignSelf: 'center', marginBottom: 20 },
-  sheetTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary, marginBottom: 16 },
-  createRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  createAvatar: { width: 40, height: 40, borderRadius: 20 },
-  postInput: { flex: 1, color: COLORS.textPrimary, fontSize: 15, minHeight: 80, textAlignVertical: 'top' },
-  postSubmitBtn: { borderRadius: RADIUS.full, paddingVertical: 14, alignItems: 'center' },
-  postSubmitText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-});
+

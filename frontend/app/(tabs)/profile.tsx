@@ -1,14 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-//  profile.tsx — UNIVERSE  /  Profil Utilisateur
-//  ─────────────────────────────────────────────────────────────────
-//  Design System: Identique à search.tsx (Galaxy Engine).
-//  Structure :
-//  ┌─ GalaxyCanvas           — Fond voie lactée animée (7 couches)
-//  ├─ ProfileHeader          — Avatar glow + Stats + Bio
-//  ├─ ActionButtons          — Modifier / Partager (Glassmorphism)
-//  ├─ ProfileTabs            — Vidéos · Shorts · Favoris
-//  └─ GridContent            — Mosaique de contenus
-// ═══════════════════════════════════════════════════════════════════
 
 import React, {
   useState, useEffect, useRef, useMemo,
@@ -98,26 +87,6 @@ const StarDot = memo(function StarDot({ p, bright }: { p:Pt; bright?:boolean }) 
   );
 });
 
-// Compo: Nébuleuse "Respirante"
-const NebulaBlob = memo(function NebulaBlob({ n }: { n:Neb }) {
-  const op = useRef(new Animated.Value(0.30)).current;
-  const sc = useRef(new Animated.Value(0.90)).current;
-  useEffect(() => {
-    const a = Animated.loop(Animated.sequence([
-      Animated.delay(n.del),
-      Animated.parallel([
-        Animated.timing(op, { toValue:0.90, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-        Animated.timing(sc, { toValue:1.12, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(op, { toValue:0.26, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-        Animated.timing(sc, { toValue:0.88, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-      ]),
-    ]));
-    a.start(); return () => a.stop();
-  }, []);
-  return <Animated.View style={{ position:'absolute', left:n.x, top:n.y, width:n.w, height:n.h, borderRadius:Math.max(n.w,n.h)*0.48, backgroundColor:n.col, opacity:op, transform:[{scale:sc}] }} />;
-});
 
 // Compo: Étoile Filante
 const ShootingStar = memo(function ShootingStar({ m, onDone }: { m:Met; onDone:()=>void }) {
@@ -169,7 +138,6 @@ MeteorManager.displayName = 'MeteorManager';
 const GalaxyCanvas = memo(() => (
   <View style={StyleSheet.absoluteFill} pointerEvents="none">
     <LinearGradient colors={[G.bg0,G.bg1,G.bg2,G.bg0]} locations={[0,0.3,0.7,1]} style={StyleSheet.absoluteFill} />
-    { NEBULAE.map((n,i) => <NebulaBlob key={i} n={n} />) }
     { DUST.map(p => <StarDot key={`d${p.id}`} p={p} />) }
     { STARS.map(p => <StarDot key={`s${p.id}`} p={p} />) }
     { BRIGHT.map(p => <StarDot key={`b${p.id}`} p={p} bright />) }
@@ -364,17 +332,12 @@ export default function ProfileScreen() {
           <Animated.View style={[StyleSheet.absoluteFill, styles.headerGlass, { opacity: headerOpacity }]} />
           
           <View style={styles.headerRow}>
-             <TouchableOpacity onPress={()=>router.back()} style={styles.iconBtn}>
-               <Ionicons name="arrow-back" size={24} color="#FFF" />
-             </TouchableOpacity>
-             
+         
              <Animated.Text style={[styles.headerTitle, { opacity: headerOpacity }]}>
                {USER.handle}
              </Animated.Text>
 
-             <TouchableOpacity style={styles.iconBtn}>
-               <Ionicons name="settings-outline" size={22} color="#FFF" />
-             </TouchableOpacity>
+           
           </View>
         </View>
       </SafeAreaView>
