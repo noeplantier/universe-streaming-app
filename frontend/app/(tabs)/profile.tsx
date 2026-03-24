@@ -1,249 +1,425 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// ═══════════════════════════════════════════════════════════════════
+//  profile.tsx — UNIVERSE  /  Profil Utilisateur
+//  ─────────────────────────────────────────────────────────────────
+//  Design System: Identique à search.tsx (Galaxy Engine).
+//  Structure :
+//  ┌─ GalaxyCanvas           — Fond voie lactée animée (7 couches)
+//  ├─ ProfileHeader          — Avatar glow + Stats + Bio
+//  ├─ ActionButtons          — Modifier / Partager (Glassmorphism)
+//  ├─ ProfileTabs            — Vidéos · Shorts · Favoris
+//  └─ GridContent            — Mosaique de contenus
+// ═══════════════════════════════════════════════════════════════════
+
+import React, {
+  useState, useEffect, useRef, useMemo,
+  useCallback, memo,
+} from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  FlatList, ActivityIndicator, Dimensions, RefreshControl,
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, Image, Animated,
+  Easing, Dimensions, StatusBar, SafeAreaView
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { COLORS, SPACING, RADIUS, GRADIENTS, GENRE_COLORS, DURATION_LABELS } from '../../constants/theme';
-import { reviewsAPI, seenAPI } from '../../services/api';
-import { useAuth } from '../../contexts/AuthContext';
-import GlobalHeader from '../../components/GlobalHeader';
 
-const { width } = Dimensions.get('window');
-const PROFILE_TABS = ['Top 10', 'Critiques', 'Films Vus', 'Réalisés'] as const;
-type ProfileTab = typeof PROFILE_TABS[number];
+const { width: W, height: H } = Dimensions.get('window');
 
-const TAB_TYPE_MAP: Record<ProfileTab, string> = {
-  'Top 10': 'top10',
-  'Critiques': 'critiques',
-  'Films Vus': 'seen',
-  'Réalisés': 'directed',
+// ─── Design Tokens (Identiques à search.tsx pour consistance) ──────
+const SPACING = 18;
+const COL_GAP = 2; // Plus serré pour la grille profile
+const ITEM_W  = (W - COL_GAP * 2) / 3; // 3 colonnes pleines
+
+// Palette Galaxie
+const G = {
+  bg0: '#060010',  bg1: '#0A001E',  bg2: '#070014',
+  neb0: 'rgba(108,16,195,0.32)',
+  neb1: 'rgba(172,24,160,0.20)',
+  neb2: 'rgba(22, 14,185,0.16)',
+  neb3: 'rgba(55,  0, 95,0.26)',
+  sW: '#F3EDFF',  sB: '#B2CCFF',
+  sG: '#FFE270',  sP: '#CF98FF',  sCy: '#86EEFF',
+  primary: '#C060FF',
+  surface: 'rgba(255,255,255,0.06)',
 };
 
-interface Review {
-  id: string; film_id: string; content: string; rating: number;
-  likes_count: number; created_at: string;
-  film?: { id: string; title: string; poster_url: string; genre: string; duration_type: string };
-}
-interface Film {
-  id: string; title: string; poster_url: string; genre: string; duration_type: string; rating: number;
-}
+// ═══════════════════════════════════════════════════════════════════
+//  ░░░  GALAXY ANIMATION ENGINE (Ported from Search)  ░░░
+// ═══════════════════════════════════════════════════════════════════
 
-function StarRating({ rating, size = 13 }: { rating: number; size?: number }) {
+const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
+const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
+
+interface Pt  { id:number; x:number; y:number; sz:number; col:string; del:number; dur:number; mn:number; mx:number; }
+interface Neb { x:number; y:number; w:number; h:number; col:string; del:number; dur:number; }
+interface Met { id:number; sx:number; sy:number; ang:number; len:number; }
+
+// Configuration statique des particules
+const DUST: Pt[] = Array.from({ length: 50 }, (_, i) => ({
+  id:i, x:rnd(0,W), y:rnd(0,H), sz:rnd(0.35,1.05),
+  col:pick([G.sW,G.sW,G.sB]),
+  del:rnd(0,5800), dur:rnd(2600,6200), mn:0.05, mx:0.40,
+}));
+const STARS: Pt[] = Array.from({ length: 35 }, (_, i) => ({
+  id:i, x:rnd(0,W), y:rnd(0,H), sz:rnd(1.0,2.3),
+  col:pick([G.sW,G.sB,G.sP,G.sG,G.sW]),
+  del:rnd(0,4200), dur:rnd(1500,4000), mn:0.25, mx:0.95,
+}));
+const BRIGHT: Pt[] = Array.from({ length: 10 }, (_, i) => ({
+  id:i, x:rnd(0,W), y:rnd(0,H), sz:rnd(2.4,4.1),
+  col:pick([G.sW,G.sCy,G.sP]),
+  del:rnd(0,3000), dur:rnd(900,2800), mn:0.45, mx:1.0,
+}));
+const NEBULAE: Neb[] = [
+  { x:-80, y:-50,      w:300, h:240, col:G.neb0, del:0,    dur:5600 },
+  { x:W*0.6, y:H*0.2,  w:280, h:220, col:G.neb1, del:1600, dur:6300 },
+  { x:-40, y:H*0.5,    w:310, h:250, col:G.neb2, del:2900, dur:5900 },
+];
+
+// Compo: Point lumineux animé
+const StarDot = memo(function StarDot({ p, bright }: { p:Pt; bright?:boolean }) {
+  const op = useRef(new Animated.Value(p.mn)).current;
+  const sc = useRef(new Animated.Value(bright ? 0.7 : 1)).current;
+  useEffect(() => {
+    const tw = Animated.loop(Animated.sequence([
+      Animated.delay(p.del % p.dur),
+      Animated.timing(op, { toValue:p.mx, duration:p.dur*0.40, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
+      Animated.timing(op, { toValue:p.mn, duration:p.dur*0.60, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
+    ]));
+    tw.start();
+    return () => tw.stop();
+  }, []);
+  const gs = p.sz * 3.8; // Glow size
   return (
-    <View style={{ flexDirection: 'row', gap: 2 }}>
-      {[1,2,3,4,5].map(s => <Ionicons key={s} name={s <= Math.round(rating) ? 'star' : 'star-outline'} size={size} color="#FFD60A" />)}
+    <Animated.View style={{ position:'absolute', left:p.x, top:p.y, opacity:op, transform:bright?[{scale:sc}]:undefined }}>
+      {bright && <View style={{ position:'absolute', left:-gs/2, top:-gs/2, width:gs, height:gs, borderRadius:gs/2, backgroundColor:p.col, opacity:0.20 }} />}
+      <View style={{ width:p.sz, height:p.sz, borderRadius:p.sz/2, backgroundColor:p.col }} />
+    </Animated.View>
+  );
+});
+
+// Compo: Nébuleuse "Respirante"
+const NebulaBlob = memo(function NebulaBlob({ n }: { n:Neb }) {
+  const op = useRef(new Animated.Value(0.30)).current;
+  const sc = useRef(new Animated.Value(0.90)).current;
+  useEffect(() => {
+    const a = Animated.loop(Animated.sequence([
+      Animated.delay(n.del),
+      Animated.parallel([
+        Animated.timing(op, { toValue:0.90, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
+        Animated.timing(sc, { toValue:1.12, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
+      ]),
+      Animated.parallel([
+        Animated.timing(op, { toValue:0.26, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
+        Animated.timing(sc, { toValue:0.88, duration:n.dur, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
+      ]),
+    ]));
+    a.start(); return () => a.stop();
+  }, []);
+  return <Animated.View style={{ position:'absolute', left:n.x, top:n.y, width:n.w, height:n.h, borderRadius:Math.max(n.w,n.h)*0.48, backgroundColor:n.col, opacity:op, transform:[{scale:sc}] }} />;
+});
+
+// Compo: Étoile Filante
+const ShootingStar = memo(function ShootingStar({ m, onDone }: { m:Met; onDone:()=>void }) {
+  const prog = useRef(new Animated.Value(0)).current;
+  const op   = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const DUR = 750;
+    Animated.parallel([
+      Animated.sequence([
+        Animated.timing(op, { toValue:1, duration:DUR*0.1, useNativeDriver:true }),
+        Animated.timing(op, { toValue:0, duration:DUR*0.9, easing:Easing.in(Easing.quad), useNativeDriver:true }),
+      ]),
+      Animated.timing(prog, { toValue:1, duration:DUR, easing:Easing.out(Easing.quad), useNativeDriver:true }),
+    ]).start(({ finished }) => { if (finished) onDone(); });
+  }, []);
+  const rad = (m.ang * Math.PI) / 180;
+  // Trajectoire en diagonale
+  const tx  = prog.interpolate({ inputRange:[0,1], outputRange:[0, Math.cos(rad)*W*0.8] });
+  const ty  = prog.interpolate({ inputRange:[0,1], outputRange:[0, Math.sin(rad)*W*0.8] });
+  return (
+    <Animated.View style={{ position:'absolute', left:m.sx, top:m.sy, opacity:op, transform:[{translateX:tx},{translateY:ty},{rotate:`${m.ang}deg`}] }}>
+      <LinearGradient colors={['rgba(255,255,255,0)','rgba(192,96,255,0.8)','#FFF']} start={{x:0,y:0.5}} end={{x:1,y:0.5}} style={{ width:m.len, height:2, borderRadius:1 }} />
+      <View style={{ position:'absolute', right:0, top:-1, width:4, height:4, borderRadius:2, backgroundColor:'#fff', shadowColor:'#fff', shadowOpacity:1, shadowRadius:4 }} />
+    </Animated.View>
+  );
+});
+
+// Gestionnaire de météores
+const MeteorManager = memo(function MeteorManager() {
+  const [meteors, setMeteors] = useState<Met[]>([]);
+  const nxt = useRef(0);
+  useEffect(() => {
+    const loop = () => {
+      const timeout = setTimeout(() => {
+        setMeteors(p => [...p, { id:++nxt.current, sx:rnd(0,W), sy:rnd(0,H*0.4), ang:rnd(30,60), len:rnd(100,200) }]);
+        loop();
+      }, rnd(4000, 10000)); // Toutes les 4 à 10s
+      return timeout;
+    };
+    const t = loop();
+    return () => clearTimeout(t);
+  }, []);
+  const remove = useCallback((id:number) => setMeteors(p => p.filter(m=>m.id!==id)), []);
+  return <>{meteors.map(m => <ShootingStar key={m.id} m={m} onDone={()=>remove(m.id)} />)}</>;
+});
+MeteorManager.displayName = 'MeteorManager';
+
+// Canvas Global
+const GalaxyCanvas = memo(() => (
+  <View style={StyleSheet.absoluteFill} pointerEvents="none">
+    <LinearGradient colors={[G.bg0,G.bg1,G.bg2,G.bg0]} locations={[0,0.3,0.7,1]} style={StyleSheet.absoluteFill} />
+    { NEBULAE.map((n,i) => <NebulaBlob key={i} n={n} />) }
+    { DUST.map(p => <StarDot key={`d${p.id}`} p={p} />) }
+    { STARS.map(p => <StarDot key={`s${p.id}`} p={p} />) }
+    { BRIGHT.map(p => <StarDot key={`b${p.id}`} p={p} bright />) }
+    <MeteorManager />
+  </View>
+));
+GalaxyCanvas.displayName = 'GalaxyCanvas';
+
+// ═══════════════════════════════════════════════════════════════════
+//  ░░░  PROFILE COMPONENTS  ░░░
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Mock Data ──────────────────────────────────────────────────────
+const USER = {
+  name: "Noé Plantier",
+  handle: "@noe_universe",
+  bio: "Explorateur du cosmos numérique 🌌 | Créateur de contenu VR/AR | Ambassadeur Universe",
+  stats: { followers: "12.5k", following: "482", likes: "84k" },
+  avatar: "https://i.pravatar.cc/150?img=11"
+};
+
+const POSTS = Array.from({ length: 12 }, (_, i) => ({
+  id: i,
+  uri: `https://picsum.photos/400/600?random=${i}`,
+  views: Math.floor(Math.random() * 50000)
+}));
+
+// ── Stat Item ──────────────────────────────────────────────────────
+function StatBox({ label, val }: { label:string; val:string }) {
+  return (
+    <View style={st.box}>
+      <Text style={st.val}>{val}</Text>
+      <Text style={st.label}>{label}</Text>
     </View>
   );
 }
+const st = StyleSheet.create({
+  box:   { alignItems:'center' },
+  val:   { color:'#FFF', fontSize:18, fontWeight:'700', letterSpacing:0.5 },
+  label: { color:'rgba(237,232,255,0.5)', fontSize:12, marginTop:2 },
+});
+
+// ── Tabs ───────────────────────────────────────────────────────────
+const TABS = ['Vidéos', 'Shorts', 'Favoris'];
+function ProfileTabs({ active, onChange }: { active:string, onChange:(s:string)=>void }) {
+  return (
+    <View style={tb.row}>
+      {TABS.map(t => {
+        const isActive = active === t;
+        return (
+          <TouchableOpacity key={t} onPress={() => onChange(t)} style={tb.item}>
+            <Text style={[tb.txt, isActive && tb.txtActive]}>{t}</Text>
+            {isActive && <View style={tb.indicator} />}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+const tb = StyleSheet.create({
+  row: { flexDirection:'row', borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.1)', marginTop:20 },
+  item: { flex:1, alignItems:'center', paddingVertical:14 },
+  txt: { color:'rgba(255,255,255,0.4)', fontSize:14, fontWeight:'600', textTransform:'uppercase', letterSpacing:1 },
+  txtActive: { color:'#FFF' },
+  indicator: { position:'absolute', bottom:0, width:40, height:3, backgroundColor:G.primary, borderRadius:2 }
+});
+
+// ── Content Grid Item ──────────────────────────────────────────────
+const GridItem = memo(({ item, style }: { item:any, style?:any }) => (
+  <TouchableOpacity activeOpacity={0.8} style={[gd.item, style]}>
+    <Image source={{ uri: item.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={StyleSheet.absoluteFill} />
+    <View style={gd.meta}>
+      <Ionicons name="play-outline" size={12} color="#FFF" />
+      <Text style={gd.views}>{(item.views/1000).toFixed(1)}k</Text>
+    </View>
+  </TouchableOpacity>
+));
+
+GridItem.displayName = 'GridItem';
+
+const gd = StyleSheet.create({
+  item: { width:ITEM_W, height:ITEM_W*1.3, backgroundColor:'#1A0032', marginBottom:COL_GAP, marginRight:COL_GAP },
+  meta: { position:'absolute', bottom:6, left:6, flexDirection:'row', alignItems:'center', gap:4 },
+  views:{ color:'#E0E0E0', fontSize:10, fontWeight:'600' }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  ░░░  MAIN SCREEN  ░░░
+// ═══════════════════════════════════════════════════════════════════
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<ProfileTab>('Top 10');
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [seenFilms, setSeenFilms] = useState<Film[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState('Vidéos');
+  const scrollY = useRef(new Animated.Value(0)).current;
 
-  const loadData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const [revData, seenData] = await Promise.all([
-        reviewsAPI.getByUser(user.id),
-        seenAPI.getByUser(user.id),
-      ]);
-      setReviews(revData || []);
-      setSeenFilms(seenData || []);
-    } catch {} finally { setLoading(false); setRefreshing(false); }
-  }, [user]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  function formatN(n: number) {
-    return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : `${n}`;
-  }
-
-  function renderPreview() {
-    if (loading) return <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />;
-    const type = TAB_TYPE_MAP[activeTab];
-    const films = type === 'top10' ? (reviews.map(r => r.film).filter(Boolean) as Film[]).slice(0, 3)
-                : type === 'critiques' ? [] : seenFilms.slice(0, 3);
-
-    if (type === 'critiques') {
-      const preview = reviews.slice(0, 3);
-      if (!preview.length) return <EmptyPreview tab={activeTab} />;
-      return (
-        <View style={styles.previewList}>
-          {preview.map(rev => (
-            <TouchableOpacity key={rev.id} style={styles.reviewRow} onPress={() => rev.film && router.push(`/film/${rev.film.id}`)}>
-              {rev.film && <Image source={{ uri: rev.film.poster_url }} style={styles.reviewPoster} />}
-              <View style={{ flex: 1 }}>
-                {rev.film && <Text style={styles.reviewFilmTitle} numberOfLines={1}>{rev.film.title}</Text>}
-                <StarRating rating={rev.rating} />
-                <Text style={styles.reviewText} numberOfLines={2}>{rev.content}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-      );
-    }
-
-    if (!films.length) return <EmptyPreview tab={activeTab} />;
-    return (
-      <View style={styles.filmGrid}>
-        {films.map((film, i) => film && (
-          <TouchableOpacity key={film.id} style={styles.gridFilm} onPress={() => router.push(`/film/${film.id}`)}>
-            <Image source={{ uri: film.poster_url }} style={styles.gridFilmImage} />
-            <LinearGradient colors={GRADIENTS.cardOverlay} style={StyleSheet.absoluteFillObject} />
-            {activeTab === 'Top 10' && <Text style={styles.gridRank}>{i + 1}</Text>}
-            {activeTab === 'Films Vus' && (
-              <View style={styles.seenCheck}><Ionicons name="checkmark" size={12} color="#fff" /></View>
-            )}
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }
-
-  if (!user) return null;
+  // Header Animation
+  const headerHeight = 60;
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, 100],
+    outputRange: [0, 1],
+    extrapolate: 'clamp'
+  });
 
   return (
-    <View style={styles.container}>
-      <ScrollView
+    <View style={styles.root}>
+      <StatusBar barStyle="light-content" />
+      
+      {/* 1. LAYER ONE: GALAXY BACKGROUND */}
+      <GalaxyCanvas />
+
+      {/* 2. LAYER TWO: CONTENT SCROLL */}
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 120 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={COLORS.primary} />}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
       >
-        {/* Profile Header */}
-        <View style={styles.profileBg}>
-          <LinearGradient colors={['#240056', '#8C2EBA', '#000000']} style={StyleSheet.absoluteFillObject} locations={[0, 0.5, 1]} />
-          <SafeAreaView edges={['top']}>
-            <GlobalHeader notificationCount={2} />
-          </SafeAreaView>
+        {/* Espacement pour le fixed header transparent */}
+        <View style={{ height: 60 }} />
 
-          <View style={styles.profileContent}>
-            <View style={styles.avatarWrap}>
-              <LinearGradient colors={GRADIENTS.primary} style={styles.avatarRing} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-                <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
-              </LinearGradient>
-              <View style={styles.roleIconBadge}>
-                <Text style={{ fontSize: 10 }}>{user.role === 'director' ? '🎬' : user.role === 'critic' ? '✍️' : '👁️'}</Text>
-              </View>
-            </View>
-            <Text style={styles.username}>{user.username}</Text>
-            <Text style={styles.bio}>{user.bio}</Text>
+        {/* PROFILE HEADER INFO */}
+        <View style={styles.profileSection}>
+          
+          {/* Avatar Ring */}
+          <View style={styles.avatarContainer}>
+             <LinearGradient
+               colors={[G.primary, '#5A0090', G.sCy]}
+               start={{x:0, y:0}} end={{x:1, y:1}}
+               style={styles.avatarRing}
+             >
+               <View style={styles.avatarBg}>
+                 <Image source={{ uri: USER.avatar }} style={styles.avatarImg} />
+               </View>
+             </LinearGradient>
+             {/* Badge Pro */}
+             <View style={styles.badge}>
+               <Ionicons name="checkmark-circle" size={16} color={G.sCy} />
+             </View>
+          </View>
 
-            <View style={styles.statsRow}>
-              <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/category/[type]', params: { type: 'critiques', userId: user.id } })}>
-                <Text style={styles.statVal}>{user.reviews_count}</Text>
-                <Text style={styles.statLabel}>Critiques</Text>
-              </TouchableOpacity>
-              <View style={styles.statDivider} />
-              <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/category/[type]', params: { type: 'seen', userId: user.id } })}>
-                <Text style={styles.statVal}>{user.films_seen_count}</Text>
-                <Text style={styles.statLabel}>Films vus</Text>
-              </TouchableOpacity>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statVal}>{formatN(user.followers_count)}</Text>
-                <Text style={styles.statLabel}>Abonnés</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <Text style={styles.statVal}>{formatN(user.following_count)}</Text>
-                <Text style={styles.statLabel}>Abonnements</Text>
-              </View>
-            </View>
+          {/* Texts */}
+          <Text style={styles.name}>{USER.name}</Text>
+          <Text style={styles.handle}>{USER.handle}</Text>
+          
+          <Text style={styles.bio}>{USER.bio}</Text>
+
+          {/* Stats */}
+          <View style={styles.statsRow}>
+            <StatBox val={USER.stats.followers} label="Abonnés" />
+            <View style={styles.divider} />
+            <StatBox val={USER.stats.following} label="Suivi(e)s" />
+            <View style={styles.divider} />
+            <StatBox val={USER.stats.likes} label="J'aime" />
+          </View>
+
+          {/* Buttons */}
+          <View style={styles.btnRow}>
+            <TouchableOpacity style={[styles.btn, styles.btnPrimary]}>
+              <Text style={styles.btnTxtPrimary}>Modifier le profil</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.btn, styles.btnSecondary]}>
+              <Text style={styles.btnTxtSecondary}>Partager</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.btnIcon]}>
+              <Ionicons name="logo-instagram" size={20} color="#FFF" />
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Category Tabs */}
-        <View style={styles.tabsRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: SPACING.screenEdge, gap: 8 }}>
-            {PROFILE_TABS.map(tab => (
-              <TouchableOpacity
-                key={tab}
-                testID={`profile-tab-${tab}`}
-                onPress={() => setActiveTab(tab)}
-                style={[styles.tab, activeTab === tab && styles.tabActive]}
-              >
-                {activeTab === tab ? (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.tabGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Text style={[styles.tabText, { color: '#fff', fontWeight: '700' }]}>{tab}</Text>
-                  </LinearGradient>
-                ) : (
-                  <Text style={styles.tabText}>{tab}</Text>
-                )}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+        {/* TABS */}
+        <ProfileTabs active={activeTab} onChange={setActiveTab} />
+
+        {/* GRID */}
+        <View style={styles.gridContainer}>
+          {POSTS.map((p, i) => (
+             <GridItem key={p.id} item={p} 
+               style={{ marginRight: (i+1)%3 === 0 ? 0 : COL_GAP }} 
+             />
+          ))}
         </View>
 
-        {/* Preview Content + "Voir tout" */}
-        <View style={styles.previewSection}>
-          {renderPreview()}
+      </Animated.ScrollView>
 
-          <TouchableOpacity
-            testID={`see-all-${activeTab}`}
-            onPress={() => router.push({ pathname: '/category/[type]', params: { type: TAB_TYPE_MAP[activeTab], userId: user.id } })}
-            style={styles.seeAllBtn}
-          >
-            <Text style={styles.seeAllText}>Explorer tout — {activeTab}</Text>
-            <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
-          </TouchableOpacity>
+      {/* 3. LAYER THREE: FIXED HEADER */}
+      <SafeAreaView style={styles.fixedHeaderSafeArea} pointerEvents="box-none">
+        <View style={styles.fixedHeader}>
+          {/* Glass background that fades in */}
+          <Animated.View style={[StyleSheet.absoluteFill, styles.headerGlass, { opacity: headerOpacity }]} />
+          
+          <View style={styles.headerRow}>
+             <TouchableOpacity onPress={()=>router.back()} style={styles.iconBtn}>
+               <Ionicons name="arrow-back" size={24} color="#FFF" />
+             </TouchableOpacity>
+             
+             <Animated.Text style={[styles.headerTitle, { opacity: headerOpacity }]}>
+               {USER.handle}
+             </Animated.Text>
+
+             <TouchableOpacity style={styles.iconBtn}>
+               <Ionicons name="settings-outline" size={22} color="#FFF" />
+             </TouchableOpacity>
+          </View>
         </View>
-      </ScrollView>
+      </SafeAreaView>
+
     </View>
   );
 }
 
-function EmptyPreview({ tab }: { tab: ProfileTab }) {
-  return (
-    <View style={styles.emptyPreview}>
-      <Text style={styles.emptyPreviewText}>Aucun contenu dans {tab}</Text>
-    </View>
-  );
-}
-
+// ─── Styles ────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  profileBg: { paddingBottom: 24 },
-  profileContent: { alignItems: 'center', paddingHorizontal: SPACING.screenEdge, paddingTop: 8 },
-  avatarWrap: { position: 'relative', marginBottom: 12 },
-  avatarRing: { width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center' },
-  avatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: COLORS.background },
-  roleIconBadge: { position: 'absolute', bottom: 0, right: 0, width: 22, height: 22, borderRadius: 11, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center' },
-  username: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 4 },
-  bio: { fontSize: 13, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 18, paddingHorizontal: 20 },
-  statsRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: RADIUS.lg, padding: 14, paddingHorizontal: 8 },
-  statItem: { flex: 1, alignItems: 'center' },
-  statVal: { fontSize: 18, fontWeight: '800', color: '#fff' },
-  statLabel: { fontSize: 9, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
-  statDivider: { width: 1, height: 28, backgroundColor: 'rgba(255,255,255,0.15)' },
-  tabsRow: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight },
-  tab: { borderRadius: RADIUS.full, overflow: 'hidden' },
-  tabActive: {},
-  tabGrad: { paddingHorizontal: 18, paddingVertical: 8 },
-  tabText: { color: COLORS.textTertiary, fontSize: 13, paddingHorizontal: 14, paddingVertical: 8 },
-  previewSection: { paddingHorizontal: SPACING.screenEdge, paddingTop: 16 },
-  // Preview content
-  filmGrid: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  gridFilm: { flex: 1, height: 130, borderRadius: RADIUS.md, overflow: 'hidden', position: 'relative' },
-  gridFilmImage: { ...StyleSheet.absoluteFillObject, width: undefined, height: undefined },
-  gridRank: { position: 'absolute', top: 6, left: 6, fontSize: 20, fontWeight: '900', color: 'rgba(140,46,186,0.9)' },
-  seenCheck: { position: 'absolute', top: 6, right: 6, width: 20, height: 20, borderRadius: 10, backgroundColor: COLORS.success, alignItems: 'center', justifyContent: 'center' },
-  reviewRow: { flexDirection: 'row', gap: 12, backgroundColor: COLORS.surface, borderRadius: RADIUS.md, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: COLORS.borderLight },
-  reviewPoster: { width: 44, height: 62, borderRadius: 6 },
-  reviewFilmTitle: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '700', marginBottom: 4 },
-  reviewText: { color: COLORS.textSecondary, fontSize: 11, lineHeight: 17, marginTop: 4 },
-  previewList: { marginBottom: 16 },
-  seeAllBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'rgba(140,46,186,0.1)', borderRadius: RADIUS.md, padding: 14, borderWidth: 1, borderColor: COLORS.border },
-  seeAllText: { color: COLORS.primary, fontSize: 14, fontWeight: '600' },
-  emptyPreview: { paddingVertical: 24, alignItems: 'center' },
-  emptyPreviewText: { color: COLORS.textTertiary, fontSize: 13 },
+  root: { flex:1, backgroundColor:G.bg0 },
+  
+  // Fixed Header
+  fixedHeaderSafeArea: { position:'absolute', top:0, left:0, right:0, zIndex:10 },
+  fixedHeader: { height:50, justifyContent:'center' },
+  headerGlass: { backgroundColor:'rgba(6,0,16,0.85)', borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.1)' },
+  headerRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:15, height:'100%' },
+  headerTitle: { color:'#FFF', fontSize:16, fontWeight:'700' },
+  iconBtn: { width:36, height:36, alignItems:'center', justifyContent:'center', borderRadius:18, backgroundColor:'rgba(255,255,255,0.1)' },
+
+  // Profile Section
+  profileSection: { alignItems:'center', paddingHorizontal:20, paddingTop:10 },
+  avatarContainer: { marginBottom:15 },
+  avatarRing: { width:96, height:96, borderRadius:48, alignItems:'center', justifyContent:'center' },
+  avatarBg: { width:90, height:90, borderRadius:45, backgroundColor:G.bg0, alignItems:'center', justifyContent:'center' },
+  avatarImg: { width:86, height:86, borderRadius:43 },
+  badge: { position:'absolute', bottom:2, right:4, backgroundColor:'#FFF', borderRadius:10, padding:1 },
+
+  name: { color:'#FFF', fontSize:22, fontWeight:'800', marginBottom:2 },
+  handle: { color:G.primary, fontSize:14, fontWeight:'600', marginBottom:12 },
+  bio: { color:'rgba(237,232,255,0.8)', textAlign:'center', fontSize:13, lineHeight:18, marginBottom:20, maxWidth:'90%' },
+
+  // Stats
+  statsRow: { flexDirection:'row', alignItems:'center', marginBottom:24, backgroundColor:'rgba(255,255,255,0.05)', paddingVertical:12, paddingHorizontal:30, borderRadius:16, borderWidth:1, borderColor:'rgba(255,255,255,0.08)' },
+  divider: { width:1, height:24, backgroundColor:'rgba(255,255,255,0.15)', marginHorizontal:20 },
+
+  // Buttons
+  btnRow: { flexDirection:'row', alignItems:'center', gap:10, width:'100%' },
+  btn: { flex:1, height:44, borderRadius:12, alignItems:'center', justifyContent:'center' },
+  btnPrimary: { backgroundColor:G.primary },
+  btnTxtPrimary: { color:'#FFF', fontWeight:'700', fontSize:14 },
+  btnSecondary: { backgroundColor:'rgba(255,255,255,0.1)', borderWidth:1, borderColor:'rgba(255,255,255,0.15)' },
+  btnTxtSecondary: { color:'#FFF', fontWeight:'600', fontSize:14 },
+  btnIcon: { width:44, height:44, borderRadius:12, backgroundColor:'rgba(255,255,255,0.1)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.15)' },
+
+  // Grid
+  gridContainer: { flexDirection:'row', flexWrap:'wrap', width:'100%' },
 });
