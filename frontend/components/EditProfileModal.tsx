@@ -105,7 +105,7 @@ export default function EditProfileModal({ visible, onClose, user, onSave }: Pro
 
               {/* Username */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Nom d'utilisateur</Text>
+                <Text style={styles.inputLabel}>Nom d&aposutilisateur</Text>
                 <View style={styles.inputWrap}>
                   <Ionicons name="person-outline" size={18} color={COLORS.textTertiary} />
                   <TextInput

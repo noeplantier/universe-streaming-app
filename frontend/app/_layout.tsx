@@ -21,6 +21,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: COLORS.background } }}>
       <Stack.Screen name="index" />
+      <Stack.Screen name="home" options={{ animation: 'fade' }} />
       <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
       <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
       <Stack.Screen name="film/[id]" options={{ animation: 'slide_from_right' }} />

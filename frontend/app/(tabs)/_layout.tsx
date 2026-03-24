@@ -4,6 +4,8 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/theme';
 
+
+
 function TabIcon({ name, focused }: { name: keyof typeof Ionicons.glyphMap; focused: boolean }) {
   return (
     <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>

@@ -1,310 +1,307 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Image,
-  ActivityIndicator, Dimensions, RefreshControl,
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  View, Text, StyleSheet, Dimensions, FlatList, Image, TouchableOpacity, 
+  Platform, Animated 
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { COLORS, SPACING, RADIUS, GRADIENTS, DURATION_LABELS, GENRE_COLORS } from '../../constants/theme';
-import { filmsAPI, discoverAPI } from '../../services/api';
-import GlobalHeader from '../../components/GlobalHeader';
+import { BlurView } from 'expo-blur';
+// Importation sécurisée
+import { DeviceMotion } from 'expo-sensors';
+import { Video, ResizeMode } from 'expo-av';
+import { COLORS, SIZE, RADIUS, GRADIENTS } from '../../constants/theme';
+import { filmsAPI } from '../../services/api';
 
-const { width } = Dimensions.get('window');
-const CARD_GAP = 10;
-const HALF_W = (width - SPACING.screenEdge * 2 - CARD_GAP) / 2;
+const { width, height } = Dimensions.get('window');
 
-const GENRES = ['Tous', 'Thriller', 'Drame', 'Romance', 'Fantasy', 'Science-Fiction', 'Documentaire'];
-
+// Interface des données
 interface Film {
-  id: string; title: string; director: string; duration_minutes: number;
-  duration_type: string; genre: string; synopsis: string; poster_url: string;
-  year: number; rating: number; views_count: number;
+  id: string;
+  title: string;
+  poster_url: string; // URL de l'image
+  video_url?: string; // URL de la vidéo (optionnel)
+  views_count: number;
+  tags?: string[];
+  description?: string;
 }
 
-function formatDuration(min: number) {
-  return min < 60 ? `${min}m` : `${Math.floor(min / 60)}h${min % 60 > 0 ? ` ${min % 60}m` : ''}`;
-}
+// Hook personnalisé pour l'effet Parallax (Sécurisé)
+function useDeviceMotion() {
+  const [motion, setMotion] = useState({ rotation: { beta: 0, gamma: 0 } });
 
-// Hero Banner — Long film (40+ min), full width
-function HeroBanner({ film, onPress }: { film: Film; onPress: () => void }) {
-  return (
-    <TouchableOpacity testID={`hero-${film.id}`} onPress={onPress} activeOpacity={0.9} style={styles.heroBanner}>
-      <Image source={{ uri: film.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-      <LinearGradient colors={['rgba(0,0,0,0.1)', 'rgba(0,0,0,0.85)']} style={StyleSheet.absoluteFillObject} />
-      <View style={styles.heroPlayBtn}>
-        <Ionicons name="play" size={18} color="#fff" />
-      </View>
-      <View style={styles.heroMeta}>
-        <View style={styles.heroBadges}>
-          <View style={[styles.badge, { backgroundColor: GENRE_COLORS[film.genre] || COLORS.primary }]}>
-            <Text style={styles.badgeText}>{film.genre}</Text>
-          </View>
-          <View style={styles.durationBadge}>
-            <Text style={styles.durationBadgeText}>Long Métrage · {formatDuration(film.duration_minutes)}</Text>
-          </View>
-        </View>
-        <Text style={styles.heroTitle} numberOfLines={2}>{film.title}</Text>
-        <Text style={styles.heroDir}>{film.director} · {film.year}</Text>
-        <View style={styles.heroRating}>
-          {[1,2,3,4,5].map(s => <Ionicons key={s} name={s <= Math.round(film.rating) ? 'star' : 'star-outline'} size={12} color="#FFD60A" />)}
-          <Text style={styles.heroRatingText}>{film.rating}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
+  useEffect(() => {
+    // Vérification de sécurité : ne rien faire sur Web ou si le module est absent
+    if (Platform.OS === 'web' || !DeviceMotion?.addListener) {
+      return; 
+    }
 
-// Long portrait card (half width, tall) — 40+ min
-function LongPortraitCard({ film, rank, onPress }: { film: Film; rank?: number; onPress: () => void }) {
-  return (
-    <TouchableOpacity testID={`long-card-${film.id}`} onPress={onPress} activeOpacity={0.88} style={[styles.longCard, { width: HALF_W }]}>
-      <Image source={{ uri: film.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.92)']} style={StyleSheet.absoluteFillObject} />
-      {rank && <Text style={styles.rankBadge}>{rank}</Text>}
-      <View style={styles.durationTypeBadge}>
-        <Ionicons name="time-outline" size={10} color="rgba(255,255,255,0.7)" />
-        <Text style={styles.durationTypeBadgeText}>{formatDuration(film.duration_minutes)}</Text>
-      </View>
-      <View style={styles.longCardInfo}>
-        <View style={[styles.badge, { backgroundColor: GENRE_COLORS[film.genre] || COLORS.primary, marginBottom: 6 }]}>
-          <Text style={styles.badgeText}>{film.genre}</Text>
-        </View>
-        <Text style={styles.longCardTitle} numberOfLines={2}>{film.title}</Text>
-        <Text style={styles.longCardDir} numberOfLines={1}>{film.director}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
+    // Configuration de l'intervalle de mise à jour
+    DeviceMotion.setUpdateInterval(50);
 
-// Medium landscape card (full width) — 10-40 min
-function MediumLandscapeCard({ film, onPress }: { film: Film; onPress: () => void }) {
-  return (
-    <TouchableOpacity testID={`medium-card-${film.id}`} onPress={onPress} activeOpacity={0.88} style={styles.mediumCard}>
-      <Image source={{ uri: film.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={StyleSheet.absoluteFillObject} />
-      <View style={styles.durationTypeBadge}>
-        <Ionicons name="time-outline" size={10} color="rgba(255,255,255,0.7)" />
-        <Text style={styles.durationTypeBadgeText}>{formatDuration(film.duration_minutes)} · Moyen Métrage</Text>
-      </View>
-      <View style={styles.mediumCardInfo}>
-        <View style={[styles.badge, { backgroundColor: GENRE_COLORS[film.genre] || COLORS.primary }]}>
-          <Text style={styles.badgeText}>{film.genre}</Text>
-        </View>
-        <Text style={styles.mediumCardTitle}>{film.title}</Text>
-        <Text style={styles.mediumCardDir}>{film.director} · {film.year}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-          <Ionicons name="star" size={11} color="#FFD60A" />
-          <Text style={styles.mediumCardRating}>{film.rating}</Text>
-          <Text style={styles.mediumCardViews}>· {(film.views_count / 1000).toFixed(1)}K vues</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-}
+    const subscription = DeviceMotion.addListener((data) => {
+      setMotion(data);
+    });
 
-// Short square card (1/3 width, square) — < 10 min
-function ShortSquareCard({ film, onPress }: { film: Film; onPress: () => void }) {
-  const size = (width - SPACING.screenEdge * 2 - CARD_GAP * 2) / 3;
-  return (
-    <TouchableOpacity testID={`short-card-${film.id}`} onPress={onPress} activeOpacity={0.88} style={[styles.shortCard, { width: size, height: size }]}>
-      <Image source={{ uri: film.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.88)']} style={StyleSheet.absoluteFillObject} />
-      <View style={styles.shortDurationBadge}>
-        <Text style={styles.shortDurationText}>{formatDuration(film.duration_minutes)}</Text>
-      </View>
-      <View style={styles.shortCardInfo}>
-        <Text style={styles.shortCardTitle} numberOfLines={2}>{film.title}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
+    return () => {
+      subscription && subscription.remove();
+    };
+  }, []);
 
-function buildBentoRows(films: Film[]) {
-  const long = films.filter(f => f.duration_type === 'long');
-  const medium = films.filter(f => f.duration_type === 'medium');
-  const short = films.filter(f => f.duration_type === 'short');
-  return { long, medium, short };
+  return motion;
 }
 
 export default function HomeScreen() {
   const router = useRouter();
+  const motion = useDeviceMotion();
   const [films, setFilms] = useState<Film[]>([]);
-  const [featured, setFeatured] = useState<Film | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [selectedGenre, setSelectedGenre] = useState('Tous');
+  const scrollX = useRef(new Animated.Value(0)).current;
 
-  const fetchData = useCallback(async () => {
-    try {
-      const params: Record<string, string> = {};
-      if (selectedGenre !== 'Tous') params.genre = selectedGenre;
-      const [filmsData, featuredData] = await Promise.all([
-        filmsAPI.getAll(params),
-        discoverAPI.featured(),
-      ]);
-      setFilms(filmsData);
-      setFeatured(featuredData);
-    } catch {}
-    finally { setLoading(false); setRefreshing(false); }
-  }, [selectedGenre]);
+  // Données factices pour l'exemple (si l'API est vide/ne répond pas)
+  const DUMMY_FILMS: Film[] = [
+    {
+      id: '1',
+      title: 'Neon Dreams',
+      poster_url: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?q=80&w=1000&auto=format&fit=crop',
+      views_count: 1240,
+      tags: ['Sci-Fi', 'Cyberpunk'],
+      description: "Dans un futur où les rêves sont numérisés..."
+    },
+    {
+      id: '2',
+      title: 'Lost Signal',
+      poster_url: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=1000&auto=format&fit=crop',
+      views_count: 850,
+      tags: ['Thriller', 'Espace'],
+      description: "Personne ne vous entendra crier..."
+    },
+    {
+      id: '3',
+      title: 'Velvet Night',
+      poster_url: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?q=80&w=1000&auto=format&fit=crop',
+      views_count: 2100,
+      tags: ['Drame', 'Noir'],
+      description: "Une histoire d'amour impossible..."
+    },
+  ];
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    // Simulation chargement API ou utilisation données factices
+    setFilms(DUMMY_FILMS);
+  }, []);
 
-  const { long, medium, short } = buildBentoRows(films);
+  // Calcul de l'effet Parallax basé sur le gyroscope
+  const parallaxX = (motion.rotation?.gamma || 0) * 20; // Inclinaison gauche/droite
+  const parallaxY = (motion.rotation?.beta || 0) * 10;  // Inclinaison haut/bas
 
-  function goFilm(id: string) { router.push(`/film/${id}`); }
+  // Rendu d'une carte de film
+  const renderItem = ({ item, index }: { item: Film; index: number }) => {
+    const inputRange = [
+      (index - 1) * width,
+      index * width,
+      (index + 1) * width,
+    ];
+
+    const scale = scrollX.interpolate({
+      inputRange,
+      outputRange: [0.9, 1, 0.9],
+      extrapolate: 'clamp'
+    });
+
+    const opacity = scrollX.interpolate({
+      inputRange,
+      outputRange: [0.4, 1, 0.4],
+      extrapolate: 'clamp'
+    });
+
+    return (
+      <View style={{ width, alignItems: 'center', justifyContent: 'center' }}>
+        <Animated.View 
+          style={[
+            styles.cardContainer, 
+            { 
+              transform: [
+                { scale }, 
+                { translateX: parallaxX }, // Effet Parallax X
+                { translateY: parallaxY }  // Effet Parallax Y
+              ],
+              opacity 
+            }
+          ]}
+        >
+          {/* Image Poster */}
+          <Image 
+            source={{ uri: item.poster_url }} 
+            style={styles.posterImage}
+            resizeMode="cover"
+          />
+          
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.4)', '#000']}
+            style={styles.cardGradient}
+          />
+
+          {/* Info Content */}
+          <View style={styles.cardInfo}>
+            <View style={styles.tagsRow}>
+              {item.tags?.map(tag => (
+                <BlurView intensity={20} tint="dark" key={tag} style={styles.tagBlur}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </BlurView>
+              ))}
+            </View>
+            <Text style={styles.cardTitle}>{item.title}</Text>
+            <Text style={styles.cardViews}>{item.views_count} vues • 2h 14m</Text>
+            
+            <TouchableOpacity 
+              style={styles.playBtn}
+              onPress={() => router.push(`/film/${item.id}`)}
+            >
+              <LinearGradient
+                 colors={GRADIENTS.primary}
+                 start={{x:0, y:0}} end={{x:1, y:0}}
+                 style={styles.playBtnGradient}
+              >
+                  <Text style={styles.playBtnText}>Regarder</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <SafeAreaView edges={['top']}>
-        <GlobalHeader notificationCount={2} />
-      </SafeAreaView>
+      {/* Background Statique */}
+      <Image 
+        source={{ uri: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1000&auto=format&fit=crop' }} 
+        style={[StyleSheet.absoluteFillObject, { opacity: 0.3 }]}
+        blurRadius={10}
+      />
+      <LinearGradient
+        colors={[COLORS.background, 'transparent', COLORS.background]}
+        style={StyleSheet.absoluteFillObject}
+      />
 
-      {loading ? (
-        <View style={styles.loading}><ActivityIndicator size="large" color={COLORS.primary} /></View>
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor={COLORS.primary} />}
-        >
-          {/* Genre filter */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genreBar} contentContainerStyle={{ paddingHorizontal: SPACING.screenEdge, gap: 8 }}>
-            {GENRES.map(g => (
-              <TouchableOpacity key={g} testID={`genre-${g}`} onPress={() => setSelectedGenre(g)} activeOpacity={0.8}>
-                {selectedGenre === g ? (
-                  <LinearGradient colors={GRADIENTS.primary} style={styles.genreActive} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                    <Text style={[styles.genreText, { color: '#fff', fontWeight: '700' }]}>{g}</Text>
-                  </LinearGradient>
-                ) : (
-                  <View style={styles.genreInactive}><Text style={styles.genreText}>{g}</Text></View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+      {/* Titre Header */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>À la une</Text>
+        <Text style={styles.headerSubtitle}>Sélection du jour</Text>
+      </View>
 
-          <View style={styles.bentoContainer}>
-            {/* HERO — Featured film */}
-            {featured && (
-              <View style={styles.bentoSection}>
-                <View style={styles.sectionLabelRow}>
-                  <View style={styles.sectionLabelDot} />
-                  <Text style={styles.sectionLabel}>À LA UNE</Text>
-                </View>
-                <HeroBanner film={featured} onPress={() => goFilm(featured.id)} />
-              </View>
-            )}
-
-            {/* Long films — pair of portrait cards */}
-            {long.length > 0 && (
-              <View style={styles.bentoSection}>
-                <View style={styles.sectionLabelRow}>
-                  <View style={styles.sectionLabelDot} />
-                  <Text style={styles.sectionLabel}>LONGS MÉTRAGES · 40+ MIN</Text>
-                  <TouchableOpacity onPress={() => router.push({ pathname: '/category/[type]', params: { type: 'seen' } })}>
-                    <Text style={styles.seeAll}>Voir tout</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.pairRow}>
-                  {long.slice(0, 2).map((film, i) => (
-                    <LongPortraitCard key={film.id} film={film} onPress={() => goFilm(film.id)} />
-                  ))}
-                </View>
-                {long.length > 2 && (
-                  <View style={[styles.pairRow, { marginTop: CARD_GAP }]}>
-                    {long.slice(2, 4).map(film => (
-                      <LongPortraitCard key={film.id} film={film} onPress={() => goFilm(film.id)} />
-                    ))}
-                  </View>
-                )}
-              </View>
-            )}
-
-            {/* Medium films — full width landscape */}
-            {medium.length > 0 && (
-              <View style={styles.bentoSection}>
-                <View style={styles.sectionLabelRow}>
-                  <View style={[styles.sectionLabelDot, { backgroundColor: '#A78BFA' }]} />
-                  <Text style={styles.sectionLabel}>MOYENS MÉTRAGES · 10–40 MIN</Text>
-                </View>
-                {medium.map(film => (
-                  <View key={film.id} style={{ marginBottom: CARD_GAP }}>
-                    <MediumLandscapeCard film={film} onPress={() => goFilm(film.id)} />
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* Short films — trio of squares */}
-            {short.length > 0 && (
-              <View style={styles.bentoSection}>
-                <View style={styles.sectionLabelRow}>
-                  <View style={[styles.sectionLabelDot, { backgroundColor: '#34D399' }]} />
-                  <Text style={styles.sectionLabel}>COURTS MÉTRAGES · {'< 10 MIN'}</Text>
-                </View>
-                <View style={styles.trioRow}>
-                  {short.map(film => (
-                    <ShortSquareCard key={film.id} film={film} onPress={() => goFilm(film.id)} />
-                  ))}
-                </View>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-      )}
+      {/* Carousel Principal */}
+      <Animated.FlatList
+        data={films}
+        keyExtractor={(item) => item.id}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ alignItems: 'center' }}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+          { useNativeDriver: true } // Important pour la performance
+        )}
+        renderItem={renderItem}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  genreBar: { paddingVertical: 14 },
-  genreActive: { borderRadius: RADIUS.full, paddingHorizontal: 16, paddingVertical: 7 },
-  genreInactive: { borderRadius: RADIUS.full, paddingHorizontal: 16, paddingVertical: 7, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: COLORS.border },
-  genreText: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '500' },
-  bentoContainer: { paddingHorizontal: SPACING.screenEdge },
-  bentoSection: { marginBottom: 28 },
-  sectionLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  sectionLabelDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.primary },
-  sectionLabel: { flex: 1, fontSize: 10, fontWeight: '800', color: COLORS.textTertiary, letterSpacing: 2 },
-  seeAll: { color: COLORS.primary, fontSize: 12, fontWeight: '600' },
-  // Hero Banner
-  heroBanner: { height: 280, borderRadius: RADIUS.lg, overflow: 'hidden', backgroundColor: COLORS.surface },
-  heroPlayBtn: { position: 'absolute', top: 14, right: 14, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(140,46,186,0.8)', alignItems: 'center', justifyContent: 'center' },
-  heroMeta: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16 },
-  heroBadges: { flexDirection: 'row', gap: 8, marginBottom: 8, flexWrap: 'wrap' },
-  badge: { borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 4 },
-  badgeText: { color: '#fff', fontSize: 10, fontWeight: '600' },
-  durationBadge: { borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: 'rgba(140,46,186,0.5)', borderWidth: 1, borderColor: COLORS.primary },
-  durationBadgeText: { color: '#fff', fontSize: 10 },
-  heroTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginBottom: 4 },
-  heroDir: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 6 },
-  heroRating: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  heroRatingText: { color: '#FFD60A', fontSize: 11, fontWeight: '700', marginLeft: 4 },
-  // Long card
-  longCard: { height: 240, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.surface, position: 'relative' },
-  rankBadge: { position: 'absolute', top: 10, left: 10, fontSize: 24, fontWeight: '900', color: 'rgba(140,46,186,0.9)', zIndex: 2 },
-  durationTypeBadge: { position: 'absolute', top: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 4 },
-  durationTypeBadgeText: { color: 'rgba(255,255,255,0.7)', fontSize: 9 },
-  longCardInfo: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 10 },
-  longCardTitle: { color: '#fff', fontSize: 13, fontWeight: '700', marginBottom: 2 },
-  longCardDir: { color: COLORS.textSecondary, fontSize: 10 },
-  pairRow: { flexDirection: 'row', gap: CARD_GAP },
-  // Medium card
-  mediumCard: { height: 160, borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.surface, position: 'relative' },
-  mediumCardInfo: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 14 },
-  mediumCardTitle: { color: '#fff', fontSize: 16, fontWeight: '800', marginTop: 6 },
-  mediumCardDir: { color: COLORS.textSecondary, fontSize: 11, marginTop: 2 },
-  mediumCardRating: { color: '#FFD60A', fontSize: 11, fontWeight: '600' },
-  mediumCardViews: { color: COLORS.textTertiary, fontSize: 11 },
-  // Short card
-  shortCard: { borderRadius: RADIUS.md, overflow: 'hidden', backgroundColor: COLORS.surface, position: 'relative' },
-  trioRow: { flexDirection: 'row', gap: CARD_GAP, flexWrap: 'wrap' },
-  shortDurationBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: RADIUS.full, paddingHorizontal: 6, paddingVertical: 3 },
-  shortDurationText: { color: COLORS.primary, fontSize: 9, fontWeight: '700' },
-  shortCardInfo: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 7 },
-  shortCardTitle: { color: '#fff', fontSize: 10, fontWeight: '600' },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  header: {
+    marginTop: 60,
+    marginLeft: 24,
+    marginBottom: 10,
+  },
+  headerTitle: {
+    color: COLORS.primary,
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  headerSubtitle: {
+    color: '#FFF',
+    fontSize: 32,
+    fontWeight: 'bold',
+  },
+  cardContainer: {
+    width: width * 0.85,
+    height: height * 0.65,
+    borderRadius: RADIUS.xl,
+    overflow: 'hidden',
+    backgroundColor: COLORS.surface,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1,
+    
+    // Ombres
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  posterImage: {
+    width: '100%',
+    height: '100%',
+  },
+  cardGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+  },
+  cardInfo: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20,
+    right: 20,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  tagBlur: {
+    overflow: 'hidden',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  tagText: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cardTitle: {
+    color: '#FFF',
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  cardViews: {
+    color: COLORS.gray,
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  playBtn: {
+    borderRadius: RADIUS.circle,
+    overflow: 'hidden',
+  },
+  playBtnGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  playBtnText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  },
 });
