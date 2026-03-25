@@ -24,19 +24,19 @@ function CustomNavBar() {
       <BlurView intensity={30} tint="dark" style={styles.navBlur}>
         
         {/* BOUTON ACCUEIL */}
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/')}>
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/search')}>
           <Ionicons name="home" size={24} color="white" />
           <Text style={styles.navLabel}>Accueil</Text>
         </TouchableOpacity>
 
         {/* BOUTON REELS (Redirige vers search ou une page dédiée) */}
-        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/search')}>
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/')}>
           <MaterialCommunityIcons name="play-box-multiple" size={24} color="white" />
           <Text style={styles.navLabel}>Reels</Text>
         </TouchableOpacity>
         
         {/* BOUTON CENTRAL (Sparkles) */}
-        <TouchableOpacity style={styles.navItem} onPress={() => console.log('Action centrale')}>
+        <TouchableOpacity style={styles.navItem} onPress={()  => router.push('/feed')}>
           <MaterialCommunityIcons name="star-four-points" size={40} color="white" />
         </TouchableOpacity>
 
