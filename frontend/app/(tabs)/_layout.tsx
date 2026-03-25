@@ -1,101 +1,154 @@
-import { Tabs } from 'expo-router';
-import { View, StyleSheet, Platform } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Platform } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
-import { COLORS } from '../../constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎨 COLORS & CONSTANTS (Pour matcher le thème)
+// ─────────────────────────────────────────────────────────────────────────────
+const COLORS = {
+  accent: '#A855F7',
+  textSub: '#BCB8C2',
+};
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🛸 COMPOSANT CUSTOM NAVBAR
+// ─────────────────────────────────────────────────────────────────────────────
+function CustomNavBar() {
+  const router = useRouter();
 
-function TabIcon({ name, focused }: { name: keyof typeof Ionicons.glyphMap; focused: boolean }) {
   return (
-    <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
-      <Ionicons
-        name={name}
-        size={24}
-        color={focused ? COLORS.primary : COLORS.textTertiary}
-      />
+    <View style={styles.navContainer}>
+      <BlurView intensity={30} tint="dark" style={styles.navBlur}>
+        
+        {/* BOUTON ACCUEIL */}
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/')}>
+          <Ionicons name="home" size={24} color="white" />
+          <Text style={styles.navLabel}>Accueil</Text>
+        </TouchableOpacity>
+
+        {/* BOUTON REELS (Redirige vers search ou une page dédiée) */}
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/search')}>
+          <MaterialCommunityIcons name="play-box-multiple" size={24} color="white" />
+          <Text style={styles.navLabel}>Reels</Text>
+        </TouchableOpacity>
+        
+        {/* BOUTON CENTRAL (Star 4 Points) */}
+        <TouchableOpacity style={styles.navItem} onPress={() => console.log('Action centrale')}>
+          <MaterialCommunityIcons name="star-four-points" size={38} color="white" />
+        </TouchableOpacity>
+
+        {/* BOUTON AMIES */}
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/social')}>
+          <Ionicons name="people" size={24} color="white" />
+          <Text style={styles.navLabel}>Amies</Text>
+        </TouchableOpacity>
+
+        {/* BOUTON PROFIL */}
+        <TouchableOpacity style={styles.navItem} onPress={() => router.push('/profile')}>
+           <Image 
+             source={{uri: 'https://i.pravatar.cc/100?u=me'}} 
+             style={[styles.navProfile, { marginTop: 0 }]} 
+           />
+           <Text style={styles.navLabel}>Profil</Text>
+        </TouchableOpacity>
+
+      </BlurView>
     </View>
   );
 }
 
-export default function TabsLayout() {
+// ─────────────────────────────────────────────────────────────────────────────
+// 🧭 LAYOUT PRINCIPAL (Tabs)
+// ─────────────────────────────────────────────────────────────────────────────
+export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarBackground: () => (
-          Platform.OS === 'ios'
-            ? <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFillObject} />
-            : <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(11,0,20,0.95)' }]} />
-        ),
-        tabBarShowLabel: false,
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.textTertiary,
+        // On cache la barre native par défaut car on utilise notre CustomNavBar en overlay
+        tabBarStyle: { display: 'none' }, 
       }}
+      // On injecte notre barre personnalisée par dessus le contenu
+      tabBar={() => <CustomNavBar />} 
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Accueil',
-          tabBarIcon: ({ focused }) => <TabIcon name="planet-outline" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="feed"
-        options={{
-          title: 'Feed',
-          tabBarIcon: ({ focused }) => <TabIcon name="play-circle-outline" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="social"
-        options={{
-          title: 'Social',
-          tabBarIcon: ({ focused }) => <TabIcon name="people-outline" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="search"
-        options={{
-          title: 'Recherche',
-          tabBarIcon: ({ focused }) => <TabIcon name="search-outline" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profil',
-          tabBarIcon: ({ focused }) => <TabIcon name="person-circle-outline" focused={focused} />,
-        }}
-      />
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="search" />
+      {/* Ajoutez ici d'autres écrans si nécessaire (ex: profile.tsx, friends.tsx) */}
     </Tabs>
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🖌 STYLES
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  tabBar: {
+  navContainer: {
     position: 'absolute',
-    borderTopWidth: 0,
-    borderTopColor: 'rgba(140,46,186,0.2)',
+    bottom: 12, // Flottant au-dessus du bas de l'écran
+    left: 10,
+    right: 10,
     height: 70,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
-    paddingTop: 8,
-    backgroundColor: 'transparent',
-    elevation: 0,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    // Ombres pour donner du relief
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 10,
+    },
+    shadowOpacity: 0.5,
+    shadowRadius: 13.16,
+    elevation: 20,
   },
-  iconWrap: {
-    width: 44,
-    height: 44,
+  navBlur: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+  },
+  navItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 22,
+    height: '100%',
+    paddingTop: 10,
   },
-  iconWrapActive: {
-    backgroundColor: 'rgba(140,46,186,0.15)',
-    shadowColor: '#8C2EBA',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
+  navLabel: {
+    color: 'white',
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: '500',
+  },
+  navCenterBtn: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    marginTop: 4, // Fait dépasser le bouton vers le haut
+    elevation: 10,
+    shadowColor: COLORS.accent,
+    shadowRadius: 10,
+    shadowOpacity: 0.6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  navCenterGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  navProfile: {
+    width: 30,
+    height: 30,
+    marginTop: 10, // Fait dépasser le bouton vers le haut
+
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
   },
 });
