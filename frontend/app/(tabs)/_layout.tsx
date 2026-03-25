@@ -35,9 +35,9 @@ function CustomNavBar() {
           <Text style={styles.navLabel}>Reels</Text>
         </TouchableOpacity>
         
-        {/* BOUTON CENTRAL (Star 4 Points) */}
+        {/* BOUTON CENTRAL (Sparkles) */}
         <TouchableOpacity style={styles.navItem} onPress={() => console.log('Action centrale')}>
-          <MaterialCommunityIcons name="star-four-points" size={38} color="white" />
+          <MaterialCommunityIcons name="star-four-points" size={40} color="white" />
         </TouchableOpacity>
 
         {/* BOUTON AMIES */}
@@ -48,6 +48,7 @@ function CustomNavBar() {
 
         {/* BOUTON PROFIL */}
         <TouchableOpacity style={styles.navItem} onPress={() => router.push('/profile')}>
+           {/* On surcharge le style pour annuler le marginTop de 4 et aligner l'image */}
            <Image 
              source={{uri: 'https://i.pravatar.cc/100?u=me'}} 
              style={[styles.navProfile, { marginTop: 0 }]} 

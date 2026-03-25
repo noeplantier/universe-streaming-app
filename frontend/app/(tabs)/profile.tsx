@@ -1,388 +1,592 @@
+// app/profile.tsx
+// ═══════════════════════════════════════════════════════════════════
+//  UNIVERSE — Profil  /  Galaxy System
+//  ─────────────────────────────────────────────────────────────────
+//  Moteur Galaxy porté depuis social.tsx (intégral).
+//  Tabs Favoris/Sauvegardes opérationnels, stats réelles,
+//  navigation film, édition profil, follow/message.
+// ═══════════════════════════════════════════════════════════════════
 
 import React, {
   useState, useEffect, useRef, useMemo,
   useCallback, memo,
 } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Image, Animated,
-  Easing, Dimensions, StatusBar, SafeAreaView
+  View, Text, StyleSheet, Image, ScrollView,
+  TouchableOpacity, Dimensions, Animated, Easing,
+  Platform, Modal, Pressable,
 } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 
 const { width: W, height: H } = Dimensions.get('window');
 
-// ─── Design Tokens (Identiques à search.tsx pour consistance) ──────
-const SPACING = 18;
-const COL_GAP = 2; // Plus serré pour la grille profile
-const ITEM_W  = (W - COL_GAP * 2) / 3; // 3 colonnes pleines
-
-// Palette Galaxie
+// ─────────────────────────────────────────────────────────────────────────────
+// 🌌 PALETTE GALAXY (identique social.tsx & search.tsx)
+// ─────────────────────────────────────────────────────────────────────────────
 const G = {
-  bg0: '#060010',  bg1: '#0A001E',  bg2: '#070014',
-  neb0: 'rgba(108,16,195,0.32)',
-  neb1: 'rgba(172,24,160,0.20)',
-  neb2: 'rgba(22, 14,185,0.16)',
-  neb3: 'rgba(55,  0, 95,0.26)',
-  sW: '#F3EDFF',  sB: '#B2CCFF',
-  sG: '#FFE270',  sP: '#CF98FF',  sCy: '#86EEFF',
+  bg0: '#060010', bg1: '#0A001E', bg2: '#070014',
+  sW: '#F3EDFF', sB: '#B2CCFF', sG: '#FFE270', sP: '#CF98FF', sCy: '#86EEFF',
+  glass: 'rgba(255,255,255,0.056)',
+  glassBorder: 'rgba(255,255,255,0.09)',
   primary: '#C060FF',
-  surface: 'rgba(255,255,255,0.06)',
+  accent: '#A855F7',
+  textSub: '#BCB8C2',
+  pinkBadge: '#E91E63',
+  purpleBadge: '#6A1B9A',
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 📦 DONNÉES MOCK
+// ─────────────────────────────────────────────────────────────────────────────
+const USER = {
+  name: 'Hugo C.',
+  handle: 'hugoch',
+  role: 'Acteur · Réalisateur',
+  bio: 'Passionné de cinéma indé. Anamorphique forever. 🎬',
+  avatar: 'https://i.pravatar.cc/150?u=hugoch',
+  followers: 1240,
+  following: 318,
+};
+
+const FAVORITES = [
+  { id: '1', title: 'BOOTS',     likes: 288, views: '1,6k', img: 'https://picsum.photos/seed/b1/300/400', genre: 'Thriller', year: 2023 },
+  { id: '2', title: 'ADVERTISE', likes: 378, views: '1,6k', img: 'https://picsum.photos/seed/b2/300/400', genre: 'Drame',   year: 2024 },
+  { id: '3', title: 'DNX',       likes: 31,  views: '800',  img: 'https://picsum.photos/seed/b3/300/400', genre: 'Action',  year: 2022 },
+  { id: '4', title: 'VOIDSCAPE', likes: 514, views: '2,1k', img: 'https://picsum.photos/seed/b4/300/400', genre: 'Sci-Fi',  year: 2023 },
+];
+
+const SAVED = [
+  { id: 's1', title: 'The Lighthouse', likes: 892, views: '4k',   img: 'https://picsum.photos/seed/s1/300/400', genre: 'Drame',   year: 2019 },
+  { id: 's2', title: 'Hereditary',     likes: 673, views: '3,2k', img: 'https://picsum.photos/seed/s2/300/400', genre: 'Horreur', year: 2018 },
+  { id: 's3', title: 'Midsommar',      likes: 740, views: '3,5k', img: 'https://picsum.photos/seed/s3/300/400', genre: 'Drame',   year: 2019 },
+];
+
+const COMEDY = [
+  { id: 'c1', title: 'Slapstick',   img: 'https://picsum.photos/seed/c1/300/400', year: 2021 },
+  { id: 'c2', title: 'La Coupole',  img: 'https://picsum.photos/seed/c2/300/400', year: 2022 },
+  { id: 'c3', title: 'Douce Nuit',  img: 'https://picsum.photos/seed/c3/300/400', year: 2023 },
+];
+
+const REVIEWS = [
+  {
+    id: 'r1', film: 'The Lighthouse',
+    text: 'Une masterclass visuelle. Le ratio 1.19:1 enferme littéralement les personnages dans leur folie.',
+    rating: 5, date: '12 mars 2025',
+    img: 'https://picsum.photos/seed/s1/300/400',
+  },
+  {
+    id: 'r2', film: 'Hereditary',
+    text: 'La mise en scène de Aster est terrifiante de précision. Chaque plan transpire l\'angoisse.',
+    rating: 4, date: '3 fév. 2025',
+    img: 'https://picsum.photos/seed/s2/300/400',
+  },
+];
+
 // ═══════════════════════════════════════════════════════════════════
-//  ░░░  GALAXY ANIMATION ENGINE (Ported from Search)  ░░░
+//  ░░░  GALAXY ANIMATION ENGINE (Portage Intégral)  ░░░
 // ═══════════════════════════════════════════════════════════════════
 
 const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 
-interface Pt  { id:number; x:number; y:number; sz:number; col:string; del:number; dur:number; mn:number; mx:number; }
-interface Neb { x:number; y:number; w:number; h:number; col:string; del:number; dur:number; }
-interface Met { id:number; sx:number; sy:number; ang:number; len:number; }
+interface Pt  { id: number; x: number; y: number; sz: number; col: string; del: number; dur: number; mn: number; mx: number; }
+interface Met { id: number; sx: number; sy: number; ang: number; len: number; }
 
-// Configuration statique des particules
-const DUST: Pt[] = Array.from({ length: 50 }, (_, i) => ({
-  id:i, x:rnd(0,W), y:rnd(0,H), sz:rnd(0.35,1.05),
-  col:pick([G.sW,G.sW,G.sB]),
-  del:rnd(0,5800), dur:rnd(2600,6200), mn:0.05, mx:0.40,
+const STARS: Pt[] = Array.from({ length: 55 }, (_, i) => ({
+  id: i, x: rnd(0, W), y: rnd(0, H * 1.5), sz: rnd(1.0, 2.3),
+  col: pick([G.sW, G.sB, G.sP, G.sG]),
+  del: rnd(0, 4200), dur: rnd(2000, 5000), mn: 0.25, mx: 0.95,
 }));
-const STARS: Pt[] = Array.from({ length: 35 }, (_, i) => ({
-  id:i, x:rnd(0,W), y:rnd(0,H), sz:rnd(1.0,2.3),
-  col:pick([G.sW,G.sB,G.sP,G.sG,G.sW]),
-  del:rnd(0,4200), dur:rnd(1500,4000), mn:0.25, mx:0.95,
-}));
-const BRIGHT: Pt[] = Array.from({ length: 10 }, (_, i) => ({
-  id:i, x:rnd(0,W), y:rnd(0,H), sz:rnd(2.4,4.1),
-  col:pick([G.sW,G.sCy,G.sP]),
-  del:rnd(0,3000), dur:rnd(900,2800), mn:0.45, mx:1.0,
-}));
-const NEBULAE: Neb[] = [
-  { x:-80, y:-50,      w:300, h:240, col:G.neb0, del:0,    dur:5600 },
-  { x:W*0.6, y:H*0.2,  w:280, h:220, col:G.neb1, del:1600, dur:6300 },
-  { x:-40, y:H*0.5,    w:310, h:250, col:G.neb2, del:2900, dur:5900 },
-];
 
-// Compo: Point lumineux animé
-const StarDot = memo(function StarDot({ p, bright }: { p:Pt; bright?:boolean }) {
+const StarDot = memo(({ p }: { p: Pt }) => {
   const op = useRef(new Animated.Value(p.mn)).current;
-  const sc = useRef(new Animated.Value(bright ? 0.7 : 1)).current;
   useEffect(() => {
-    const tw = Animated.loop(Animated.sequence([
+    Animated.loop(Animated.sequence([
       Animated.delay(p.del % p.dur),
-      Animated.timing(op, { toValue:p.mx, duration:p.dur*0.40, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-      Animated.timing(op, { toValue:p.mn, duration:p.dur*0.60, easing:Easing.inOut(Easing.sin), useNativeDriver:true }),
-    ]));
-    tw.start();
-    return () => tw.stop();
-  }, []);
-  const gs = p.sz * 3.8; // Glow size
+      Animated.timing(op, { toValue: p.mx, duration: p.dur * 0.5, useNativeDriver: true }),
+      Animated.timing(op, { toValue: p.mn, duration: p.dur * 0.5, useNativeDriver: true }),
+    ])).start();
+  }, []); // eslint-disable-line
   return (
-    <Animated.View style={{ position:'absolute', left:p.x, top:p.y, opacity:op, transform:bright?[{scale:sc}]:undefined }}>
-      {bright && <View style={{ position:'absolute', left:-gs/2, top:-gs/2, width:gs, height:gs, borderRadius:gs/2, backgroundColor:p.col, opacity:0.20 }} />}
-      <View style={{ width:p.sz, height:p.sz, borderRadius:p.sz/2, backgroundColor:p.col }} />
-    </Animated.View>
+    <Animated.View style={{
+      position: 'absolute', left: p.x, top: p.y,
+      width: p.sz, height: p.sz, borderRadius: p.sz,
+      backgroundColor: p.col, opacity: op,
+    }} />
   );
 });
+StarDot.displayName = 'StarDot';
 
-
-// Compo: Étoile Filante
-const ShootingStar = memo(function ShootingStar({ m, onDone }: { m:Met; onDone:()=>void }) {
+const ShootingStar = memo(({ m, onDone }: { m: Met; onDone: () => void }) => {
   const prog = useRef(new Animated.Value(0)).current;
   const op   = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    const DUR = 750;
     Animated.parallel([
       Animated.sequence([
-        Animated.timing(op, { toValue:1, duration:DUR*0.1, useNativeDriver:true }),
-        Animated.timing(op, { toValue:0, duration:DUR*0.9, easing:Easing.in(Easing.quad), useNativeDriver:true }),
+        Animated.timing(op, { toValue: 1, duration: 100, useNativeDriver: true }),
+        Animated.timing(op, { toValue: 0, duration: 500, delay: 200, useNativeDriver: true }),
       ]),
-      Animated.timing(prog, { toValue:1, duration:DUR, easing:Easing.out(Easing.quad), useNativeDriver:true }),
-    ]).start(({ finished }) => { if (finished) onDone(); });
-  }, []);
-  const rad = (m.ang * Math.PI) / 180;
-  // Trajectoire en diagonale
-  const tx  = prog.interpolate({ inputRange:[0,1], outputRange:[0, Math.cos(rad)*W*0.8] });
-  const ty  = prog.interpolate({ inputRange:[0,1], outputRange:[0, Math.sin(rad)*W*0.8] });
+      Animated.timing(prog, { toValue: 1, duration: 800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]).start(onDone);
+  }, []); // eslint-disable-line
+  const tx = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(m.ang * Math.PI / 180) * 200] });
+  const ty = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(m.ang * Math.PI / 180) * 200] });
   return (
-    <Animated.View style={{ position:'absolute', left:m.sx, top:m.sy, opacity:op, transform:[{translateX:tx},{translateY:ty},{rotate:`${m.ang}deg`}] }}>
-      <LinearGradient colors={['rgba(255,255,255,0)','rgba(192,96,255,0.8)','#FFF']} start={{x:0,y:0.5}} end={{x:1,y:0.5}} style={{ width:m.len, height:2, borderRadius:1 }} />
-      <View style={{ position:'absolute', right:0, top:-1, width:4, height:4, borderRadius:2, backgroundColor:'#fff', shadowColor:'#fff', shadowOpacity:1, shadowRadius:4 }} />
+    <Animated.View style={{
+      position: 'absolute', left: m.sx, top: m.sy,
+      opacity: op, transform: [{ translateX: tx }, { translateY: ty }, { rotate: `${m.ang}deg` }],
+    }}>
+      <LinearGradient
+        colors={['rgba(255,255,255,0)', 'rgba(175,110,255,0.8)', '#fff']}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+        style={{ width: m.len, height: 2, borderRadius: 1 }}
+      />
     </Animated.View>
   );
 });
+ShootingStar.displayName = 'ShootingStar';
 
-// Gestionnaire de météores
-const MeteorManager = memo(function MeteorManager() {
+const GalaxyBackground = memo(() => {
   const [meteors, setMeteors] = useState<Met[]>([]);
-  const nxt = useRef(0);
   useEffect(() => {
-    const loop = () => {
-      const timeout = setTimeout(() => {
-        setMeteors(p => [...p, { id:++nxt.current, sx:rnd(0,W), sy:rnd(0,H*0.4), ang:rnd(30,60), len:rnd(100,200) }]);
-        loop();
-      }, rnd(4000, 10000)); // Toutes les 4 à 10s
-      return timeout;
-    };
-    const t = loop();
-    return () => clearTimeout(t);
+    const i = setInterval(() => {
+      if (Math.random() > 0.7)
+        setMeteors(m => [...m, {
+          id: Date.now(), sx: rnd(0, W), sy: rnd(0, H * 0.4),
+          ang: rnd(20, 50), len: rnd(80, 150),
+        }]);
+    }, 2000);
+    return () => clearInterval(i);
   }, []);
-  const remove = useCallback((id:number) => setMeteors(p => p.filter(m=>m.id!==id)), []);
-  return <>{meteors.map(m => <ShootingStar key={m.id} m={m} onDone={()=>remove(m.id)} />)}</>;
-});
-MeteorManager.displayName = 'MeteorManager';
-
-// Canvas Global
-const GalaxyCanvas = memo(() => (
-  <View style={StyleSheet.absoluteFill} pointerEvents="none">
-    <LinearGradient colors={[G.bg0,G.bg1,G.bg2,G.bg0]} locations={[0,0.3,0.7,1]} style={StyleSheet.absoluteFill} />
-    { DUST.map(p => <StarDot key={`d${p.id}`} p={p} />) }
-    { STARS.map(p => <StarDot key={`s${p.id}`} p={p} />) }
-    { BRIGHT.map(p => <StarDot key={`b${p.id}`} p={p} bright />) }
-    <MeteorManager />
-  </View>
-));
-GalaxyCanvas.displayName = 'GalaxyCanvas';
-
-// ═══════════════════════════════════════════════════════════════════
-//  ░░░  PROFILE COMPONENTS  ░░░
-// ═══════════════════════════════════════════════════════════════════
-
-// ── Mock Data ──────────────────────────────────────────────────────
-const USER = {
-  name: "Noé Plantier",
-  handle: "@noe_universe",
-  bio: "Explorateur du cosmos numérique 🌌 | Créateur de contenu VR/AR | Ambassadeur Universe",
-  stats: { followers: "12.5k", following: "482", likes: "84k" },
-  avatar: "https://i.pravatar.cc/150?img=11"
-};
-
-const POSTS = Array.from({ length: 12 }, (_, i) => ({
-  id: i,
-  uri: `https://picsum.photos/400/600?random=${i}`,
-  views: Math.floor(Math.random() * 50000)
-}));
-
-// ── Stat Item ──────────────────────────────────────────────────────
-function StatBox({ label, val }: { label:string; val:string }) {
   return (
-    <View style={st.box}>
-      <Text style={st.val}>{val}</Text>
-      <Text style={st.label}>{label}</Text>
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <LinearGradient colors={[G.bg0, G.bg1, G.bg2]} style={StyleSheet.absoluteFill} />
+      {STARS.map(s => <StarDot key={s.id} p={s} />)}
+      {meteors.map(m => (
+        <ShootingStar key={m.id} m={m}
+          onDone={() => setMeteors(prev => prev.filter(x => x.id !== m.id))} />
+      ))}
     </View>
   );
-}
-const st = StyleSheet.create({
-  box:   { alignItems:'center' },
-  val:   { color:'#FFF', fontSize:18, fontWeight:'700', letterSpacing:0.5 },
-  label: { color:'rgba(237,232,255,0.5)', fontSize:12, marginTop:2 },
 });
+GalaxyBackground.displayName = 'GalaxyBackground';
 
-// ── Tabs ───────────────────────────────────────────────────────────
-const TABS = ['Vidéos', 'Shorts', 'Favoris'];
-function ProfileTabs({ active, onChange }: { active:string, onChange:(s:string)=>void }) {
-  return (
-    <View style={tb.row}>
-      {TABS.map(t => {
-        const isActive = active === t;
-        return (
-          <TouchableOpacity key={t} onPress={() => onChange(t)} style={tb.item}>
-            <Text style={[tb.txt, isActive && tb.txtActive]}>{t}</Text>
-            {isActive && <View style={tb.indicator} />}
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  );
-}
-const tb = StyleSheet.create({
-  row: { flexDirection:'row', borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.1)', marginTop:20 },
-  item: { flex:1, alignItems:'center', paddingVertical:14 },
-  txt: { color:'rgba(255,255,255,0.4)', fontSize:14, fontWeight:'600', textTransform:'uppercase', letterSpacing:1 },
-  txtActive: { color:'#FFF' },
-  indicator: { position:'absolute', bottom:0, width:40, height:3, backgroundColor:G.primary, borderRadius:2 }
-});
+// ═══════════════════════════════════════════════════════════════════
+//  ░░░  COMPOSANTS  ░══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
 
-// ── Content Grid Item ──────────────────────────────────────────────
-const GridItem = memo(({ item, style }: { item:any, style?:any }) => (
-  <TouchableOpacity activeOpacity={0.8} style={[gd.item, style]}>
-    <Image source={{ uri: item.uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-    <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={StyleSheet.absoluteFill} />
-    <View style={gd.meta}>
-      <Ionicons name="play-outline" size={12} color="#FFF" />
-      <Text style={gd.views}>{(item.views/1000).toFixed(1)}k</Text>
-    </View>
+// ─── Stat Card ────────────────────────────────────────────────────
+const StatCard = memo(({ count, label, onPress }: { count: string; label: string; onPress?: () => void }) => (
+  <TouchableOpacity style={st.box} onPress={onPress} disabled={!onPress}>
+    <Text style={st.count}>{count}</Text>
+    <Text style={st.label}>{label}</Text>
   </TouchableOpacity>
 ));
+StatCard.displayName = 'StatCard';
 
-GridItem.displayName = 'GridItem';
+const st = StyleSheet.create({
+  box:   { alignItems: 'center', paddingHorizontal: 12 },
+  count: { color: 'white', fontSize: 20, fontWeight: '800' },
+  label: { color: G.textSub, fontSize: 12, marginTop: 3 },
+});
 
-const gd = StyleSheet.create({
-  item: { width:ITEM_W, height:ITEM_W*1.3, backgroundColor:'#1A0032', marginBottom:COL_GAP, marginRight:COL_GAP },
-  meta: { position:'absolute', bottom:6, left:6, flexDirection:'row', alignItems:'center', gap:4 },
-  views:{ color:'#E0E0E0', fontSize:10, fontWeight:'600' }
+// ─── Carte Film Horizontale ────────────────────────────────────────
+type FilmItem = { id: string; title?: string; likes?: number; views?: string; img: string; genre?: string; year?: number };
+
+const MovieCard = memo(({ item, showStats = true }: { item: FilmItem; showStats?: boolean }) => {
+  const router = useRouter();
+  return (
+    <TouchableOpacity
+      style={mc.card}
+      activeOpacity={0.85}
+      onPress={() => router.push(`/film/${item.id}`)}
+    >
+      <Image source={{ uri: item.img }} style={mc.img} />
+      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={mc.overlay} />
+      {item.genre && (
+        <View style={mc.genreBadge}>
+          <Text style={mc.genreTxt}>{item.genre}</Text>
+        </View>
+      )}
+      <View style={mc.content}>
+        {item.title && <Text style={mc.title} numberOfLines={1}>{item.title}</Text>}
+        {showStats && item.likes != null && (
+          <View style={mc.stats}>
+            <View style={mc.stat}>
+              <Ionicons name="heart" size={11} color="white" />
+              <Text style={mc.statTxt}>{item.likes}</Text>
+            </View>
+            <View style={mc.stat}>
+              <Ionicons name="stats-chart" size={11} color="white" />
+              <Text style={mc.statTxt}>{item.views}</Text>
+            </View>
+          </View>
+        )}
+        {item.year && !showStats && (
+          <Text style={mc.year}>{item.year}</Text>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+});
+MovieCard.displayName = 'MovieCard';
+
+const mc = StyleSheet.create({
+  card:      { width: 145, height: 200, marginRight: 14, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder },
+  img:       { width: '100%', height: '100%', resizeMode: 'cover' },
+  overlay:   { ...StyleSheet.absoluteFillObject },
+  genreBadge:{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(168,85,247,0.7)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  genreTxt:  { color: 'white', fontSize: 9, fontWeight: '700' },
+  content:   { position: 'absolute', bottom: 10, left: 10, right: 6 },
+  title:     { color: 'white', fontSize: 15, fontWeight: '700', marginBottom: 4 },
+  stats:     { flexDirection: 'row', gap: 8 },
+  stat:      { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  statTxt:   { color: 'white', fontSize: 11, fontWeight: '500' },
+  year:      { color: 'rgba(255,255,255,0.5)', fontSize: 11 },
+});
+
+// ─── Carte Critique ───────────────────────────────────────────────
+const ReviewCard = memo(({ review }: { review: typeof REVIEWS[0] }) => {
+  const router = useRouter();
+  return (
+    <TouchableOpacity style={rc.card} onPress={() => router.push(`/film/${review.id}`)}>
+      <Image source={{ uri: review.img }} style={rc.poster} />
+      <View style={rc.body}>
+        <View style={rc.top}>
+          <Text style={rc.film}>{review.film}</Text>
+          <View style={rc.stars}>
+            {Array.from({ length: 5 }, (_, i) => (
+              <Ionicons key={i} name={i < review.rating ? 'star' : 'star-outline'} size={12} color={G.sG} />
+            ))}
+          </View>
+        </View>
+        <Text style={rc.text} numberOfLines={3}>{review.text}</Text>
+        <Text style={rc.date}>{review.date}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
+ReviewCard.displayName = 'ReviewCard';
+
+const rc = StyleSheet.create({
+  card:   { flexDirection: 'row', backgroundColor: G.glass, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder, marginHorizontal: 20, marginBottom: 12 },
+  poster: { width: 64, height: 96, resizeMode: 'cover' },
+  body:   { flex: 1, padding: 12, justifyContent: 'space-between' },
+  top:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  film:   { color: 'white', fontSize: 14, fontWeight: '700', flex: 1, marginRight: 8 },
+  stars:  { flexDirection: 'row', gap: 2 },
+  text:   { color: 'rgba(237,232,255,0.7)', fontSize: 12, lineHeight: 18, flex: 1 },
+  date:   { color: G.textSub, fontSize: 10, marginTop: 6 },
+});
+
+// ─── Modal Followers / Following ──────────────────────────────────
+const FAKE_USERS = Array.from({ length: 8 }, (_, i) => ({
+  id: String(i), name: `Cinéphile ${i + 1}`, handle: `user${i + 1}`, avi: `https://i.pravatar.cc/100?u=u${i}`,
+  role: ['Réalisateur', 'Critique', 'DOP', 'Acteur'][i % 4],
+}));
+
+const FollowModal = memo(({ visible, title, onClose }: { visible: boolean; title: string; onClose: () => void }) => {
+  const router = useRouter();
+  if (!visible) return null;
+  return (
+    <Modal transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={fm.backdrop} onPress={onClose} />
+      <View style={fm.sheet}>
+        <View style={fm.handle} />
+        <Text style={fm.title}>{title}</Text>
+        <ScrollView>
+          {FAKE_USERS.map(u => (
+            <View key={u.id} style={fm.row}>
+              <Image source={{ uri: u.avi }} style={fm.avi} />
+              <View style={{ flex: 1 }}>
+                <Text style={fm.name}>{u.name}</Text>
+                <Text style={fm.sub}>@{u.handle} · {u.role}</Text>
+              </View>
+              <TouchableOpacity style={fm.btn} onPress={() => router.push(`/user/${u.id}`)}>
+                <Text style={fm.btnTxt}>Voir</Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+});
+FollowModal.displayName = 'FollowModal';
+
+const fm = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
+  sheet:    { position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: H * 0.7, backgroundColor: '#140830', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
+  handle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'center', marginBottom: 16 },
+  title:    { color: 'white', fontSize: 18, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
+  row:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: G.glassBorder },
+  avi:      { width: 42, height: 42, borderRadius: 21 },
+  name:     { color: 'white', fontWeight: '600', fontSize: 14 },
+  sub:      { color: G.textSub, fontSize: 12 },
+  btn:      { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder },
+  btnTxt:   { color: 'white', fontSize: 12, fontWeight: '600' },
+});
+
+// ─── Section header ───────────────────────────────────────────────
+const SectionHeader = memo(({ title, onPress }: { title: string; onPress?: () => void }) => (
+  <View style={sh.row}>
+    <Text style={sh.title}>{title}</Text>
+    {onPress && (
+      <TouchableOpacity onPress={onPress} style={sh.btn}>
+        <Text style={sh.see}>Voir tout</Text>
+        <Ionicons name="chevron-forward" size={14} color={G.textSub} />
+      </TouchableOpacity>
+    )}
+  </View>
+));
+SectionHeader.displayName = 'SectionHeader';
+
+const sh = StyleSheet.create({
+  row:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 22, marginBottom: 14 },
+  title: { color: 'white', fontSize: 18, fontWeight: '800' },
+  btn:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  see:   { color: G.textSub, fontSize: 13 },
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  ░░░  MAIN SCREEN  ░░░
+//  ░░░  ÉCRAN PRINCIPAL  ░══════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════
+
+const PROFILE_TABS = ['Favoris', 'Sauvegardes', 'Critiques'] as const;
+type ProfileTab = typeof PROFILE_TABS[number];
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState('Vidéos');
-  const scrollY = useRef(new Animated.Value(0)).current;
 
-  // Header Animation
-  const headerHeight = 60;
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [0, 1],
-    extrapolate: 'clamp'
-  });
+  const [activeTab,      setActiveTab]      = useState<ProfileTab>('Favoris');
+  const [followModal,    setFollowModal]    = useState<'followers' | 'following' | null>(null);
+  const [isFollowing,    setIsFollowing]    = useState(false);
+  const followScale = useRef(new Animated.Value(1)).current;
+
+  const toggleFollow = useCallback(() => {
+    setIsFollowing(f => !f);
+    Animated.sequence([
+      Animated.spring(followScale, { toValue: 0.93, useNativeDriver: true, speed: 60 }),
+      Animated.spring(followScale, { toValue: 1, useNativeDriver: true, speed: 60 }),
+    ]).start();
+  }, [followScale]);
+
+  // ── Contenu selon l'onglet actif ──────────────────────────────
+  const tabContent = useMemo(() => {
+    switch (activeTab) {
+      case 'Favoris':
+        return (
+          <>
+            {/* Favoris horizontal */}
+            <SectionHeader title="Mes favoris" onPress={() => router.push('/favorites')} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.hScroll} contentContainerStyle={{ paddingRight: 22 }}>
+              {FAVORITES.map(item => <MovieCard key={item.id} item={item} />)}
+            </ScrollView>
+
+            {/* Comédie horizontal */}
+            <SectionHeader title="Comédie" onPress={() => router.push('/genre/comedy')} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.hScroll} contentContainerStyle={{ paddingRight: 22 }}>
+              {COMEDY.map(item => <MovieCard key={item.id} item={item} showStats={false} />)}
+            </ScrollView>
+          </>
+        );
+
+      case 'Sauvegardes':
+        return (
+          <>
+            <SectionHeader title="Pour voir plus tard" onPress={() => router.push('/saved')} />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.hScroll} contentContainerStyle={{ paddingRight: 22 }}>
+              {SAVED.map(item => <MovieCard key={item.id} item={item} />)}
+            </ScrollView>
+            {/* Stats sauvegardes */}
+            <View style={s.savedInfo}>
+              <LinearGradient colors={['rgba(192,96,255,0.12)', 'rgba(108,16,195,0.08)']} style={s.savedBanner}>
+                <Ionicons name="bookmark" size={20} color={G.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.savedBannerTxt}>{SAVED.length} œuvres sauvegardées</Text>
+                  <Text style={s.savedBannerSub}>Durée estimée : ~{SAVED.length * 95} min</Text>
+                </View>
+                <TouchableOpacity onPress={() => router.push('/saved')}>
+                  <Ionicons name="chevron-forward" size={18} color={G.primary} />
+                </TouchableOpacity>
+              </LinearGradient>
+            </View>
+          </>
+        );
+
+      case 'Critiques':
+        return (
+          <>
+            <SectionHeader title="Mes critiques" onPress={() => router.push('/reviews')} />
+            {REVIEWS.map(r => <ReviewCard key={r.id} review={r} />)}
+            {/* Bouton nouvelle critique */}
+            <TouchableOpacity style={s.newReviewBtn} onPress={() => router.push('/new-review')}>
+              <Ionicons name="add-circle-outline" size={18} color={G.primary} />
+              <Text style={s.newReviewTxt}>Rédiger une critique</Text>
+            </TouchableOpacity>
+          </>
+        );
+    }
+  }, [activeTab, router]);
 
   return (
-    <View style={styles.root}>
-      <StatusBar barStyle="light-content" />
-      
-      {/* 1. LAYER ONE: GALAXY BACKGROUND */}
-      <GalaxyCanvas />
+    <View style={s.container}>
+      <StatusBar style="light" />
+      <GalaxyBackground />
 
-      {/* 2. LAYER TWO: CONTENT SCROLL */}
-      <Animated.ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true }
-        )}
-        scrollEventThrottle={16}
-      >
-        {/* Espacement pour le fixed header transparent */}
-        <View style={{ height: 60 }} />
+      {/* Modals */}
+      <FollowModal
+        visible={followModal === 'followers'}
+        title={`${USER.followers} abonnés`}
+        onClose={() => setFollowModal(null)}
+      />
+      <FollowModal
+        visible={followModal === 'following'}
+        title={`${USER.following} abonnements`}
+        onClose={() => setFollowModal(null)}
+      />
 
-        {/* PROFILE HEADER INFO */}
-        <View style={styles.profileSection}>
-          
-          {/* Avatar Ring */}
-          <View style={styles.avatarContainer}>
-             <LinearGradient
-               colors={[G.primary, '#5A0090', G.sCy]}
-               start={{x:0, y:0}} end={{x:1, y:1}}
-               style={styles.avatarRing}
-             >
-               <View style={styles.avatarBg}>
-                 <Image source={{ uri: USER.avatar }} style={styles.avatarImg} />
-               </View>
-             </LinearGradient>
-             {/* Badge Pro */}
-             <View style={styles.badge}>
-               <Ionicons name="checkmark-circle" size={16} color={G.sCy} />
-             </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
+
+        {/* ── HEADER TOP ── */}
+        <View style={s.headerTop}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={22} color="white" />
+          </TouchableOpacity>
+          <TouchableOpacity style={s.settingsBtn} onPress={() => router.push('/settings')}>
+            <Ionicons name="settings-outline" size={20} color="white" />
+          </TouchableOpacity>
+        </View>
+
+        {/* ── AVATAR + INFOS ── */}
+        <View style={s.profileSection}>
+          <View style={s.avatarWrap}>
+            <Image source={{ uri: USER.avatar }} style={s.avatar} />
+            <View style={s.onlineDot} />
           </View>
-
-          {/* Texts */}
-          <Text style={styles.name}>{USER.name}</Text>
-          <Text style={styles.handle}>{USER.handle}</Text>
-          
-          <Text style={styles.bio}>{USER.bio}</Text>
-
-          {/* Stats */}
-          <View style={styles.statsRow}>
-            <StatBox val={USER.stats.followers} label="Abonnés" />
-            <View style={styles.divider} />
-            <StatBox val={USER.stats.following} label="Suivi(e)s" />
-            <View style={styles.divider} />
-            <StatBox val={USER.stats.likes} label="J'aime" />
-          </View>
-
-          {/* Buttons */}
-          <View style={styles.btnRow}>
-            <TouchableOpacity style={[styles.btn, styles.btnPrimary]}>
-              <Text style={styles.btnTxtPrimary}>Modifier le profil</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.btn, styles.btnSecondary]}>
-              <Text style={styles.btnTxtSecondary}>Partager</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.btnIcon]}>
-              <Ionicons name="logo-instagram" size={20} color="#FFF" />
-            </TouchableOpacity>
+          <View style={s.nameBlock}>
+            <Text style={s.username}>@{USER.handle}</Text>
+            <Text style={s.role}>{USER.role}</Text>
+            <Text style={s.bio}>{USER.bio}</Text>
           </View>
         </View>
 
-        {/* TABS */}
-        <ProfileTabs active={activeTab} onChange={setActiveTab} />
-
-        {/* GRID */}
-        <View style={styles.gridContainer}>
-          {POSTS.map((p, i) => (
-             <GridItem key={p.id} item={p} 
-               style={{ marginRight: (i+1)%3 === 0 ? 0 : COL_GAP }} 
-             />
-          ))}
+        {/* ── BOUTONS ACTION ── */}
+        <View style={s.actionRow}>
+          <Animated.View style={[{ flex: 1 }, { transform: [{ scale: followScale }] }]}>
+            <TouchableOpacity
+              style={[s.followBtn, isFollowing && s.followingBtn]}
+              onPress={toggleFollow}
+              activeOpacity={0.85}
+            >
+              {isFollowing
+                ? <><Ionicons name="checkmark" size={15} color="white" /><Text style={s.followBtnTxt}>Abonné</Text></>
+                : <Text style={s.followBtnTxt}>S'abonner</Text>
+              }
+            </TouchableOpacity>
+          </Animated.View>
+          <TouchableOpacity style={s.msgBtn} onPress={() => router.push(`/messages/${USER.handle}`)}>
+            <BlurView intensity={20} tint="dark" style={s.iconBlur}>
+              <Ionicons name="mail-outline" size={20} color="white" />
+            </BlurView>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.msgBtn} onPress={() => router.push('/edit-profile')}>
+            <BlurView intensity={20} tint="dark" style={s.iconBlur}>
+              <MaterialCommunityIcons name="pencil-outline" size={18} color="white" />
+            </BlurView>
+          </TouchableOpacity>
         </View>
 
-      </Animated.ScrollView>
-
-      {/* 3. LAYER THREE: FIXED HEADER */}
-      <SafeAreaView style={styles.fixedHeaderSafeArea} pointerEvents="box-none">
-        <View style={styles.fixedHeader}>
-          {/* Glass background that fades in */}
-          <Animated.View style={[StyleSheet.absoluteFill, styles.headerGlass, { opacity: headerOpacity }]} />
-          
-          <View style={styles.headerRow}>
-         
-             <Animated.Text style={[styles.headerTitle, { opacity: headerOpacity }]}>
-               {USER.handle}
-             </Animated.Text>
-
-           
-          </View>
+        {/* ── STATS BAR ── */}
+        <View style={s.statsBarContainer}>
+          <BlurView intensity={15} tint="dark" style={s.statsBar}>
+            <StatCard count={String(FAVORITES.length)} label="Favoris" onPress={() => setActiveTab('Favoris')} />
+            <View style={s.vDivider} />
+            <StatCard count={String(REVIEWS.length)} label="Critiques" onPress={() => setActiveTab('Critiques')} />
+            <View style={s.vDivider} />
+            <StatCard count={USER.followers >= 1000 ? `${(USER.followers / 1000).toFixed(1)}k` : String(USER.followers)} label="Abonnés" onPress={() => setFollowModal('followers')} />
+            <View style={s.vDivider} />
+            <StatCard count={String(USER.following)} label="Abonnements" onPress={() => setFollowModal('following')} />
+          </BlurView>
         </View>
-      </SafeAreaView>
 
+        {/* ── TABS ── */}
+        <View style={s.tabsRow}>
+          {PROFILE_TABS.map(tab => {
+            const active = activeTab === tab;
+            return (
+              <TouchableOpacity key={tab} style={s.tabBtn} onPress={() => setActiveTab(tab)}>
+                <Text style={[s.tabTxt, active && s.tabTxtOn]}>{tab}</Text>
+                {active && <View style={s.tabLine} />}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── CONTENU ONGLET ── */}
+        {tabContent}
+
+      </ScrollView>
     </View>
   );
 }
 
-// ─── Styles ────────────────────────────────────────────────────────
-const styles = StyleSheet.create({
-  root: { flex:1, backgroundColor:G.bg0 },
-  
-  // Fixed Header
-  fixedHeaderSafeArea: { position:'absolute', top:0, left:0, right:0, zIndex:10 },
-  fixedHeader: { height:50, justifyContent:'center' },
-  headerGlass: { backgroundColor:'rgba(6,0,16,0.85)', borderBottomWidth:1, borderBottomColor:'rgba(255,255,255,0.1)' },
-  headerRow: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:15, height:'100%' },
-  headerTitle: { color:'#FFF', fontSize:16, fontWeight:'700' },
-  iconBtn: { width:36, height:36, alignItems:'center', justifyContent:'center', borderRadius:18, backgroundColor:'rgba(255,255,255,0.1)' },
+// ═══════════════════════════════════════════════════════════════════
+//  🎨 STYLES
+// ═══════════════════════════════════════════════════════════════════
+const s = StyleSheet.create({
+  container:         { flex: 1, backgroundColor: G.bg0 },
+  scrollContent:     { paddingBottom: 120 },
 
-  // Profile Section
-  profileSection: { alignItems:'center', paddingHorizontal:20, paddingTop:10 },
-  avatarContainer: { marginBottom:15 },
-  avatarRing: { width:96, height:96, borderRadius:48, alignItems:'center', justifyContent:'center' },
-  avatarBg: { width:90, height:90, borderRadius:45, backgroundColor:G.bg0, alignItems:'center', justifyContent:'center' },
-  avatarImg: { width:86, height:86, borderRadius:43 },
-  badge: { position:'absolute', bottom:2, right:4, backgroundColor:'#FFF', borderRadius:10, padding:1 },
+  // Header top
+  headerTop:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginTop: Platform.OS === 'ios' ? 54 : 20, marginBottom: 10 },
+  backBtn:           { width: 38, height: 38, borderRadius: 12, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'center', alignItems: 'center' },
+  settingsBtn:       { width: 38, height: 38, borderRadius: 12, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'center', alignItems: 'center' },
 
-  name: { color:'#FFF', fontSize:22, fontWeight:'800', marginBottom:2 },
-  handle: { color:G.primary, fontSize:14, fontWeight:'600', marginBottom:12 },
-  bio: { color:'rgba(237,232,255,0.8)', textAlign:'center', fontSize:13, lineHeight:18, marginBottom:20, maxWidth:'90%' },
+  // Profil
+  profileSection:    { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 22, marginBottom: 20, gap: 16 },
+  avatarWrap:        { position: 'relative' },
+  avatar:            { width: 76, height: 76, borderRadius: 38, borderWidth: 2.5, borderColor: G.accent },
+  onlineDot:         { position: 'absolute', bottom: 3, right: 3, width: 14, height: 14, borderRadius: 7, backgroundColor: '#30D158', borderWidth: 2, borderColor: G.bg0 },
+  nameBlock:         { flex: 1, paddingTop: 4 },
+  username:          { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  role:              { color: G.primary, fontSize: 13, fontWeight: '600', marginTop: 2, marginBottom: 6 },
+  bio:               { color: 'rgba(237,232,255,0.65)', fontSize: 13, lineHeight: 18 },
 
-  // Stats
-  statsRow: { flexDirection:'row', alignItems:'center', marginBottom:24, backgroundColor:'rgba(255,255,255,0.05)', paddingVertical:12, paddingHorizontal:30, borderRadius:16, borderWidth:1, borderColor:'rgba(255,255,255,0.08)' },
-  divider: { width:1, height:24, backgroundColor:'rgba(255,255,255,0.15)', marginHorizontal:20 },
+  // Actions
+  actionRow:         { flexDirection: 'row', gap: 10, paddingHorizontal: 22, marginBottom: 22 },
+  followBtn:         { flex: 1, height: 42, borderRadius: 14, backgroundColor: G.primary, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  followingBtn:      { backgroundColor: 'rgba(192,96,255,0.2)', borderWidth: 1, borderColor: G.primary },
+  followBtnTxt:      { color: 'white', fontSize: 14, fontWeight: '700' },
+  msgBtn:            { width: 42, height: 42, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder },
+  iconBlur:          { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)' },
 
-  // Buttons
-  btnRow: { flexDirection:'row', alignItems:'center', gap:10, width:'100%' },
-  btn: { flex:1, height:44, borderRadius:12, alignItems:'center', justifyContent:'center' },
-  btnPrimary: { backgroundColor:G.primary },
-  btnTxtPrimary: { color:'#FFF', fontWeight:'700', fontSize:14 },
-  btnSecondary: { backgroundColor:'rgba(255,255,255,0.1)', borderWidth:1, borderColor:'rgba(255,255,255,0.15)' },
-  btnTxtSecondary: { color:'#FFF', fontWeight:'600', fontSize:14 },
-  btnIcon: { width:44, height:44, borderRadius:12, backgroundColor:'rgba(255,255,255,0.1)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.15)' },
+  // Stats bar
+  statsBarContainer: { paddingHorizontal: 22, marginBottom: 28 },
+  statsBar:          { flexDirection: 'row', paddingVertical: 14, borderRadius: 18, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'space-around', overflow: 'hidden' },
+  vDivider:          { width: 1, backgroundColor: G.glassBorder, alignSelf: 'stretch', marginVertical: 4 },
 
-  // Grid
-  gridContainer: { flexDirection:'row', flexWrap:'wrap', width:'100%' },
+  // Tabs
+  tabsRow:           { flexDirection: 'row', paddingHorizontal: 22, marginBottom: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
+  tabBtn:            { marginRight: 28, paddingBottom: 12, position: 'relative' },
+  tabTxt:            { color: 'rgba(237,232,255,0.4)', fontSize: 15, fontWeight: '600' },
+  tabTxtOn:          { color: G.sW, fontWeight: '700' },
+  tabLine:           { position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, backgroundColor: G.primary, borderRadius: 2 },
+
+  // Contenu
+  hScroll:           { paddingLeft: 22, marginBottom: 28 },
+
+  // Sauvegardes banner
+  savedInfo:         { paddingHorizontal: 22, marginBottom: 20 },
+  savedBanner:       { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(192,96,255,0.25)' },
+  savedBannerTxt:    { color: 'white', fontSize: 14, fontWeight: '700' },
+  savedBannerSub:    { color: G.textSub, fontSize: 12, marginTop: 2 },
+
+  // Nouvelle critique
+  newReviewBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 22, marginTop: 8, height: 48, borderRadius: 16, borderWidth: 1, borderColor: G.primary, borderStyle: 'dashed' },
+  newReviewTxt:      { color: G.primary, fontSize: 14, fontWeight: '600' },
 });
