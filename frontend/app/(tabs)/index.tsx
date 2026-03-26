@@ -684,21 +684,7 @@ function GalaxyTabBar({ active, set }: { active: string; set: (v: string) => voi
           const on = active === item.key;
           const c  = on ? P.primL : 'rgba(240,232,255,0.38)';
 
-          if (item.key === 'spark') return (
-            <TouchableOpacity key={item.key} onPress={() => set(item.key)} style={tb.sparkWrap} activeOpacity={0.9}>
-              <Animated.View style={[tb.sparkGlow, { opacity: glow }]} />
-              <Animated.View style={[tb.sparkRing, { transform: [{ rotate: spin }] }]}>
-                <LinearGradient colors={['#E080FF', '#5A0090', '#E080FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-              </Animated.View>
-              <LinearGradient colors={['#8B2FCC', '#B855FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={tb.sparkInner}>
-                <View style={tb.spkV} /><View style={tb.spkH} />
-                <View style={[tb.spkD, { transform: [{ rotate: '45deg' }] }]} />
-                <View style={[tb.spkD, { transform: [{ rotate: '-45deg' }] }]} />
-                <View style={tb.spkCtr} />
-              </LinearGradient>
-            </TouchableOpacity>
-          );
-
+   
           if (item.key === 'profil') return (
             <TouchableOpacity key={item.key} onPress={() => set(item.key)} style={tb.tab} activeOpacity={0.8}>
               <View style={[tb.avBox, on && tb.avBoxOn]}>
@@ -829,7 +815,7 @@ export default function ReelsScreen() {
       </SafeAreaView>
 
       {/* ── Tab bar ── */}
-      <GalaxyTabBar active={activeTab} set={setActiveTab} />
+      {/* <GalaxyTabBar active={activeTab} set={setActiveTab} /> */}
 
       {/* ── Menu déroulant ── */}
       <Modal
