@@ -1,592 +1,1344 @@
-// app/profile.tsx
-// ═══════════════════════════════════════════════════════════════════
-//  UNIVERSE — Profil  /  Galaxy System
-//  ─────────────────────────────────────────────────────────────────
-//  Moteur Galaxy porté depuis social.tsx (intégral).
-//  Tabs Favoris/Sauvegardes opérationnels, stats réelles,
-//  navigation film, édition profil, follow/message.
-// ═══════════════════════════════════════════════════════════════════
-
-import React, {
-  useState, useEffect, useRef, useMemo,
-  useCallback, memo,
-} from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, Image, ScrollView,
-  TouchableOpacity, Dimensions, Animated, Easing,
-  Platform, Modal, Pressable,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  FlatList,
+  ActivityIndicator,
+  Dimensions,
+  RefreshControl,
+  Animated,
+  Platform,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import { BlurView } from 'expo-blur';
+import {
+  COLORS,
+  SPACING,
+  RADIUS,
+  GRADIENTS,
+  GENRE_COLORS,
+} from '../../constants/theme';
+import { reviewsAPI, seenAPI, usersAPI } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
-const { width: W, height: H } = Dimensions.get('window');
+// ─── Constants ──────────────────────────────────────────────────────────────
+const { width, height } = Dimensions.get('window');
+const CELL_SIZE = (width - 2) / 3; // 2px total gap between 3 columns
+const GRID_GUTTER = 1;
+const HEADER_MAX_HEIGHT = 300;
+const HEADER_SCROLL_DISTANCE = 80;
+const TABS = ['grid', 'play-circle', 'person-crop-circle'] as const; // icon names
+type GridTab = 0 | 1 | 2;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🌌 PALETTE GALAXY (identique social.tsx & search.tsx)
-// ─────────────────────────────────────────────────────────────────────────────
-const G = {
-  bg0: '#060010', bg1: '#0A001E', bg2: '#070014',
-  sW: '#F3EDFF', sB: '#B2CCFF', sG: '#FFE270', sP: '#CF98FF', sCy: '#86EEFF',
-  glass: 'rgba(255,255,255,0.056)',
-  glassBorder: 'rgba(255,255,255,0.09)',
-  primary: '#C060FF',
-  accent: '#A855F7',
-  textSub: '#BCB8C2',
-  pinkBadge: '#E91E63',
-  purpleBadge: '#6A1B9A',
-};
+// ─── Types ───────────────────────────────────────────────────────────────────
+export interface Review {
+  id: string;
+  film_id: string;
+  content: string;
+  rating: number;
+  likes_count: number;
+  created_at: string;
+  film?: {
+    id: string;
+    title: string;
+    poster_url: string;
+    genre: string;
+    duration_type: string;
+  };
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 📦 DONNÉES MOCK
-// ─────────────────────────────────────────────────────────────────────────────
-const USER = {
-  name: 'Hugo C.',
-  handle: 'hugoch',
-  role: 'Acteur · Réalisateur',
-  bio: 'Passionné de cinéma indé. Anamorphique forever. 🎬',
-  avatar: 'https://i.pravatar.cc/150?u=hugoch',
-  followers: 1240,
-  following: 318,
-};
+export interface Film {
+  id: string;
+  title: string;
+  poster_url: string;
+  genre: string;
+  duration_type: string;
+  rating: number;
+}
 
-const FAVORITES = [
-  { id: '1', title: 'BOOTS',     likes: 288, views: '1,6k', img: 'https://picsum.photos/seed/b1/300/400', genre: 'Thriller', year: 2023 },
-  { id: '2', title: 'ADVERTISE', likes: 378, views: '1,6k', img: 'https://picsum.photos/seed/b2/300/400', genre: 'Drame',   year: 2024 },
-  { id: '3', title: 'DNX',       likes: 31,  views: '800',  img: 'https://picsum.photos/seed/b3/300/400', genre: 'Action',  year: 2022 },
-  { id: '4', title: 'VOIDSCAPE', likes: 514, views: '2,1k', img: 'https://picsum.photos/seed/b4/300/400', genre: 'Sci-Fi',  year: 2023 },
-];
+// ─── Sub-components ──────────────────────────────────────────────────────────
 
-const SAVED = [
-  { id: 's1', title: 'The Lighthouse', likes: 892, views: '4k',   img: 'https://picsum.photos/seed/s1/300/400', genre: 'Drame',   year: 2019 },
-  { id: 's2', title: 'Hereditary',     likes: 673, views: '3,2k', img: 'https://picsum.photos/seed/s2/300/400', genre: 'Horreur', year: 2018 },
-  { id: 's3', title: 'Midsommar',      likes: 740, views: '3,5k', img: 'https://picsum.photos/seed/s3/300/400', genre: 'Drame',   year: 2019 },
-];
-
-const COMEDY = [
-  { id: 'c1', title: 'Slapstick',   img: 'https://picsum.photos/seed/c1/300/400', year: 2021 },
-  { id: 'c2', title: 'La Coupole',  img: 'https://picsum.photos/seed/c2/300/400', year: 2022 },
-  { id: 'c3', title: 'Douce Nuit',  img: 'https://picsum.photos/seed/c3/300/400', year: 2023 },
-];
-
-const REVIEWS = [
-  {
-    id: 'r1', film: 'The Lighthouse',
-    text: 'Une masterclass visuelle. Le ratio 1.19:1 enferme littéralement les personnages dans leur folie.',
-    rating: 5, date: '12 mars 2025',
-    img: 'https://picsum.photos/seed/s1/300/400',
-  },
-  {
-    id: 'r2', film: 'Hereditary',
-    text: 'La mise en scène de Aster est terrifiante de précision. Chaque plan transpire l\'angoisse.',
-    rating: 4, date: '3 fév. 2025',
-    img: 'https://picsum.photos/seed/s2/300/400',
-  },
-];
-
-// ═══════════════════════════════════════════════════════════════════
-//  ░░░  GALAXY ANIMATION ENGINE (Portage Intégral)  ░░░
-// ═══════════════════════════════════════════════════════════════════
-
-const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
-const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
-
-interface Pt  { id: number; x: number; y: number; sz: number; col: string; del: number; dur: number; mn: number; mx: number; }
-interface Met { id: number; sx: number; sy: number; ang: number; len: number; }
-
-const STARS: Pt[] = Array.from({ length: 55 }, (_, i) => ({
-  id: i, x: rnd(0, W), y: rnd(0, H * 1.5), sz: rnd(1.0, 2.3),
-  col: pick([G.sW, G.sB, G.sP, G.sG]),
-  del: rnd(0, 4200), dur: rnd(2000, 5000), mn: 0.25, mx: 0.95,
-}));
-
-const StarDot = memo(({ p }: { p: Pt }) => {
-  const op = useRef(new Animated.Value(p.mn)).current;
-  useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.delay(p.del % p.dur),
-      Animated.timing(op, { toValue: p.mx, duration: p.dur * 0.5, useNativeDriver: true }),
-      Animated.timing(op, { toValue: p.mn, duration: p.dur * 0.5, useNativeDriver: true }),
-    ])).start();
-  }, []); // eslint-disable-line
+/** Star rating row */
+function StarRating({ rating, size = 12 }: { rating: number; size?: number }) {
   return (
-    <Animated.View style={{
-      position: 'absolute', left: p.x, top: p.y,
-      width: p.sz, height: p.sz, borderRadius: p.sz,
-      backgroundColor: p.col, opacity: op,
-    }} />
-  );
-});
-StarDot.displayName = 'StarDot';
-
-const ShootingStar = memo(({ m, onDone }: { m: Met; onDone: () => void }) => {
-  const prog = useRef(new Animated.Value(0)).current;
-  const op   = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.parallel([
-      Animated.sequence([
-        Animated.timing(op, { toValue: 1, duration: 100, useNativeDriver: true }),
-        Animated.timing(op, { toValue: 0, duration: 500, delay: 200, useNativeDriver: true }),
-      ]),
-      Animated.timing(prog, { toValue: 1, duration: 800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-    ]).start(onDone);
-  }, []); // eslint-disable-line
-  const tx = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(m.ang * Math.PI / 180) * 200] });
-  const ty = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(m.ang * Math.PI / 180) * 200] });
-  return (
-    <Animated.View style={{
-      position: 'absolute', left: m.sx, top: m.sy,
-      opacity: op, transform: [{ translateX: tx }, { translateY: ty }, { rotate: `${m.ang}deg` }],
-    }}>
-      <LinearGradient
-        colors={['rgba(255,255,255,0)', 'rgba(175,110,255,0.8)', '#fff']}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={{ width: m.len, height: 2, borderRadius: 1 }}
-      />
-    </Animated.View>
-  );
-});
-ShootingStar.displayName = 'ShootingStar';
-
-const GalaxyBackground = memo(() => {
-  const [meteors, setMeteors] = useState<Met[]>([]);
-  useEffect(() => {
-    const i = setInterval(() => {
-      if (Math.random() > 0.7)
-        setMeteors(m => [...m, {
-          id: Date.now(), sx: rnd(0, W), sy: rnd(0, H * 0.4),
-          ang: rnd(20, 50), len: rnd(80, 150),
-        }]);
-    }, 2000);
-    return () => clearInterval(i);
-  }, []);
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <LinearGradient colors={[G.bg0, G.bg1, G.bg2]} style={StyleSheet.absoluteFill} />
-      {STARS.map(s => <StarDot key={s.id} p={s} />)}
-      {meteors.map(m => (
-        <ShootingStar key={m.id} m={m}
-          onDone={() => setMeteors(prev => prev.filter(x => x.id !== m.id))} />
+    <View style={{ flexDirection: 'row', gap: 1 }}>
+      {[1, 2, 3, 4, 5].map((s) => (
+        <Ionicons
+          key={s}
+          name={s <= Math.round(rating) ? 'star' : 'star-outline'}
+          size={size}
+          color="#FFD60A"
+        />
       ))}
-    </View>
-  );
-});
-GalaxyBackground.displayName = 'GalaxyBackground';
-
-// ═══════════════════════════════════════════════════════════════════
-//  ░░░  COMPOSANTS  ░══════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════
-
-// ─── Stat Card ────────────────────────────────────────────────────
-const StatCard = memo(({ count, label, onPress }: { count: string; label: string; onPress?: () => void }) => (
-  <TouchableOpacity style={st.box} onPress={onPress} disabled={!onPress}>
-    <Text style={st.count}>{count}</Text>
-    <Text style={st.label}>{label}</Text>
-  </TouchableOpacity>
-));
-StatCard.displayName = 'StatCard';
-
-const st = StyleSheet.create({
-  box:   { alignItems: 'center', paddingHorizontal: 12 },
-  count: { color: 'white', fontSize: 20, fontWeight: '800' },
-  label: { color: G.textSub, fontSize: 12, marginTop: 3 },
-});
-
-// ─── Carte Film Horizontale ────────────────────────────────────────
-type FilmItem = { id: string; title?: string; likes?: number; views?: string; img: string; genre?: string; year?: number };
-
-const MovieCard = memo(({ item, showStats = true }: { item: FilmItem; showStats?: boolean }) => {
-  const router = useRouter();
-  return (
-    <TouchableOpacity
-      style={mc.card}
-      activeOpacity={0.85}
-      onPress={() => router.push(`/film/${item.id}`)}
-    >
-      <Image source={{ uri: item.img }} style={mc.img} />
-      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={mc.overlay} />
-      {item.genre && (
-        <View style={mc.genreBadge}>
-          <Text style={mc.genreTxt}>{item.genre}</Text>
-        </View>
-      )}
-      <View style={mc.content}>
-        {item.title && <Text style={mc.title} numberOfLines={1}>{item.title}</Text>}
-        {showStats && item.likes != null && (
-          <View style={mc.stats}>
-            <View style={mc.stat}>
-              <Ionicons name="heart" size={11} color="white" />
-              <Text style={mc.statTxt}>{item.likes}</Text>
-            </View>
-            <View style={mc.stat}>
-              <Ionicons name="stats-chart" size={11} color="white" />
-              <Text style={mc.statTxt}>{item.views}</Text>
-            </View>
-          </View>
-        )}
-        {item.year && !showStats && (
-          <Text style={mc.year}>{item.year}</Text>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
-});
-MovieCard.displayName = 'MovieCard';
-
-const mc = StyleSheet.create({
-  card:      { width: 145, height: 200, marginRight: 14, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder },
-  img:       { width: '100%', height: '100%', resizeMode: 'cover' },
-  overlay:   { ...StyleSheet.absoluteFillObject },
-  genreBadge:{ position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(168,85,247,0.7)', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
-  genreTxt:  { color: 'white', fontSize: 9, fontWeight: '700' },
-  content:   { position: 'absolute', bottom: 10, left: 10, right: 6 },
-  title:     { color: 'white', fontSize: 15, fontWeight: '700', marginBottom: 4 },
-  stats:     { flexDirection: 'row', gap: 8 },
-  stat:      { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  statTxt:   { color: 'white', fontSize: 11, fontWeight: '500' },
-  year:      { color: 'rgba(255,255,255,0.5)', fontSize: 11 },
-});
-
-// ─── Carte Critique ───────────────────────────────────────────────
-const ReviewCard = memo(({ review }: { review: typeof REVIEWS[0] }) => {
-  const router = useRouter();
-  return (
-    <TouchableOpacity style={rc.card} onPress={() => router.push(`/film/${review.id}`)}>
-      <Image source={{ uri: review.img }} style={rc.poster} />
-      <View style={rc.body}>
-        <View style={rc.top}>
-          <Text style={rc.film}>{review.film}</Text>
-          <View style={rc.stars}>
-            {Array.from({ length: 5 }, (_, i) => (
-              <Ionicons key={i} name={i < review.rating ? 'star' : 'star-outline'} size={12} color={G.sG} />
-            ))}
-          </View>
-        </View>
-        <Text style={rc.text} numberOfLines={3}>{review.text}</Text>
-        <Text style={rc.date}>{review.date}</Text>
-      </View>
-    </TouchableOpacity>
-  );
-});
-ReviewCard.displayName = 'ReviewCard';
-
-const rc = StyleSheet.create({
-  card:   { flexDirection: 'row', backgroundColor: G.glass, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder, marginHorizontal: 20, marginBottom: 12 },
-  poster: { width: 64, height: 96, resizeMode: 'cover' },
-  body:   { flex: 1, padding: 12, justifyContent: 'space-between' },
-  top:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  film:   { color: 'white', fontSize: 14, fontWeight: '700', flex: 1, marginRight: 8 },
-  stars:  { flexDirection: 'row', gap: 2 },
-  text:   { color: 'rgba(237,232,255,0.7)', fontSize: 12, lineHeight: 18, flex: 1 },
-  date:   { color: G.textSub, fontSize: 10, marginTop: 6 },
-});
-
-// ─── Modal Followers / Following ──────────────────────────────────
-const FAKE_USERS = Array.from({ length: 8 }, (_, i) => ({
-  id: String(i), name: `Cinéphile ${i + 1}`, handle: `user${i + 1}`, avi: `https://i.pravatar.cc/100?u=u${i}`,
-  role: ['Réalisateur', 'Critique', 'DOP', 'Acteur'][i % 4],
-}));
-
-const FollowModal = memo(({ visible, title, onClose }: { visible: boolean; title: string; onClose: () => void }) => {
-  const router = useRouter();
-  if (!visible) return null;
-  return (
-    <Modal transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={fm.backdrop} onPress={onClose} />
-      <View style={fm.sheet}>
-        <View style={fm.handle} />
-        <Text style={fm.title}>{title}</Text>
-        <ScrollView>
-          {FAKE_USERS.map(u => (
-            <View key={u.id} style={fm.row}>
-              <Image source={{ uri: u.avi }} style={fm.avi} />
-              <View style={{ flex: 1 }}>
-                <Text style={fm.name}>{u.name}</Text>
-                <Text style={fm.sub}>@{u.handle} · {u.role}</Text>
-              </View>
-              <TouchableOpacity style={fm.btn} onPress={() => router.push(`/user/${u.id}`)}>
-                <Text style={fm.btnTxt}>Voir</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView>
-      </View>
-    </Modal>
-  );
-});
-FollowModal.displayName = 'FollowModal';
-
-const fm = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-  sheet:    { position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: H * 0.7, backgroundColor: '#140830', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 40 },
-  handle:   { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'center', marginBottom: 16 },
-  title:    { color: 'white', fontSize: 18, fontWeight: '700', marginBottom: 16, textAlign: 'center' },
-  row:      { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: G.glassBorder },
-  avi:      { width: 42, height: 42, borderRadius: 21 },
-  name:     { color: 'white', fontWeight: '600', fontSize: 14 },
-  sub:      { color: G.textSub, fontSize: 12 },
-  btn:      { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder },
-  btnTxt:   { color: 'white', fontSize: 12, fontWeight: '600' },
-});
-
-// ─── Section header ───────────────────────────────────────────────
-const SectionHeader = memo(({ title, onPress }: { title: string; onPress?: () => void }) => (
-  <View style={sh.row}>
-    <Text style={sh.title}>{title}</Text>
-    {onPress && (
-      <TouchableOpacity onPress={onPress} style={sh.btn}>
-        <Text style={sh.see}>Voir tout</Text>
-        <Ionicons name="chevron-forward" size={14} color={G.textSub} />
-      </TouchableOpacity>
-    )}
-  </View>
-));
-SectionHeader.displayName = 'SectionHeader';
-
-const sh = StyleSheet.create({
-  row:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 22, marginBottom: 14 },
-  title: { color: 'white', fontSize: 18, fontWeight: '800' },
-  btn:   { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  see:   { color: G.textSub, fontSize: 13 },
-});
-
-// ═══════════════════════════════════════════════════════════════════
-//  ░░░  ÉCRAN PRINCIPAL  ░══════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════
-
-const PROFILE_TABS = ['Favoris', 'Sauvegardes', 'Critiques'] as const;
-type ProfileTab = typeof PROFILE_TABS[number];
-
-export default function ProfileScreen() {
-  const router = useRouter();
-
-  const [activeTab,      setActiveTab]      = useState<ProfileTab>('Favoris');
-  const [followModal,    setFollowModal]    = useState<'followers' | 'following' | null>(null);
-  const [isFollowing,    setIsFollowing]    = useState(false);
-  const followScale = useRef(new Animated.Value(1)).current;
-
-  const toggleFollow = useCallback(() => {
-    setIsFollowing(f => !f);
-    Animated.sequence([
-      Animated.spring(followScale, { toValue: 0.93, useNativeDriver: true, speed: 60 }),
-      Animated.spring(followScale, { toValue: 1, useNativeDriver: true, speed: 60 }),
-    ]).start();
-  }, [followScale]);
-
-  // ── Contenu selon l'onglet actif ──────────────────────────────
-  const tabContent = useMemo(() => {
-    switch (activeTab) {
-      case 'Favoris':
-        return (
-          <>
-            {/* Favoris horizontal */}
-            <SectionHeader title="Mes favoris" onPress={() => router.push('/favorites')} />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.hScroll} contentContainerStyle={{ paddingRight: 22 }}>
-              {FAVORITES.map(item => <MovieCard key={item.id} item={item} />)}
-            </ScrollView>
-
-            {/* Comédie horizontal */}
-            <SectionHeader title="Comédie" onPress={() => router.push('/genre/comedy')} />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.hScroll} contentContainerStyle={{ paddingRight: 22 }}>
-              {COMEDY.map(item => <MovieCard key={item.id} item={item} showStats={false} />)}
-            </ScrollView>
-          </>
-        );
-
-      case 'Sauvegardes':
-        return (
-          <>
-            <SectionHeader title="Pour voir plus tard" onPress={() => router.push('/saved')} />
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.hScroll} contentContainerStyle={{ paddingRight: 22 }}>
-              {SAVED.map(item => <MovieCard key={item.id} item={item} />)}
-            </ScrollView>
-            {/* Stats sauvegardes */}
-            <View style={s.savedInfo}>
-              <LinearGradient colors={['rgba(192,96,255,0.12)', 'rgba(108,16,195,0.08)']} style={s.savedBanner}>
-                <Ionicons name="bookmark" size={20} color={G.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={s.savedBannerTxt}>{SAVED.length} œuvres sauvegardées</Text>
-                  <Text style={s.savedBannerSub}>Durée estimée : ~{SAVED.length * 95} min</Text>
-                </View>
-                <TouchableOpacity onPress={() => router.push('/saved')}>
-                  <Ionicons name="chevron-forward" size={18} color={G.primary} />
-                </TouchableOpacity>
-              </LinearGradient>
-            </View>
-          </>
-        );
-
-      case 'Critiques':
-        return (
-          <>
-            <SectionHeader title="Mes critiques" onPress={() => router.push('/reviews')} />
-            {REVIEWS.map(r => <ReviewCard key={r.id} review={r} />)}
-            {/* Bouton nouvelle critique */}
-            <TouchableOpacity style={s.newReviewBtn} onPress={() => router.push('/new-review')}>
-              <Ionicons name="add-circle-outline" size={18} color={G.primary} />
-              <Text style={s.newReviewTxt}>Rédiger une critique</Text>
-            </TouchableOpacity>
-          </>
-        );
-    }
-  }, [activeTab, router]);
-
-  return (
-    <View style={s.container}>
-      <StatusBar style="light" />
-      <GalaxyBackground />
-
-      {/* Modals */}
-      <FollowModal
-        visible={followModal === 'followers'}
-        title={`${USER.followers} abonnés`}
-        onClose={() => setFollowModal(null)}
-      />
-      <FollowModal
-        visible={followModal === 'following'}
-        title={`${USER.following} abonnements`}
-        onClose={() => setFollowModal(null)}
-      />
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollContent}>
-
-        {/* ── HEADER TOP ── */}
-        <View style={s.headerTop}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Ionicons name="chevron-back" size={22} color="white" />
-          </TouchableOpacity>
-          <TouchableOpacity style={s.settingsBtn} onPress={() => router.push('/settings')}>
-            <Ionicons name="settings-outline" size={20} color="white" />
-          </TouchableOpacity>
-        </View>
-
-        {/* ── AVATAR + INFOS ── */}
-        <View style={s.profileSection}>
-          <View style={s.avatarWrap}>
-            <Image source={{ uri: USER.avatar }} style={s.avatar} />
-            <View style={s.onlineDot} />
-          </View>
-          <View style={s.nameBlock}>
-            <Text style={s.username}>@{USER.handle}</Text>
-            <Text style={s.role}>{USER.role}</Text>
-            <Text style={s.bio}>{USER.bio}</Text>
-          </View>
-        </View>
-
-        {/* ── BOUTONS ACTION ── */}
-        <View style={s.actionRow}>
-          <Animated.View style={[{ flex: 1 }, { transform: [{ scale: followScale }] }]}>
-            <TouchableOpacity
-              style={[s.followBtn, isFollowing && s.followingBtn]}
-              onPress={toggleFollow}
-              activeOpacity={0.85}
-            >
-              {isFollowing
-                ? <><Ionicons name="checkmark" size={15} color="white" /><Text style={s.followBtnTxt}>Abonné</Text></>
-                : <Text style={s.followBtnTxt}>S'abonner</Text>
-              }
-            </TouchableOpacity>
-          </Animated.View>
-          <TouchableOpacity style={s.msgBtn} onPress={() => router.push(`/messages/${USER.handle}`)}>
-            <BlurView intensity={20} tint="dark" style={s.iconBlur}>
-              <Ionicons name="mail-outline" size={20} color="white" />
-            </BlurView>
-          </TouchableOpacity>
-          <TouchableOpacity style={s.msgBtn} onPress={() => router.push('/edit-profile')}>
-            <BlurView intensity={20} tint="dark" style={s.iconBlur}>
-              <MaterialCommunityIcons name="pencil-outline" size={18} color="white" />
-            </BlurView>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── STATS BAR ── */}
-        <View style={s.statsBarContainer}>
-          <BlurView intensity={15} tint="dark" style={s.statsBar}>
-            <StatCard count={String(FAVORITES.length)} label="Favoris" onPress={() => setActiveTab('Favoris')} />
-            <View style={s.vDivider} />
-            <StatCard count={String(REVIEWS.length)} label="Critiques" onPress={() => setActiveTab('Critiques')} />
-            <View style={s.vDivider} />
-            <StatCard count={USER.followers >= 1000 ? `${(USER.followers / 1000).toFixed(1)}k` : String(USER.followers)} label="Abonnés" onPress={() => setFollowModal('followers')} />
-            <View style={s.vDivider} />
-            <StatCard count={String(USER.following)} label="Abonnements" onPress={() => setFollowModal('following')} />
-          </BlurView>
-        </View>
-
-        {/* ── TABS ── */}
-        <View style={s.tabsRow}>
-          {PROFILE_TABS.map(tab => {
-            const active = activeTab === tab;
-            return (
-              <TouchableOpacity key={tab} style={s.tabBtn} onPress={() => setActiveTab(tab)}>
-                <Text style={[s.tabTxt, active && s.tabTxtOn]}>{tab}</Text>
-                {active && <View style={s.tabLine} />}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* ── CONTENU ONGLET ── */}
-        {tabContent}
-
-      </ScrollView>
     </View>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════
-//  🎨 STYLES
-// ═══════════════════════════════════════════════════════════════════
-const s = StyleSheet.create({
-  container:         { flex: 1, backgroundColor: G.bg0 },
-  scrollContent:     { paddingBottom: 120 },
+/** Empty placeholder */
+function EmptyState({
+  icon,
+  text,
+  subtext,
+}: {
+  icon: string;
+  text: string;
+  subtext?: string;
+}) {
+  return (
+    <View style={styles.emptyState}>
+      <Ionicons name={icon as any} size={48} color={COLORS.textTertiary} />
+      <Text style={styles.emptyText}>{text}</Text>
+      {subtext && <Text style={styles.emptySubText}>{subtext}</Text>}
+    </View>
+  );
+}
 
-  // Header top
-  headerTop:         { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginTop: Platform.OS === 'ios' ? 54 : 20, marginBottom: 10 },
-  backBtn:           { width: 38, height: 38, borderRadius: 12, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'center', alignItems: 'center' },
-  settingsBtn:       { width: 38, height: 38, borderRadius: 12, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'center', alignItems: 'center' },
+/** Instagram-style stat column */
+function StatColumn({
+  value,
+  label,
+  onPress,
+}: {
+  value: string;
+  label: string;
+  onPress?: () => void;
+}) {
+  return (
+    <TouchableOpacity style={styles.statColumn} onPress={onPress} activeOpacity={0.7}>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
 
-  // Profil
-  profileSection:    { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 22, marginBottom: 20, gap: 16 },
-  avatarWrap:        { position: 'relative' },
-  avatar:            { width: 76, height: 76, borderRadius: 38, borderWidth: 2.5, borderColor: G.accent },
-  onlineDot:         { position: 'absolute', bottom: 3, right: 3, width: 14, height: 14, borderRadius: 7, backgroundColor: '#30D158', borderWidth: 2, borderColor: G.bg0 },
-  nameBlock:         { flex: 1, paddingTop: 4 },
-  username:          { color: 'white', fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
-  role:              { color: G.primary, fontSize: 13, fontWeight: '600', marginTop: 2, marginBottom: 6 },
-  bio:               { color: 'rgba(237,232,255,0.65)', fontSize: 13, lineHeight: 18 },
+/** Row 1 Cell – Top film (favorite #1) */
+function TopFilmCell({
+  film,
+  onPress,
+}: {
+  film: Film | null;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.gridCell, { width: CELL_SIZE, height: CELL_SIZE * 1.25 }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      {film ? (
+        <Image
+          source={{ uri: film.poster_url }}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject, styles.gridCellPlaceholder]} />
+      )}
+      {/* Star sparkle */}
+      <View style={styles.sparkleTopLeft}>
+        <Text style={styles.sparkleEmoji}>✨</Text>
+      </View>
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.72)']}
+        style={styles.cellOverlay}
+      >
+        <Text style={styles.cellLabel}>Ton film préf</Text>
+        {film && <StarRating rating={film.rating} size={10} />}
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
 
-  // Actions
-  actionRow:         { flexDirection: 'row', gap: 10, paddingHorizontal: 22, marginBottom: 22 },
-  followBtn:         { flex: 1, height: 42, borderRadius: 14, backgroundColor: G.primary, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
-  followingBtn:      { backgroundColor: 'rgba(192,96,255,0.2)', borderWidth: 1, borderColor: G.primary },
-  followBtnTxt:      { color: 'white', fontSize: 14, fontWeight: '700' },
-  msgBtn:            { width: 42, height: 42, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder },
-  iconBlur:          { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)' },
+/** Row 1 Cell – Top 2 & 3 films */
+function Top2FilmsCell({
+  films,
+  onPress,
+}: {
+  films: Film[];
+  onPress: () => void;
+}) {
+  const film1 = films[0] ?? null;
+  const film2 = films[1] ?? null;
+  return (
+    <TouchableOpacity
+      style={[styles.gridCell, { width: CELL_SIZE, height: CELL_SIZE * 1.25 }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      {/* Split vertically */}
+      <View style={styles.splitCell}>
+        <View style={[styles.splitHalf, { borderBottomWidth: GRID_GUTTER, borderColor: COLORS.background }]}>
+          {film1 ? (
+            <Image source={{ uri: film1.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+          ) : (
+            <View style={[StyleSheet.absoluteFillObject, styles.gridCellPlaceholder]} />
+          )}
+          <View style={styles.rankBadge}><Text style={styles.rankText}>02</Text></View>
+        </View>
+        <View style={styles.splitHalf}>
+          {film2 ? (
+            <Image source={{ uri: film2.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+          ) : (
+            <View style={[StyleSheet.absoluteFillObject, styles.gridCellPlaceholder]} />
+          )}
+          <View style={styles.rankBadge}><Text style={styles.rankText}>03</Text></View>
+        </View>
+      </View>
+      {/* Sparkle top */}
+      <View style={styles.sparkleTopLeft}>
+        <Text style={styles.sparkleEmoji}>⭐</Text>
+      </View>
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.78)']}
+        style={[styles.cellOverlay, { paddingBottom: 8 }]}
+      >
+        <Text style={styles.cellLabel}>Tes 2 film préf</Text>
+        <Text style={styles.cellSublabel}>après le 1</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
 
-  // Stats bar
-  statsBarContainer: { paddingHorizontal: 22, marginBottom: 28 },
-  statsBar:          { flexDirection: 'row', paddingVertical: 14, borderRadius: 18, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'space-around', overflow: 'hidden' },
-  vDivider:          { width: 1, backgroundColor: G.glassBorder, alignSelf: 'stretch', marginVertical: 4 },
+/** Row 1 Cell – Other favorites (mini grid) */
+function OtherFavsCell({
+  films,
+  onPress,
+}: {
+  films: Film[];
+  onPress: () => void;
+}) {
+  const displayed = films.slice(0, 4);
+  return (
+    <TouchableOpacity
+      style={[styles.gridCell, { width: CELL_SIZE, height: CELL_SIZE * 1.25 }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      {/* 2×2 micro grid */}
+      <View style={styles.microGrid}>
+        {[0, 1, 2, 3].map((i) => (
+          <View
+            key={i}
+            style={[
+              styles.microCell,
+              i % 2 === 0 ? { marginRight: GRID_GUTTER / 2 } : { marginLeft: GRID_GUTTER / 2 },
+              i < 2 ? { marginBottom: GRID_GUTTER / 2 } : { marginTop: GRID_GUTTER / 2 },
+            ]}
+          >
+            {displayed[i] ? (
+              <Image
+                source={{ uri: displayed[i].poster_url }}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={[StyleSheet.absoluteFillObject, styles.gridCellPlaceholder]} />
+            )}
+          </View>
+        ))}
+      </View>
+      <View style={styles.sparkleTopLeft}>
+        <Text style={styles.sparkleEmoji}>✦</Text>
+      </View>
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.72)']}
+        style={[styles.cellOverlay, { paddingBottom: 8 }]}
+      >
+        <Text style={styles.cellLabel}>T'es autres fav</Text>
+        <Text style={styles.cellSublabel}>après ton top</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
 
-  // Tabs
-  tabsRow:           { flexDirection: 'row', paddingHorizontal: 22, marginBottom: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)' },
-  tabBtn:            { marginRight: 28, paddingBottom: 12, position: 'relative' },
-  tabTxt:            { color: 'rgba(237,232,255,0.4)', fontSize: 15, fontWeight: '600' },
-  tabTxtOn:          { color: G.sW, fontWeight: '700' },
-  tabLine:           { position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, backgroundColor: G.primary, borderRadius: 2 },
+/** Critique cell (row 2) */
+function CritiqueCell({
+  review,
+  index,
+  onPress,
+}: {
+  review: Review;
+  index: number;
+  onPress: () => void;
+}) {
+  const isWide = index === 0; // first critique takes 2/3 width
+  const cellW = isWide ? CELL_SIZE * 2 + GRID_GUTTER : CELL_SIZE;
+  return (
+    <TouchableOpacity
+      style={[styles.gridCell, { width: cellW, height: CELL_SIZE }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      {review.film ? (
+        <Image
+          source={{ uri: review.film.poster_url }}
+          style={StyleSheet.absoluteFillObject}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={[StyleSheet.absoluteFillObject, styles.papyrusBackground]} />
+      )}
+      {/* Papyrus/parchment texture overlay */}
+      <LinearGradient
+        colors={['rgba(180,120,40,0.3)', 'rgba(100,60,10,0.55)']}
+        style={StyleSheet.absoluteFillObject}
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.8)']}
+        style={styles.cellOverlay}
+      >
+        <View style={styles.critiqueIconRow}>
+          <Ionicons name="pencil" size={11} color="rgba(255,220,120,0.9)" />
+          <Text style={styles.critiqueCellLabel}>Critique</Text>
+        </View>
+        {isWide && (
+          <Text style={styles.critiqueSnippet} numberOfLines={2}>
+            {review.content}
+          </Text>
+        )}
+        <StarRating rating={review.rating} size={9} />
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
 
-  // Contenu
-  hScroll:           { paddingLeft: 22, marginBottom: 28 },
+/** Seen film cell (row 3+) – standard square */
+function SeenCell({ film, onPress }: { film: Film; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={[styles.gridCell, { width: CELL_SIZE, height: CELL_SIZE }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      <Image
+        source={{ uri: film.poster_url }}
+        style={StyleSheet.absoluteFillObject}
+        resizeMode="cover"
+      />
+      <View style={styles.seenCheckBadge}>
+        <Ionicons name="eye" size={9} color="#fff" />
+      </View>
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.6)']}
+        style={styles.cellOverlayThin}
+      >
+        <Text style={styles.seenCellTitle} numberOfLines={1}>{film.title}</Text>
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+}
 
-  // Sauvegardes banner
-  savedInfo:         { paddingHorizontal: 22, marginBottom: 20 },
-  savedBanner:       { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(192,96,255,0.25)' },
-  savedBannerTxt:    { color: 'white', fontSize: 14, fontWeight: '700' },
-  savedBannerSub:    { color: G.textSub, fontSize: 12, marginTop: 2 },
+// ─── Shimmer Skeleton ─────────────────────────────────────────
+function Shimmer() {
+  const translateX = useRef(new Animated.Value(-100)).current;
 
-  // Nouvelle critique
-  newReviewBtn:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginHorizontal: 22, marginTop: 8, height: 48, borderRadius: 16, borderWidth: 1, borderColor: G.primary, borderStyle: 'dashed' },
-  newReviewTxt:      { color: G.primary, fontSize: 14, fontWeight: '600' },
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(translateX, {
+        toValue: 300,
+        duration: 1200,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, []);
+
+  return (
+    <View style={{ flex: 1, backgroundColor: '#1A1A2E', overflow: 'hidden' }}>
+      <Animated.View
+        style={{
+          width: '40%',
+          height: '100%',
+          backgroundColor: 'rgba(255,255,255,0.08)',
+          transform: [{ translateX }],
+        }}
+      />
+    </View>
+  );
+}
+// ── Prefetch + Optimistic Nav ─────────────────────────────
+  const prefetched = useRef<Set<string>>(new Set());
+
+  const prefetchFilm = useCallback((id: string) => {
+    if (prefetched.current.has(id)) return;
+    prefetched.current.add(id);
+
+    // Warm screen (simulate prefetch)
+    setTimeout(() => {
+      router.push(`/film/${id}`);
+      router.back();
+    }, 0);
+  }, []);
+
+  const handleNavigateFilm = useCallback((id: string) => {
+    // Optimistic navigation
+    router.push(`/film/${id}`);
+  }, []);
+
+  // ── Replace loading UI ────────────────────────────────────
+  function renderGridContent() {
+    if (loading) {
+      return (
+        <View>
+          {/* Row skeleton */}
+          <View style={styles.gridRow}>
+            <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE * 1.25 }} />
+            <View style={{ width: GRID_GUTTER }} />
+            <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE * 1.25 }} />
+            <View style={{ width: GRID_GUTTER }} />
+            <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE * 1.25 }} />
+          </View>
+
+          {[...Array(6)].map((_, i) => (
+            <View key={i} style={{ marginTop: GRID_GUTTER }}>
+              <View style={styles.gridRow}>
+                {[...Array(3)].map((_, j) => (
+                  <React.Fragment key={j}>
+                    {j > 0 && <View style={{ width: GRID_GUTTER }} />}
+                    <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE }} />
+                  </React.Fragment>
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+      );
+    }
+
+    return (
+      <View>
+        {/* TOP FILMS */}
+        <View style={styles.gridRow}>
+          <TopFilmCell
+            film={topFilm}
+            onPress={() => topFilm && handleNavigateFilm(topFilm.id)}
+          />
+
+          <View style={{ width: GRID_GUTTER }} />
+
+          <Top2FilmsCell
+            films={top2to3Films}
+            onPress={() =>
+              top2to3Films[0] && handleNavigateFilm(top2to3Films[0].id)
+            }
+          />
+
+          <View style={{ width: GRID_GUTTER }} />
+
+          <OtherFavsCell
+            films={otherFavs}
+            onPress={() => router.push('/profile/favorites')}
+          />
+        </View>
+
+        {/* CRITIQUES */}
+        {reviews.map((rev, i) => (
+          <View key={rev.id} style={{ marginTop: GRID_GUTTER }}>
+            <View style={styles.gridRow}>
+              <CritiqueCell
+                review={rev}
+                index={i}
+                onPress={() => {
+                  if (rev.film) handleNavigateFilm(rev.film.id);
+                }}
+              />
+            </View>
+          </View>
+        ))}
+
+        {/* SEEN */}
+        {seenFilms.map((film, i) => (
+          <View key={film.id} style={{ marginTop: GRID_GUTTER }}>
+            <View style={styles.gridRow}>
+              <SeenCell
+                film={film}
+                onPress={() => handleNavigateFilm(film.id)}
+              />
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  // ── Prefetch trigger on hover/touch ───────────────────────
+  function withPrefetch(id: string, children: React.ReactNode) {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => handleNavigateFilm(id)}
+        onPressIn={() => prefetchFilm(id)} // key UX boost
+      >
+        {children}
+      </TouchableOpacity>
+    );
+  }
+
+function SkeletonCell({ style }: { style?: any }) {
+  return (
+    <View style={[styles.gridCell, style]}>
+      <Shimmer />
+    </View>
+  );
+}
+
+// ─── Main Screen ─────────────────────────────────────────────
+export default function ProfileScreen() {
+  const router = useRouter();
+  const { user } = useAuth();
+  const [activeGridTab, setActiveGridTab] = useState<GridTab>(0);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [seenFilms, setSeenFilms] = useState<Film[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
+  // ── Data loading ────────────────────────────────────────────────────────
+  const loadProfileData = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const [reviewsData, seenData] = await Promise.all([
+        reviewsAPI.getByUser(user.id),
+        seenAPI.getByUser(user.id),
+      ]);
+      setReviews(reviewsData || []);
+      setSeenFilms(seenData || []);
+    } catch (e) {
+      console.error('Profile load error:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadProfileData();
+  }, [loadProfileData]);
+
+  // ── Derived data ────────────────────────────────────────────────────────
+  const allFavoriteFilms = useMemo<Film[]>(() => {
+    const fromReviews = reviews
+      .filter((r) => r.film && r.rating >= 4)
+      .sort((a, b) => b.rating - a.rating)
+      .map((r) => r.film as Film);
+    const fromSeen = seenFilms.filter(
+      (f) => !fromReviews.some((r) => r.id === f.id)
+    );
+    return [...fromReviews, ...fromSeen];
+  }, [reviews, seenFilms]);
+
+  const topFilm = allFavoriteFilms[0] ?? null;
+  const top2to3Films = allFavoriteFilms.slice(1, 3);
+  const otherFavs = allFavoriteFilms.slice(3, 13);
+
+  // ── Helpers ─────────────────────────────────────────────────────────────
+  function formatStat(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
+    return `${n}`;
+  }
+
+  // ── Grid rows builder ────────────────────────────────────────────────────
+  /**
+   * The grid is a flat list of "rows".
+   * Row 0 (index 0): Top-films triple (special sizes)
+   * Rows 1…N: critique cells (3 per row, first=wide 2/3)
+   * Rows N+1…M: seen-films cells (3 per row)
+   */
+
+  function renderGridContent() {
+    if (loading) {
+      return (
+        <View style={{ paddingTop: 60, alignItems: 'center' }}>
+          <ActivityIndicator color={COLORS.primary} />
+        </View>
+      );
+    }
+
+    return (
+      <View>
+        {/* ── ROW 1: Top films ─────────────────── */}
+        <View style={styles.gridRow}>
+          <TopFilmCell
+            film={topFilm}
+            onPress={() => topFilm && router.push(`/film/${topFilm.id}`)}
+          />
+          <View style={{ width: GRID_GUTTER }} />
+          <Top2FilmsCell
+            films={top2to3Films}
+            onPress={() => top2to3Films[0] && router.push(`/film/${top2to3Films[0].id}`)}
+          />
+          <View style={{ width: GRID_GUTTER }} />
+          <OtherFavsCell
+            films={otherFavs}
+            onPress={() => router.push('/profile/favorites')}
+          />
+        </View>
+
+        <View style={{ height: GRID_GUTTER * 2 }} />
+
+        {/* ── ROW 2: Critiques ─────────────────── */}
+        {reviews.length === 0 ? (
+          <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
+        ) : (
+          (() => {
+            // Build rows: first row = wide(2/3) + 1 cell; subsequent = 3 per row
+            const rows: Review[][] = [];
+            let i = 0;
+            // first critique row
+            if (reviews[0]) rows.push([reviews[0], reviews[1]].filter(Boolean) as Review[]);
+            i = rows[0]?.length ?? 0;
+            // remaining rows of 3
+            while (i < reviews.length) {
+              rows.push(reviews.slice(i, i + 3));
+              i += 3;
+            }
+            return rows.map((rowReviews, rowIdx) => (
+              <View key={`crit-row-${rowIdx}`}>
+                <View style={styles.gridRow}>
+                  {rowIdx === 0 ? (
+                    // First review row: 2/3 wide + 1/3 narrow
+                    <>
+                      <CritiqueCell
+                        review={rowReviews[0]}
+                        index={0}
+                        onPress={() => rowReviews[0].film && router.push(`/film/${rowReviews[0].film.id}`)}
+                      />
+                      {rowReviews[1] && (
+                        <>
+                          <View style={{ width: GRID_GUTTER }} />
+                          <CritiqueCell
+                            review={rowReviews[1]}
+                            index={1}
+                            onPress={() => rowReviews[1].film && router.push(`/film/${rowReviews[1].film.id}`)}
+                          />
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    rowReviews.map((rev, rIdx) => (
+                      <React.Fragment key={rev.id}>
+                        {rIdx > 0 && <View style={{ width: GRID_GUTTER }} />}
+                        <CritiqueCell
+                          review={rev}
+                          index={rIdx + 2} // not wide
+                          onPress={() => rev.film && router.push(`/film/${rev.film.id}`)}
+                        />
+                      </React.Fragment>
+                    ))
+                  )}
+                </View>
+                <View style={{ height: GRID_GUTTER }} />
+              </View>
+            ));
+          })()
+        )}
+
+        <View style={{ height: GRID_GUTTER }} />
+
+        {/* ── ROW 3+: Films vus ─────────────────── */}
+        {seenFilms.length === 0 ? (
+          <EmptyState icon="film-outline" text="Aucun film vu pour l'instant" />
+        ) : (
+          (() => {
+            const seenRows: Film[][] = [];
+            for (let si = 0; si < seenFilms.length; si += 3) {
+              seenRows.push(seenFilms.slice(si, si + 3));
+            }
+            return seenRows.map((rowFilms, rowIdx) => (
+              <View key={`seen-row-${rowIdx}`}>
+                <View style={styles.gridRow}>
+                  {rowFilms.map((film, fIdx) => (
+                    <React.Fragment key={film.id}>
+                      {fIdx > 0 && <View style={{ width: GRID_GUTTER }} />}
+                      <SeenCell
+                        film={film}
+                        onPress={() => router.push(`/film/${film.id}`)}
+                      />
+                    </React.Fragment>
+                  ))}
+                </View>
+                <View style={{ height: GRID_GUTTER }} />
+              </View>
+            ));
+          })()
+        )}
+
+        <View style={{ height: 120 }} />
+      </View>
+    );
+  }
+
+  if (!user) return null;
+
+  // ── Animated header opacity ──────────────────────────────────────────────
+  const headerBgOpacity = scrollY.interpolate({
+    inputRange: [0, HEADER_SCROLL_DISTANCE],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  return (
+    <View style={styles.container}>
+      {/* ── Sticky mini-header (appears on scroll) ── */}
+      <Animated.View
+        style={[
+          styles.stickyHeader,
+          { opacity: headerBgOpacity },
+        ]}
+        pointerEvents="none"
+      >
+        <Text style={styles.stickyUsername}>{user.username}</Text>
+      </Animated.View>
+
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true }
+        )}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadProfileData();
+            }}
+            tintColor={COLORS.primary}
+          />
+        }
+      >
+        {/* ══════════════════════════════════════
+            PROFILE HEADER (Instagram-style)
+        ══════════════════════════════════════ */}
+        <LinearGradient
+          colors={['#1A003A', '#5C1A8C', '#0D0D0D']}
+          locations={[0, 0.45, 1]}
+          style={styles.profileHeaderGradient}
+        >
+          <SafeAreaView edges={['top']}>
+            {/* Top nav: UNIVERSE logo + settings */}
+            <View style={styles.topNav}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="lock-closed" size={14} color="rgba(255,255,255,0.8)" />
+                <Text style={styles.usernameNav}>{user.username}</Text>
+                <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.7)" />
+              </View>
+              <View style={{ flexDirection: 'row', gap: 4 }}>
+                <TouchableOpacity
+                  testID="profile-add-post-btn"
+                  style={styles.navIconBtn}
+                  onPress={() => router.push('/create')}
+                >
+                  <Ionicons name="add-circle-outline" size={26} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  testID="profile-settings-btn"
+                  style={styles.navIconBtn}
+                  onPress={() => router.push('/settings')}
+                >
+                  <Ionicons name="menu" size={26} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Avatar + stats row */}
+            <View style={styles.avatarStatsRow}>
+              {/* Avatar with ring */}
+              <View style={styles.avatarWrapper}>
+                <LinearGradient
+                  colors={['#D300C5', '#FF7A00', '#FFDC80']}
+                  style={styles.avatarRing}
+                  start={{ x: 0, y: 1 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <View style={styles.avatarInnerBorder}>
+                    <Image source={{ uri: user.avatar_url }} style={styles.avatar} />
+                  </View>
+                </LinearGradient>
+                {/* Add button */}
+                <View style={styles.avatarAddBtn}>
+                  <LinearGradient
+                    colors={[COLORS.primary, '#8C2EBA']}
+                    style={styles.avatarAddGrad}
+                  >
+                    <Ionicons name="add" size={14} color="#fff" />
+                  </LinearGradient>
+                </View>
+              </View>
+
+              {/* Stats: Posts, Followers, Following */}
+              <View style={styles.statsRow}>
+                <StatColumn
+                  value={`${user.reviews_count + user.films_seen_count}`}
+                  label="publications"
+                  onPress={() => {}}
+                />
+                <StatColumn
+                  value={formatStat(user.followers_count)}
+                  label="abonnés"
+                  onPress={() => router.push('/followers')}
+                />
+                <StatColumn
+                  value={formatStat(user.following_count)}
+                  label="abonnements"
+                  onPress={() => router.push('/following')}
+                />
+              </View>
+            </View>
+
+            {/* Name + role badge + bio */}
+            <View style={styles.bioSection}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.displayName}>{user.username}</Text>
+                {user.role === 'director' && (
+                  <View style={styles.rolePill}>
+                    <Text style={styles.rolePillText}>🎬 Réalisateur</Text>
+                  </View>
+                )}
+                {user.role === 'critic' && (
+                  <View style={styles.rolePill}>
+                    <Text style={styles.rolePillText}>✍️ Critique</Text>
+                  </View>
+                )}
+                {user.role === 'creator' && (
+                  <View style={styles.rolePill}>
+                    <Text style={styles.rolePillText}>⭐ Créateur</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.bioText}>{user.bio}</Text>
+            </View>
+
+            {/* Action buttons: Modifier / Partager / + */}
+            <View style={styles.actionButtonsRow}>
+              <TouchableOpacity
+                testID="profile-edit-btn"
+                style={styles.actionBtn}
+                onPress={() => router.push('/edit-profile')}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.actionBtnText}>Modifier</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => {/* share */}}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.actionBtnText}>Partager le profil</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionBtnSquare}
+                onPress={() => router.push('/discover-people')}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="person-add-outline" size={16} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </LinearGradient>
+
+        {/* ══════════════════════════════════════
+            HIGHLIGHTS ROW (scrollable chips)
+            → repurposed as film-category chips
+        ══════════════════════════════════════ */}
+        <View style={styles.highlightsSection}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.highlightsScroll}
+          >
+            {[
+              { emoji: '🏆', label: 'Top 10' },
+              { emoji: '✍️', label: 'Critiques' },
+              { emoji: '👁', label: 'Films vus' },
+              { emoji: '🎬', label: 'Réalisés' },
+              { emoji: '⭐', label: 'Favoris' },
+            ].map((item) => (
+              <TouchableOpacity
+                key={item.label}
+                style={styles.highlightChip}
+                activeOpacity={0.8}
+                onPress={() => {}}
+              >
+                <LinearGradient
+                  colors={['#2A0060', '#7B1FA0']}
+                  style={styles.highlightCircle}
+                >
+                  <Text style={{ fontSize: 22 }}>{item.emoji}</Text>
+                </LinearGradient>
+                <Text style={styles.highlightLabel}>{item.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ══════════════════════════════════════
+            GRID TAB BAR (Instagram icons)
+        ══════════════════════════════════════ */}
+        <View style={styles.gridTabBar}>
+          {(['grid-outline', 'play-circle-outline', 'person-circle-outline'] as const).map(
+            (icon, idx) => (
+              <TouchableOpacity
+                key={icon}
+                style={styles.gridTabItem}
+                onPress={() => setActiveGridTab(idx as GridTab)}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={icon}
+                  size={24}
+                  color={
+                    activeGridTab === idx
+                      ? '#fff'
+                      : 'rgba(255,255,255,0.4)'
+                  }
+                />
+                {activeGridTab === idx && (
+                  <View style={styles.gridTabIndicator} />
+                )}
+              </TouchableOpacity>
+            )
+          )}
+        </View>
+
+        {/* ══════════════════════════════════════
+            GRID CONTENT
+        ══════════════════════════════════════ */}
+        {activeGridTab === 0 && renderGridContent()}
+
+        {activeGridTab === 1 && (
+          // Reels / court métrages
+          <EmptyState
+            icon="film-outline"
+            text="Aucun court métrage"
+            subtext="Soumettez votre court métrage"
+          />
+        )}
+
+        {activeGridTab === 2 && (
+          // Tagged
+          <EmptyState
+            icon="pricetag-outline"
+            text="Aucun tag"
+            subtext="Les films où vous êtes tagué apparaissent ici"
+          />
+        )}
+      </Animated.ScrollView>
+    </View>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+
+  // ── Sticky header ───────────────────────────────────
+  stickyHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+    height: 44,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: 8,
+  },
+  stickyUsername: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+
+  // ── Profile header gradient ─────────────────────────
+  profileHeaderGradient: {
+    paddingBottom: 16,
+  },
+
+  // ── Top nav ─────────────────────────────────────────
+  topNav: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  usernameNav: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.1,
+  },
+  navIconBtn: {
+    padding: 4,
+  },
+
+  // ── Avatar + Stats ──────────────────────────────────
+  avatarStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    marginTop: 4,
+    gap: 16,
+  },
+  avatarWrapper: {
+    position: 'relative',
+  },
+  avatarRing: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInnerBorder: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  avatarAddBtn: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarAddGrad: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  statColumn: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+  },
+  statLabel: {
+    color: 'rgba(255,255,255,0.65)',
+    fontSize: 11,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+
+  // ── Bio section ─────────────────────────────────────
+  bioSection: {
+    paddingHorizontal: 16,
+    marginTop: 10,
+    gap: 3,
+  },
+  displayName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  rolePill: {
+    backgroundColor: 'rgba(140,46,186,0.35)',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(140,46,186,0.5)',
+  },
+  rolePillText: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  bioText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+
+  // ── Action buttons ──────────────────────────────────
+  actionButtonsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    marginTop: 14,
+    gap: 6,
+  },
+  actionBtn: {
+    flex: 1,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  actionBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  actionBtnSquare: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+
+  // ── Highlights ──────────────────────────────────────
+  highlightsSection: {
+    backgroundColor: '#000',
+    borderBottomWidth: 0,
+  },
+  highlightsScroll: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    gap: 16,
+  },
+  highlightChip: {
+    alignItems: 'center',
+    gap: 6,
+  },
+  highlightCircle: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(140,46,186,0.4)',
+  },
+  highlightLabel: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 11,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+
+  // ── Grid tab bar ────────────────────────────────────
+  gridTabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#000',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
+  gridTabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    position: 'relative',
+  },
+  gridTabIndicator: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: '#fff',
+  },
+
+  // ── Grid layout ─────────────────────────────────────
+  gridRow: {
+    flexDirection: 'row',
+    backgroundColor: '#000',
+  },
+  gridCell: {
+    overflow: 'hidden',
+    backgroundColor: '#111',
+    position: 'relative',
+  },
+  gridCellPlaceholder: {
+    backgroundColor: '#1A1A2E',
+  },
+
+  // ── Cell overlays ────────────────────────────────────
+  cellOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 7,
+    paddingTop: 24,
+    paddingBottom: 7,
+    gap: 3,
+  },
+  cellOverlayThin: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 5,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  cellLabel: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.1,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  cellSublabel: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 9,
+    fontWeight: '500',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+
+  // ── Sparkle icon ─────────────────────────────────────
+  sparkleTopLeft: {
+    position: 'absolute',
+    top: 5,
+    left: 5,
+  },
+  sparkleEmoji: {
+    fontSize: 16,
+  },
+
+  // ── Top 2 cell (split) ──────────────────────────────
+  splitCell: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  splitHalf: {
+    flex: 1,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  rankBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  rankText: {
+    color: '#FFD60A',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+
+  // ── Other favs micro-grid ───────────────────────────
+  microGrid: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  microCell: {
+    width: '50%',
+    height: '50%',
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#1A1A2E',
+  },
+
+  // ── Critique cells ───────────────────────────────────
+  papyrusBackground: {
+    backgroundColor: '#2C1A08',
+  },
+  critiqueIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  critiqueCellLabel: {
+    color: 'rgba(255,220,120,0.95)',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  critiqueSnippet: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 9,
+    lineHeight: 13,
+    fontStyle: 'italic',
+  },
+
+  // ── Seen cells ───────────────────────────────────────
+  seenCheckBadge: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(30,215,96,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  seenCellTitle: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+
+  // ── Empty state ─────────────────────────────────────
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 50,
+    paddingBottom: 30,
+    gap: 10,
+  },
+  emptyText: {
+    color: COLORS.textSecondary,
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  emptySubText: {
+    color: COLORS.textTertiary,
+    fontSize: 13,
+  },
 });

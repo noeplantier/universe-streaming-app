@@ -36,7 +36,7 @@ function CustomNavBar() {
         </TouchableOpacity>
         
         {/* BOUTON CENTRAL (Sparkles) */}
-        <TouchableOpacity style={styles.navItem} onPress={()  => router.push('/feed')}>
+        <TouchableOpacity style={styles.navItem} onPress={()  => router.push('/create')}>
           <MaterialCommunityIcons name="star-four-points" size={40} color="white" />
         </TouchableOpacity>
 
