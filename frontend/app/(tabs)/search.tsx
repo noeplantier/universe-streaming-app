@@ -57,7 +57,7 @@ const GENRES   = ['Tous', 'Thriller', 'Drame', 'Sci-Fi', 'Action'];
 const SORT_OPT = ['Popularité', 'Récent', 'Anciens'];
 const DURATIONS= ['Toutes', '< 60 min', '60–100 min', '> 100 min'];
 const YEARS    = ['Toutes', '2024', '2023', '2022'];
-const MAIN_TABS = ['Séries', 'Films', 'Catégories'];
+const MAIN_TABS = ['Mini-séries', 'Films', 'Catégories'];
 
 // ═══════════════════════════════════════════════════════════════════
 //  ░░░  GALAXY ANIMATION ENGINE (Portage Intégral)  ░░░
