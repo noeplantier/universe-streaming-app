@@ -1355,7 +1355,7 @@ import React, {
                   )}
                   <View style={{ flex: 1 }}>
                     <CTAButton
-                      label={step === 3 ? 'Passer à l\'export' : `Continuer${!canGoNext ? ' (requis)' : ''}`}
+                      label={step === 3 ? 'Passer à l\'export' : `Continuer${!canGoNext ? '' : ''}`}
                       onPress={goNext}
                       disabled={!canGoNext}
                       icon="arrow-forward"
