@@ -171,9 +171,9 @@ const TOP_2_3 = [
 
 const OTHER_FAVS = [
   { id: 'of1', title: 'Moonlight', poster_url: 'https://image.tmdb.org/t/p/w500/4911T5FbJ9eAlnDw0RUUKA2P0Ep.jpg', genre: 'Drame', duration_type: 'film', rating: 5 },
-  { id: 'of2', title: 'Portrait de la jeune fille en feu', poster_url: 'https://image.tmdb.org/t/p/w500/3oHQdPTnGq3aFmOFLXBUpYqj3wc.jpg', genre: 'Drame', duration_type: 'film', rating: 5 },
+  { id: 'of2', title: 'Mad Max: Fury Road', poster_url: 'https://image.tmdb.org/t/p/w500/8tZYtuWezp8JbcsvHYO0O46tFbo.jpg', genre: 'Action', duration_type: 'film', rating: 5 },
   { id: 'of3', title: '2001: A Space Odyssey', poster_url: 'https://image.tmdb.org/t/p/w500/ve72VxNqjGM69Uky4WTo2bK6rfq.jpg', genre: 'Sci-Fi', duration_type: 'film', rating: 5 },
-  { id: 'of4', title: 'Blade Runner 2049', poster_url: 'https://image.tmdb.org/t/p/w500/gajva2L0rPYkEWjzgFlBXCAVBE5.jpg', genre: 'Sci-Fi', duration_type: 'film', rating: 4 },
+  { id: 'of4', title: 'The Grand Budapest Hotel', poster_url: 'https://image.tmdb.org/t/p/w500/nX5XotM9yprCKarRH4fzOq1VM1J.jpg', genre: 'Comédie', duration_type: 'film', rating: 5 },
 ];
 
 const CRITIQUE_REVIEWS = [
@@ -181,29 +181,17 @@ const CRITIQUE_REVIEWS = [
     film: { id: 'cr1', title: 'Dune: Part Two', poster_url: 'https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg', genre: 'Épique', duration_type: 'film' } },
   { id: 'cr2', film_id: 'cr2', content: 'Anatomy of a Fall déconstruit le récit judiciaire pour révéler l\'opacité fondamentale des relations humaines. Hüller est phénoménale.', rating: 5, likes_count: 218, created_at: '2024-10-01',
     film: { id: 'cr2', title: 'Anatomy of a Fall', poster_url: 'https://image.tmdb.org/t/p/w500/kQs6keheMwCxJxrzV83VUwFtHkB.jpg', genre: 'Thriller', duration_type: 'film' } },
-  { id: 'cr3', film_id: 'cr3', content: 'The Zone of Interest opère à froid. Le génie de Glazer est de montrer l\'horreur par son absence, dans le bourdonnement quotidien d\'une maison ordinaire.', rating: 5, likes_count: 189, created_at: '2024-08-20',
-    film: { id: 'cr3', title: 'The Zone of Interest', poster_url: 'https://image.tmdb.org/t/p/w500/hUu9zyZmKuCkPOhFnrqOHNjuqQh.jpg', genre: 'Guerre', duration_type: 'film' } },
-  { id: 'cr4', film_id: 'cr4', content: 'Aftersun accumule les fragments d\'une relation père-fille avec une pudeur déchirante. A24 at its finest.', rating: 4, likes_count: 156, created_at: '2024-07-15',
-    film: { id: 'cr4', title: 'Aftersun', poster_url: 'https://image.tmdb.org/t/p/w500/r3ueZBeCFLLJCNXi0dBEtUMzpqB.jpg', genre: 'Drame', duration_type: 'film' } },
-  { id: 'cr5', film_id: 'cr5', content: 'Past Lives touche à quelque chose d\'universel et d\'intime simultanément. Un premier film éblouissant.', rating: 5, likes_count: 204, created_at: '2024-06-10',
-    film: { id: 'cr5', title: 'Past Lives', poster_url: 'https://image.tmdb.org/t/p/w500/k3waqVXSnYcDnCmCULbGfGZkBvq.jpg', genre: 'Romance', duration_type: 'film' } },
-  { id: 'cr6', film_id: 'cr6', content: 'Robot Dreams choisit le silence pour parler de l\'amitié perdue. L\'animation devient poésie pure.', rating: 4, likes_count: 97, created_at: '2024-05-02',
-    film: { id: 'cr6', title: 'Robot Dreams', poster_url: 'https://image.tmdb.org/t/p/w500/qOuNJgFAFD5dQUUFqhIqPKOsT0n.jpg', genre: 'Animation', duration_type: 'film' } },
+  
 ];
 
 const SEEN_WORKS = [
-  { id: 'sw1',  title: 'The Bear',           poster_url: 'https://image.tmdb.org/t/p/w500/sHFlbKS3WLqMnp9t2ghADIJFnuQ.jpg', genre: 'Drame',      duration_type: 'série', rating: 5 },
-  { id: 'sw2',  title: 'Shogun',              poster_url: 'https://image.tmdb.org/t/p/w500/7O4iVfOMQmdCSxhOg1WnzG1AgYT.jpg', genre: 'Historique', duration_type: 'série', rating: 5 },
-  { id: 'sw3',  title: 'Pachinko',            poster_url: 'https://image.tmdb.org/t/p/w500/b9zoHKkHFnGBMqL8V1BY3IXxq9p.jpg', genre: 'Épique',     duration_type: 'série', rating: 5 },
-  { id: 'sw4',  title: 'Poor Things',         poster_url: 'https://image.tmdb.org/t/p/w500/kCGlIMHnOm8JPXIwfnFYTq5L3Y.jpg', genre: 'Fantasy',    duration_type: 'film',  rating: 4 },
-  { id: 'sw5',  title: 'All of Us Strangers', poster_url: 'https://image.tmdb.org/t/p/w500/uyBGBqWSmRnhGPNLTJLqWPzHEnQ.jpg', genre: 'Drame',      duration_type: 'film',  rating: 5 },
-  { id: 'sw6',  title: 'Priscilla',           poster_url: 'https://image.tmdb.org/t/p/w500/sAtoMqDVhNDQBc3QJL3RF6hlhGq.jpg', genre: 'Biopic',     duration_type: 'film',  rating: 4 },
-  { id: 'sw7',  title: 'Fallen Leaves',       poster_url: 'https://image.tmdb.org/t/p/w500/ctuQmNnGZNvJSCwRIVTjJWaGKIk.jpg', genre: 'Comédie',    duration_type: 'film',  rating: 5 },
-  { id: 'sw8',  title: 'The Substance',       poster_url: 'https://image.tmdb.org/t/p/w500/lqoMzCcZYEFK729d6qzt349fB4o.jpg', genre: 'Horreur',    duration_type: 'film',  rating: 4 },
-  { id: 'sw9',  title: 'I Saw the TV Glow',   poster_url: 'https://image.tmdb.org/t/p/w500/4MnDUjhFNMwRpYEk6sO5E6sshpe.jpg', genre: 'Expérimental', duration_type: 'film', rating: 4 },
-  { id: 'sw10', title: 'Tótem',               poster_url: 'https://image.tmdb.org/t/p/w500/yIbNQXgSBPnwJXvbWFgXO5yWuMI.jpg', genre: 'Drame',      duration_type: 'film',  rating: 5 },
-  { id: 'sw11', title: 'Monster',             poster_url: 'https://image.tmdb.org/t/p/w500/g5nEFZJMW2j6S0bJy0tl1G5L8QB.jpg', genre: 'Drame',      duration_type: 'film',  rating: 5 },
-  { id: 'sw12', title: 'Dream Scenario',      poster_url: 'https://image.tmdb.org/t/p/w500/x2RS3uTcsulSBMJbpHFfWZNGOhH.jpg', genre: 'Comédie',    duration_type: 'film',  rating: 4 },
+  { id: 'sw1',  title: 'The Bear',           poster_url: 'https://image.tmdb.org/t/p/w500/9Xw0I5RV2ZqNLpul6lXKoviYg55.jpg', genre: 'Drame',      duration_type: 'série', rating: 5 },
+  { id: 'sw2',  title: 'Shogun',             poster_url: 'https://image.tmdb.org/t/p/w500/8UlWHLMpgZm9bx6QYh0NFoq67TZ.jpg', genre: 'Historique', duration_type: 'série', rating: 5 },
+  { id: 'sw6',  title: 'Priscilla',          poster_url: 'https://image.tmdb.org/t/p/w500/6FfCtAuVAW8XJjZ7eWeLibRLWTw.jpg', genre: 'Biopic',     duration_type: 'film',  rating: 4 },
+  { id: 'sw8',  title: 'The Substance',      poster_url: 'https://image.tmdb.org/t/p/w500/5KCVkau1HEl7ZzfPsKAPM0sMiKc.jpg', genre: 'Horreur',    duration_type: 'film',  rating: 4 },
+  { id: 'sw4',  title: 'Dune (2021)',        poster_url: 'https://image.tmdb.org/t/p/w500/8c4a8kE7PizaGQQnditMmI1xbRp.jpg', genre: 'Épique',     duration_type: 'film',  rating: 4 },
+  { id: 'sw5',  title: 'Tenet',              poster_url: 'https://image.tmdb.org/t/p/w500/k68nPLbIST6NP96JmTxmZijEvCA.jpg', genre: 'Action',     duration_type: 'film',  rating: 4 },
+  
 ];
 
 const OWN_REELS = [
@@ -349,8 +337,8 @@ const OtherFavsCell = memo(({ films, onPress }: { films: Film[]; onPress: () => 
     </View>
     <View style={cells.sparkle}><Text style={{ fontSize: 15 }}>✦</Text></View>
     <LinearGradient colors={['transparent', 'rgba(6,0,16,0.84)']} style={[cells.overlay, { paddingBottom: 6 }]}>
-      <Text style={cells.overlayLabel}>T'es autres fav</Text>
-      <Text style={cells.overlaySub}>après ton top</Text>
+      <Text style={cells.overlayLabel}>Tes autres fav</Text>
+      <Text style={cells.overlaySub}>Après ton top</Text>
     </LinearGradient>
   </TouchableOpacity>
 ));
@@ -794,7 +782,7 @@ export default function ProfileScreen() {
                     rowRevs.map((rev, rIdx) => (
                       <React.Fragment key={rev.id}>
                         {rIdx > 0 && <View style={{ width: GRID_GUTTER }} />}
-                        <CritiqueCell review={rev} index={rIdx + 2} onPress={() => rev.film && navigateFilm(rev.film.id)} />
+                        <CritiqueCell review={rev} index={rIdx} onPress={() => rev.film && navigateFilm(rev.film.id)} />
                       </React.Fragment>
                     ))
                   )}
@@ -981,7 +969,6 @@ export default function ProfileScreen() {
               { emoji: '👁',  label: 'Films vus', color: G.cyan },
               { emoji: '🎬', label: 'Réalisés',   color: G.primary },
               { emoji: '⭐', label: 'Favoris',    color: '#FF6B9D' },
-              { emoji: '🎪', label: 'Festivals',  color: G.success },
             ].map(item => (
               <TouchableOpacity key={item.label} style={pg.highlightChip} activeOpacity={0.8}>
                 <LinearGradient colors={['#1A0040', '#3A0080']} style={[pg.highlightCircle, { borderColor: `${item.color}45` }]}>

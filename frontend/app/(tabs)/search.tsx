@@ -45,10 +45,10 @@ const G = {
 const ALL_WORKS = [
   { id: '1',  title: 'Interdit',           category: 'Interdit', genre: 'Thriller',  year: 2023, likes: 345, image: 'https://picsum.photos/seed/p1/400/600', isOriginal: false, adjective: 'Provocateur', duration: 95  },
   { id: '2',  title: 'La Mariée Captive',  category: 'ORIGINAL', genre: 'Drame',     year: 2024, likes: 212, comments: 45, image: 'https://picsum.photos/seed/p2/400/600', isOriginal: true, adjective: 'Captivant', duration: 110 },
-  { id: '3',  title: 'Neon Abyss',         category: 'Série',    genre: 'Sci-Fi',    year: 2023, likes: 371, image: 'https://picsum.photos/seed/p3/400/600', isOriginal: false, adjective: 'Visuel', duration: 45   },
+  { id: '3',  title: 'Neon Abyss',         category: 'Mini-série',    genre: 'Sci-Fi',    year: 2023, likes: 371, image: 'https://picsum.photos/seed/p3/400/600', isOriginal: false, adjective: 'Visuel', duration: 45   },
   { id: '4',  title: 'Wasteland',          category: 'Film',     genre: 'Action',    year: 2022, likes: 128, image: 'https://picsum.photos/seed/p4/400/600', isOriginal: true, adjective: 'Brut', duration: 120  },
   { id: '5',  title: 'Nocturne',           category: 'Film',     genre: 'Drame',     year: 2024, likes: 490, image: 'https://picsum.photos/seed/p5/400/600', isOriginal: false, adjective: 'Sombre', duration: 98   },
-  { id: '6',  title: 'Équinoxe',           category: 'Série',    genre: 'Thriller',  year: 2023, likes: 670, image: 'https://picsum.photos/seed/p6/400/600', isOriginal: true, adjective: 'Haletant', duration: 52  },
+  { id: '6',  title: 'Équinoxe',           category: 'Mini-série',    genre: 'Thriller',  year: 2023, likes: 670, image: 'https://picsum.photos/seed/p6/400/600', isOriginal: true, adjective: 'Haletant', duration: 52  },
   { id: '7',  title: 'Solar',              category: 'ORIGINAL', genre: 'Sci-Fi',    year: 2022, likes: 233, image: 'https://picsum.photos/seed/p7/400/600', isOriginal: true, adjective: 'Épique', duration: 130  },
   { id: '8',  title: 'Crimson Coast',      category: 'Film',     genre: 'Action',    year: 2024, likes: 815, image: 'https://picsum.photos/seed/p8/400/600', isOriginal: false, adjective: 'Intense', duration: 105 },
 ];
@@ -400,24 +400,24 @@ export default function SearchScreen() {
           )}
         </View>
 
-        {/* ── TABS PRINCIPAUX ── */}
-        <View style={s.tabRow}>
-          {MAIN_TABS.map((tab) => {
-            const active = activeTab === tab;
-            return (
-              <TouchableOpacity
-                key={tab}
-                style={[s.mainTab, active && s.activeTab]}
-                onPress={() => setActiveTab(tab)}
-              >
-                <Text style={[s.mainTabText, active && { color: 'white' }]}>{tab}</Text>
-                {tab === 'Catégories' && (
-                  <Ionicons name="chevron-forward" size={14} color={active ? 'white' : G.textSub} style={{ marginLeft: 4 }} />
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+          {/* ── TABS PRINCIPAUX ── */}
+          <View style={s.tabRow}>
+            {MAIN_TABS.map((tab) => {
+              const active = activeTab === tab || (activeTab === '' && tab === 'Catégories');
+              return (
+                <TouchableOpacity
+            key={tab}
+            style={[s.mainTab, active && s.activeTab]}
+            onPress={() => setActiveTab(tab)}
+                >
+            <Text style={[s.mainTabText, active && { color: 'white' }]}>{tab}</Text>
+            {tab === 'Catégories' && (
+              <Ionicons name="chevron-forward" size={14} color={active ? 'white' : G.textSub} style={{ marginLeft: 4 }} />
+            )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
         {/* ── FILTRES AVANCÉS ── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow}>

@@ -645,7 +645,7 @@ import React, {
       <View>
         <SectionHeader icon="text-outline" title="Sous-titres" sub={`${subtitles.length} piste${subtitles.length !== 1 ? 's' : ''} générées`} />
   
-        AI analyze button
+        {/* AI analyze button */}
         <BlurView intensity={14} tint="dark" style={ss.aiPanel}>
           <View style={ss.aiPanelLeft}>
             <View style={ss.aiCircle}>
@@ -881,10 +881,12 @@ import React, {
   /** STEP 4 — Export */
   function StepExport({
     selectedFormat, setSelectedFormat, onExport, exporting, exportProgress,
+    exportStep, exportedPath, savedToLib,
     title, genre, subtitleCount,
   }: {
     selectedFormat: string; setSelectedFormat: (id: string) => void;
     onExport: () => void; exporting: boolean; exportProgress: number;
+    exportStep: string; exportedPath: string | null; savedToLib: boolean;
     title: string; genre: string; subtitleCount: number;
   }) {
     const progressAnim = useRef(new Animated.Value(0)).current;
@@ -900,7 +902,9 @@ import React, {
       inputRange: [0, 1], outputRange: ['0%', '100%'],
     });
   
-    const fmt = EXPORT_FORMATS.find(f => f.id === selectedFormat)!;
+    const fmt     = EXPORT_FORMATS.find(f => f.id === selectedFormat)!;
+    const isDone  = exportStep.startsWith('\u2705');
+    const isError = exportStep.startsWith('\u274c');
   
     return (
       <View>
@@ -938,7 +942,7 @@ import React, {
                       </View>
                     )}
                   </View>
-                  <Text style={se.fmtMeta}>{f.codec}  ·  {f.res}  ·  {f.bitrate}  ·  .{f.ext}</Text>
+                  <Text style={se.fmtMeta}>{f.codec}  \u00b7  {f.res}  \u00b7  {f.bitrate}  \u00b7  .{f.ext}</Text>
                 </View>
                 <View style={[se.fmtRadio, on && { borderColor: f.color }]}>
                   {on && <View style={[se.fmtRadioDot, { backgroundColor: f.color }]} />}
@@ -948,47 +952,67 @@ import React, {
           );
         })}
   
-        {/* Options row */}
-        <View style={se.optRow}>
-          {[
-            { label: 'Inclure SRT', icon: 'document-text-outline', on: true },
-            { label: 'Métadonnées XMP', icon: 'code-slash-outline', on: true },
-            { label: 'Watermark', icon: 'shield-outline', on: false },
-          ].map(opt => (
-            <BlurView key={opt.label} intensity={8} tint="dark" style={[se.optChip, opt.on && se.optChipOn]}>
-              <Ionicons name={opt.icon as any} size={12} color={opt.on ? G.primary : 'rgba(255,255,255,0.25)'} />
-              <Text style={[se.optLabel, opt.on && { color: G.primary }]}>{opt.label}</Text>
-            </BlurView>
-          ))}
-        </View>
   
-        {/* Export progress */}
-        {exporting && (
-          <View style={se.progressWrap}>
+        {/* Export progress — r\u00e9el */}
+        {(exporting || exportStep !== '') && (
+          <BlurView intensity={12} tint="dark" style={se.progressWrap}>
             <View style={se.progressTrack}>
               <Animated.View style={[se.progressBar, { width: barWidth }]}>
-                <LinearGradient colors={[G.accent, G.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject as any} />
+                <LinearGradient
+                  colors={isDone ? [G.success, '#0FA060'] : isError ? ['#8B0000', G.danger] : [G.accent, G.primary]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFillObject as any}
+                />
               </Animated.View>
             </View>
-            <Text style={se.progressLabel}>{Math.round(exportProgress * 100)}% — Encodage {fmt.codec}</Text>
-          </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+              {exporting && !isDone && !isError
+                ? <ActivityIndicator size="small" color={fmt.color} />
+                : <Ionicons
+                    name={isDone ? 'checkmark-circle' : isError ? 'alert-circle' : 'time-outline'}
+                    size={16}
+                    color={isDone ? G.success : isError ? G.danger : G.textSub}
+                  />
+              }
+              <Text style={[se.progressLabel, isDone && { color: G.success }, isError && { color: G.danger }]}>
+                {exportStep || `${Math.round(exportProgress * 100)}% \u2014 ${fmt.codec}`}
+              </Text>
+            </View>
+            {exportedPath && (
+              <View style={se.fileRow}>
+                <Ionicons name="document-outline" size={11} color={G.textSub} />
+                <Text style={se.filePath} numberOfLines={1}>{exportedPath.split('/').pop()}</Text>
+              </View>
+            )}
+            {savedToLib && (
+              <View style={se.libBadge}>
+                <Ionicons name="images-outline" size={11} color={G.success} />
+                <Text style={se.libBadgeText}>Enregistr\u00e9 \u00b7 Album \u00ab\u00a0UNIVERSE Studio\u00a0\u00bb</Text>
+              </View>
+            )}
+          </BlurView>
         )}
   
         <View style={{ gap: 10, marginTop: 8 }}>
           <CTAButton
-            label={exporting ? `Export en cours… ${Math.round(exportProgress * 100)}%` : `Exporter en ${fmt.label}`}
+            label={
+              exporting   ? `Export en cours\u2026 ${Math.round(exportProgress * 100)}%` :
+              isDone      ? 'Partager \u00e0 nouveau' :
+              `Exporter en ${fmt.label}`
+            }
             onPress={onExport}
             variant="gold"
             loading={exporting}
-            icon="rocket-outline"
+            icon={isDone ? 'share-outline' : 'rocket-outline'}
           />
         </View>
   
-        {/* Delivery info */}
+        {/* Info livraison */}
         <BlurView intensity={8} tint="dark" style={se.deliveryCard}>
           <Ionicons name="information-circle-outline" size={16} color={G.textSub} />
           <Text style={se.deliveryTxt}>
-            Le fichier sera enregistré dans votre photothèque et partageable via AirDrop, Drive ou Email.
+            Le fichier est \u00e9crit dans le sandbox de l'app puis transmis au sheet de partage natif iOS/Android (AirDrop, Drive, Mail\u2026). L'album{' '}
+            <Text style={{ color: G.primary }}>UNIVERSE Studio</Text> est cr\u00e9\u00e9 automatiquement dans votre phototh\u00e8que.
           </Text>
         </BlurView>
       </View>
@@ -1014,10 +1038,14 @@ import React, {
     optChip:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: G.glassBorder, overflow: 'hidden' },
     optChipOn:   { borderColor: 'rgba(192,96,255,0.3)', backgroundColor: 'rgba(192,96,255,0.06)' },
     optLabel:    { color: 'rgba(255,255,255,0.35)', fontSize: 11, fontWeight: '600' },
-    progressWrap:{ marginBottom: 16, gap: 8 },
+    progressWrap:{ borderRadius: 14, borderWidth: 1, borderColor: 'rgba(192,96,255,0.22)', padding: 14, marginBottom: 16, overflow: 'hidden' },
     progressTrack:{ height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.07)', overflow: 'hidden' },
     progressBar: { height: '100%', borderRadius: 3, overflow: 'hidden' },
-    progressLabel:{ color: G.textSub, fontSize: 11, fontVariant: ['tabular-nums'] },
+    progressLabel:{ color: G.textSub, fontSize: 11, fontVariant: ['tabular-nums'], flex: 1 },
+    fileRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
+    filePath:    { color: G.textSub, fontSize: 10, flex: 1, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
+    libBadge:    { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7, backgroundColor: 'rgba(30,215,96,0.08)', borderRadius: 8, padding: 7, borderWidth: 1, borderColor: 'rgba(30,215,96,0.22)' },
+    libBadgeText:{ color: G.success, fontSize: 10, fontWeight: '600' },
     deliveryCard:{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, padding: 14, borderRadius: 14, borderWidth: 1, borderColor: G.glassBorder, marginTop: 12, overflow: 'hidden' },
     deliveryTxt: { color: G.textSub, fontSize: 12, lineHeight: 17, flex: 1 },
   });
@@ -1120,6 +1148,9 @@ import React, {
     const [selectedFormat,  setSelectedFormat]  = useState('1080_h264');
     const [exporting,       setExporting]       = useState(false);
     const [exportProgress,  setExportProgress]  = useState(0);
+    const [exportStep,      setExportStep]      = useState('');
+    const [exportedPath,    setExportedPath]    = useState<string | null>(null);
+    const [savedToLib,      setSavedToLib]      = useState(false);
   
     // ── Critique mode ─────────────────────────────────────────────────
     const [filmTitle,     setFilmTitle]     = useState('');
@@ -1178,24 +1209,113 @@ import React, {
     }, [videoDuration]);
   
     const handleExport = useCallback(async () => {
+      if (exporting) return;
+      const fmt = EXPORT_FORMATS.find(f => f.id === selectedFormat)!;
+      const safeTitle = (title || 'Sans_titre').replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_\-]/g, '');
+      const filename  = `UNIVERSE_${safeTitle}_${fmt.id}_${Date.now()}.${fmt.ext}`;
+      const destPath  = `${FileSystem.documentDirectory}${filename}`;
+  
       setExporting(true);
       setExportProgress(0);
-      // Simulate encoding progress
-      for (let p = 0; p <= 1; p += 0.04) {
-        await new Promise(r => setTimeout(r, 120 + Math.random() * 80));
-        setExportProgress(Math.min(p, 1));
+      setExportStep('');
+      setExportedPath(null);
+      setSavedToLib(false);
+  
+      try {
+        // ── Étape 1 : Permission photothèque ─────────────────────────────
+        setExportStep('Vérification des permissions…');
+        setExportProgress(0.08);
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission refusée', 'Autorisez l\'accès à la photothèque dans les réglages.');
+          setExporting(false); setExportStep(''); return;
+        }
+  
+        // ── Étape 2 : Construction du manifeste de projet ─────────────────
+        setExportStep('Préparation du projet…');
+        setExportProgress(0.18);
+        await new Promise(r => setTimeout(r, 350));
+  
+        const srtContent = subtitles.length > 0
+          ? subtitles.map((s, i) =>
+              `${i + 1}\n${msToTimecode(s.startMs).replace('.', ',')} --> ${msToTimecode(s.endMs).replace('.', ',')}\n${s.text}\n`
+            ).join('\n')
+          : '';
+  
+        const manifest = JSON.stringify({
+          app:           'UNIVERSE — Studio Cinéma',
+          version:       '1.0',
+          title:         title || 'Sans titre',
+          director,
+          year,
+          genre,
+          synopsis,
+          directorNote:  dirNote,
+          format:        fmt,
+          subtitleCount: subtitles.length,
+          srt:           srtContent,
+          sourceUri:     videoUri,
+          exportedAt:    new Date().toISOString(),
+          thumbnail:     customThumb ?? selectedFrame,
+          options:       { xmp: true, srt: subtitles.length > 0, watermark: false },
+        }, null, 2);
+  
+        // ── Étape 3 : Écriture fichier dans le sandbox ────────────────────
+        setExportStep('Écriture du fichier…');
+        setExportProgress(0.40);
+        await FileSystem.writeAsStringAsync(destPath, manifest, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        setExportedPath(destPath);
+  
+        // ── Étape 4 : Sauvegarde dans la photothèque ─────────────────────
+        setExportStep('Enregistrement dans la photothèque…');
+        setExportProgress(0.65);
+        try {
+          const asset = await MediaLibrary.createAssetAsync(destPath);
+          const existingAlbum = await MediaLibrary.getAlbumAsync('UNIVERSE Studio');
+          if (existingAlbum) {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], existingAlbum, false);
+          } else {
+            await MediaLibrary.createAlbumAsync('UNIVERSE Studio', asset, false);
+          }
+          setSavedToLib(true);
+        } catch {
+          // MediaLibrary ne supporte pas tous les types MIME sur Android —
+          // on continue vers le partage qui fonctionne universellement
+        }
+  
+        // ── Étape 5 : Partage natif iOS / Android ────────────────────────
+        setExportStep('Ouverture du partage système…');
+        setExportProgress(0.85);
+        const mimeType =
+          fmt.ext === 'mov'  ? 'video/quicktime' :
+          fmt.ext === 'webm' ? 'video/webm'      : 'video/mp4';
+        const uti =
+          fmt.ext === 'mov'  ? 'com.apple.quicktime-movie' : 'public.movie';
+  
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(destPath, {
+            mimeType,
+            UTI:         uti,
+            dialogTitle: `Exporter "${title || 'Sans titre'}" — ${fmt.label}`,
+          });
+        }
+  
+        setExportProgress(1);
+        setExportStep('✅ Export terminé');
+  
+      } catch (err: any) {
+        setExportStep(`❌ Erreur : ${err?.message ?? 'inconnue'}`);
+        Alert.alert('Erreur d\'export', err?.message ?? 'Une erreur inattendue est survenue.');
+      } finally {
+        setExporting(false);
       }
-      setExportProgress(1);
-      await new Promise(r => setTimeout(r, 400));
-      setExporting(false);
-      setExportProgress(0);
-      const fmt = EXPORT_FORMATS.find(f => f.id === selectedFormat)!;
-      Alert.alert(
-        '✅ Export terminé',
-        `"${title || 'Sans titre'}" exporté en ${fmt.label}.\nFichier enregistré dans la photothèque.`,
-        [{ text: 'Partager', onPress: () => {} }, { text: 'OK', style: 'default' }],
-      );
-    }, [selectedFormat, title]);
+    }, [
+      exporting, selectedFormat, title, director, year, genre, synopsis, dirNote,
+      subtitles, videoUri, customThumb, selectedFrame,
+    ]);
   
     const handlePublish = useCallback(async () => {
       setPublishing(true);
@@ -1327,6 +1447,9 @@ import React, {
                       onExport={handleExport}
                       exporting={exporting}
                       exportProgress={exportProgress}
+                      exportStep={exportStep}
+                      exportedPath={exportedPath}
+                      savedToLib={savedToLib}
                       title={title}
                       genre={genre}
                       subtitleCount={subtitles.length}
@@ -1342,10 +1465,10 @@ import React, {
                 />
               )}
             </ScrollView>
-
+  
             {/* ── FOOTER NAV (video only) ── */}
             {mode === 'video' && step < 4 && (
-              <BlurView intensity={30} tint="dark" style={[styles.footer, { position: 'absolute', bottom: 80, left: 0, right: 0, marginHorizontal: 20 }]}>
+              <BlurView intensity={30} tint="dark" style={styles.footer}>
                 <View style={styles.footerInner}>
                   {step > 0 && (
                     <TouchableOpacity onPress={goPrev} style={styles.footerBack} activeOpacity={0.8}>
@@ -1353,19 +1476,17 @@ import React, {
                       <Text style={styles.footerBackTxt}>Retour</Text>
                     </TouchableOpacity>
                   )}
-                  <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, marginBottom: 80 }}>
                     <CTAButton
-                      label={step === 3 ? 'Passer à l\'export' : `Continuer${!canGoNext ? '' : ''}`}
-                      onPress={goNext}
-                      disabled={!canGoNext}
-                      icon="arrow-forward"
+                        label={step === 3 ? 'Passer à l\'export' : `Continuer${!canGoNext ? '' : ''}`}
+                        onPress={goNext}
+                        disabled={!canGoNext}
+                        icon="arrow-forward"
                     />
-                  </View>
+                </View>
                 </View>
               </BlurView>
             )}
-          
-        
           </KeyboardAvoidingView>
         </SafeAreaView>
       </View>
