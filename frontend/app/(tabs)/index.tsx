@@ -1,26 +1,31 @@
 // ═══════════════════════════════════════════════════════════════════
 //  index.tsx — UNIVERSE / Feed principal (Reels)
 //  ─────────────────────────────────────────────────────────────────
-//  UX design identique au mockup.
-//  ✦ Vidéos plein écran responsive (ResizeMode.COVER)
-//  ✦ Auto-play immédiat au scroll (sans interaction)
-//  ✦ Pause automatique lors de la navigation (useFocusEffect)
-//  ✦ Toutes les dépendances externes supprimées (standalone)
+//  Migration expo-av (deprecated) → expo-video (stable)
+//  ✦ VideoView + useVideoPlayer — API officielle Expo SDK 52+
+//  ✦ Vidéos plein écran responsive (contentFit="cover")
+//  ✦ Auto-play immédiat au scroll via useEvent + isActive
+//  ✦ Pause automatique à la navigation (useFocusEffect)
+//  ✦ Mute/Unmute inline via bouton dédié
+//  ✦ Skeleton loader pendant le chargement
+//  ✦ Architecture mémoïsée (memo + useCallback + useMemo) scalable
+//  ✦ Même UX / UI que le design original Universe
 // ═══════════════════════════════════════════════════════════════════
 
 import React, {
-  useState, useEffect, useRef, useCallback, memo,
+  useState, useEffect, useRef, useCallback, memo, useMemo,
 } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity, Image,
-  Animated, Easing, Dimensions, Modal, StatusBar,
+  Animated, Easing, Dimensions, Modal, StatusBar, ActivityIndicator,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { LinearGradient }    from 'expo-linear-gradient';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { BlurView }          from 'expo-blur';
 import { Ionicons }          from '@expo/vector-icons';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { useEvent }          from 'expo';
 import { useRouter, useFocusEffect } from 'expo-router';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -43,23 +48,34 @@ const P = {
   bordL:   'rgba(255,255,255,0.10)',
   red:     '#EF4444',
   gold:    '#FFD60A',
-  sW:      '#F2ECFF', sB: '#B0CAFF',
-  sG:      '#FFE068', sP: '#CC95FF', sCy: '#84ECFF',
-};
+} as const;
 
 // ═══════════════════════════════════════════════════════════════════
 //  TYPES & MOCK DATA
 // ═══════════════════════════════════════════════════════════════════
 
-interface Friend { id: string; name: string; avatar: string; followed: boolean; }
+interface Friend {
+  id: string;
+  name: string;
+  avatar: string;
+  followed: boolean;
+}
 
 interface FeedFilm {
-  id: string; title: string; series: string;
-  episode: number; episode_title: string;
-  poster_url: string; video_url?: string;
-  caption: string; duration: string;
-  likes: number; liked_by_friends: Friend[];
-  tags: string[]; director: string; year: number;
+  id: string;
+  title: string;
+  series: string;
+  episode: number;
+  episode_title: string;
+  poster_url: string;
+  video_url?: string;
+  caption: string;
+  duration: string;
+  likes: number;
+  liked_by_friends: Friend[];
+  tags: string[];
+  director: string;
+  year: number;
   comment?: string;
 }
 
@@ -196,14 +212,20 @@ const MENU_ITEMS = [
   { icon: '📽',  label: 'Documentaire',   key: 'docu'     },
   { icon: '🎨', label: 'Animation',       key: 'anim'     },
   { icon: '🔥', label: 'Tendances',       key: 'trend'    },
-];
+] as const;
+
+type MenuKey = typeof MENU_ITEMS[number]['key'];
 
 interface DropdownMenuProps {
-  visible: boolean; onClose: () => void;
-  onSelect: (key: string) => void; activeKey: string;
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (key: MenuKey) => void;
+  activeKey: MenuKey;
 }
 
-function DropdownMenu({ visible, onClose, onSelect, activeKey }: DropdownMenuProps) {
+const DropdownMenu = memo(function DropdownMenu({
+  visible, onClose, onSelect, activeKey,
+}: DropdownMenuProps) {
   const slideX = useRef(new Animated.Value(-W * 0.78)).current;
   const bgOp   = useRef(new Animated.Value(0)).current;
 
@@ -219,7 +241,7 @@ function DropdownMenu({ visible, onClose, onSelect, activeKey }: DropdownMenuPro
         Animated.timing(bgOp, { toValue: 0, duration: 220, useNativeDriver: true }),
       ]).start();
     }
-  }, [visible]); // eslint-disable-line
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!visible) return null;
 
@@ -258,7 +280,7 @@ function DropdownMenu({ visible, onClose, onSelect, activeKey }: DropdownMenuPro
       </Animated.View>
     </View>
   );
-}
+});
 
 const dm = StyleSheet.create({
   panel:           { position: 'absolute', left: 0, top: 0, bottom: 0, width: W * 0.78, backgroundColor: 'rgba(10,0,22,0.97)', borderRightWidth: 1, borderRightColor: P.bord },
@@ -281,10 +303,11 @@ const dm = StyleSheet.create({
 //  HEADER TOP
 // ═══════════════════════════════════════════════════════════════════
 
-interface TopHeaderProps { feedKey: string; onMenuPress: () => void; }
-function TopHeader({ feedKey, onMenuPress }: TopHeaderProps) {
+interface TopHeaderProps { feedKey: MenuKey; onMenuPress: () => void; }
+
+const TopHeader = memo(function TopHeader({ feedKey, onMenuPress }: TopHeaderProps) {
   const router = useRouter();
-  const item   = MENU_ITEMS.find(m => m.key === feedKey) ?? MENU_ITEMS[0];
+  const item   = useMemo(() => MENU_ITEMS.find(m => m.key === feedKey) ?? MENU_ITEMS[0], [feedKey]);
 
   return (
     <View style={th.container} pointerEvents="box-none">
@@ -311,7 +334,7 @@ function TopHeader({ feedKey, onMenuPress }: TopHeaderProps) {
       </TouchableOpacity>
     </View>
   );
-}
+});
 
 const th = StyleSheet.create({
   container:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
@@ -328,35 +351,61 @@ const th = StyleSheet.create({
 
 // ═══════════════════════════════════════════════════════════════════
 //  RIGHT ACTION BAR
+//  ✦ Bouton mute/unmute en lieu et place des 3 points (fonctionnel)
+//  ✦ Animation cœur optimisée
 // ═══════════════════════════════════════════════════════════════════
 
-interface RightBarProps { film: FeedFilm; liked: boolean; onLike: () => void; onInfo: () => void; onStar: () => void; }
-function RightBar({ film, liked, onLike, onInfo, onStar }: RightBarProps) {
+interface RightBarProps {
+  film: FeedFilm;
+  liked: boolean;
+  muted: boolean;
+  onLike: () => void;
+  onMute: () => void;
+  onInfo: () => void;
+  onStar: () => void;
+}
+
+const RightBar = memo(function RightBar({
+  film, liked, muted, onLike, onMute, onInfo, onStar,
+}: RightBarProps) {
   const heartSc = useRef(new Animated.Value(1)).current;
 
-  function pressHeart() {
+  const pressHeart = useCallback(() => {
     Animated.sequence([
       Animated.timing(heartSc, { toValue: 1.42, duration: 110, useNativeDriver: true }),
       Animated.spring(heartSc, { toValue: 1, useNativeDriver: true, speed: 22 }),
     ]).start();
     onLike();
-  }
+  }, [onLike, heartSc]);
+
+  const likeCount = film.likes + (liked ? 1 : 0);
 
   return (
     <View style={rb.bar}>
-      <TouchableOpacity style={rb.btn} activeOpacity={0.8}>
-        <View style={rb.dots}><View style={rb.dot} /><View style={rb.dot} /><View style={rb.dot} /></View>
+      {/* Mute / Unmute */}
+      <TouchableOpacity style={rb.btn} onPress={onMute} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Ionicons
+          name={muted ? 'volume-mute' : 'volume-high'}
+          size={26}
+          color={muted ? P.primL : 'rgba(240,232,255,0.85)'}
+        />
       </TouchableOpacity>
 
+      {/* Like */}
       <View style={rb.item}>
         <TouchableOpacity onPress={pressHeart} activeOpacity={0.85}>
           <Animated.View style={{ transform: [{ scale: heartSc }] }}>
-            <Ionicons name={liked ? 'heart' : 'heart-outline'} size={34} color={liked ? '#C060FF' : 'rgba(240,232,255,0.85)'} />
+            <Ionicons
+              name={liked ? 'heart' : 'heart-outline'}
+              size={34}
+              color={liked ? '#C060FF' : 'rgba(240,232,255,0.85)'}
+            />
           </Animated.View>
         </TouchableOpacity>
-        <Text style={rb.count}>{(film.likes + (liked ? 1 : 0)).toLocaleString('fr-FR')}</Text>
+        <Text style={rb.count}>{likeCount.toLocaleString('fr-FR')}</Text>
       </View>
 
+      {/* Info */}
       <View style={rb.item}>
         <TouchableOpacity onPress={onInfo} activeOpacity={0.8}>
           <View style={rb.infoIcon}>
@@ -368,6 +417,7 @@ function RightBar({ film, liked, onLike, onInfo, onStar }: RightBarProps) {
         </TouchableOpacity>
       </View>
 
+      {/* Watchlist / Star */}
       <View style={rb.item}>
         <TouchableOpacity onPress={onStar} activeOpacity={0.8}>
           <Ionicons name="star" size={32} color={P.primL} />
@@ -375,13 +425,11 @@ function RightBar({ film, liked, onLike, onInfo, onStar }: RightBarProps) {
       </View>
     </View>
   );
-}
+});
 
 const rb = StyleSheet.create({
   bar:      { position: 'absolute', right: 14, bottom: 210, alignItems: 'center', gap: 22 },
   btn:      { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  dots:     { flexDirection: 'row', gap: 4 },
-  dot:      { width: 5, height: 5, borderRadius: 2.5, backgroundColor: 'rgba(240,232,255,0.80)' },
   item:     { alignItems: 'center', gap: 5 },
   count:    { color: 'rgba(240,232,255,0.88)', fontSize: 13, fontWeight: '700' },
   infoIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', gap: 3.5 },
@@ -393,33 +441,43 @@ const rb = StyleSheet.create({
 //  BOTTOM EPISODE CARD
 // ═══════════════════════════════════════════════════════════════════
 
-interface BottomCardProps { film: FeedFilm; progress: number; onFollow: (fid: string) => void; }
+interface BottomCardProps {
+  film: FeedFilm;
+  progress: number;
+  onFollow: (fid: string) => void;
+}
 
-function BottomCard({ film, progress, onFollow }: BottomCardProps) {
-  const [min, sec] = film.duration.split(':').map(Number);
-  const totalSec   = (min || 0) * 60 + (sec || 0);
-  const elapsed    = Math.floor(totalSec * Math.min(progress, 1));
-  const elMin      = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const elSec      = String(elapsed % 60).padStart(2, '0');
-  const clampedPct = Math.min(progress * 100, 100);
-
-  const unfollowed = film.liked_by_friends.find(f => !f.followed);
+const BottomCard = memo(function BottomCard({ film, progress, onFollow }: BottomCardProps) {
+  const [min, sec]  = film.duration.split(':').map(Number);
+  const totalSec    = (min || 0) * 60 + (sec || 0);
+  const elapsed     = Math.floor(totalSec * Math.min(progress, 1));
+  const elMin       = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const elSec       = String(elapsed % 60).padStart(2, '0');
+  const clampedPct  = Math.min(progress * 100, 100);
+  const unfollowed  = film.liked_by_friends.find(f => !f.followed);
 
   return (
     <View style={bc.wrap}>
       <BlurView intensity={35} tint="dark" style={bc.blurCard}>
         <View style={bc.inner}>
-
           <View style={bc.topRow}>
             <View>
               <Text style={bc.epLabel}>Épisode {film.episode}</Text>
               <Text style={bc.seriesName}>{film.series}</Text>
             </View>
+            {/* Tags inline */}
+            <View style={bc.tagsRow}>
+              {film.tags.slice(0, 2).map(tag => (
+                <View key={tag} style={[bc.tag, tag === 'ORIGINAL' && bc.tagOriginal]}>
+                  <Text style={[bc.tagTxt, tag === 'ORIGINAL' && bc.tagTxtOriginal]}>{tag}</Text>
+                </View>
+              ))}
+            </View>
           </View>
 
           {/* Progress bar */}
           <View style={bc.progressTrack}>
-            <View style={[bc.progressFill, { width: `${clampedPct}%` }]} />
+            <View style={[bc.progressFill, { width: `${clampedPct}%` as any }]} />
             <View style={[bc.progressThumb, { left: `${clampedPct}%` as any }]} />
           </View>
 
@@ -459,157 +517,214 @@ function BottomCard({ film, progress, onFollow }: BottomCardProps) {
       </BlurView>
     </View>
   );
-}
+});
 
 const bc = StyleSheet.create({
-  wrap:          { position: 'absolute', bottom: 90, left: 16, right: 16 },
-  blurCard:      { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(146,64,214,0.28)' },
-  inner:         { padding: 16, gap: 10 },
-  topRow:        { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
-  epLabel:       { color: P.t1, fontSize: 15, fontWeight: '800', marginBottom: 2 },
-  seriesName:    { color: P.t2, fontSize: 13 },
-  progressTrack: { height: 3, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'visible' },
-  progressFill:  { height: '100%', backgroundColor: P.primL, borderRadius: 2 },
-  progressThumb: { position: 'absolute', top: -4, marginLeft: -5, width: 11, height: 11, borderRadius: 5.5, backgroundColor: P.primL },
-  timesRow:      { flexDirection: 'row', justifyContent: 'space-between' },
-  timeText:      { color: P.t3, fontSize: 11 },
-  friendsRow:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatarStack:   { flexDirection: 'row', alignItems: 'center' },
-  friendAvWrap:  { position: 'relative' },
-  friendAv:      { width: 38, height: 38, borderRadius: 19, borderWidth: 2.5, borderColor: 'rgba(10,0,22,0.9)' },
-  friendBadge:   { position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: P.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(10,0,22,0.9)' },
-  followBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(146,64,214,0.25)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: P.bord },
-  followDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: P.primL },
-  followTxt:     { color: P.t1, fontSize: 13, fontWeight: '700' },
-  comment:       { color: P.t2, fontSize: 13, fontStyle: 'italic' },
+  wrap:            { position: 'absolute', bottom: 90, left: 16, right: 16 },
+  blurCard:        { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(146,64,214,0.28)' },
+  inner:           { padding: 16, gap: 10 },
+  topRow:          { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  epLabel:         { color: P.t1, fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  seriesName:      { color: P.t2, fontSize: 13 },
+  tagsRow:         { flexDirection: 'row', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 130 },
+  tag:             { backgroundColor: 'rgba(146,64,214,0.22)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: P.bord },
+  tagOriginal:     { backgroundColor: 'rgba(192,96,255,0.22)', borderColor: P.primL },
+  tagTxt:          { color: P.t2, fontSize: 10, fontWeight: '700' },
+  tagTxtOriginal:  { color: P.primL },
+  progressTrack:   { height: 3, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 2, overflow: 'visible' },
+  progressFill:    { height: '100%', backgroundColor: P.primL, borderRadius: 2 },
+  progressThumb:   { position: 'absolute', top: -4, marginLeft: -5, width: 11, height: 11, borderRadius: 5.5, backgroundColor: P.primL },
+  timesRow:        { flexDirection: 'row', justifyContent: 'space-between' },
+  timeText:        { color: P.t3, fontSize: 11 },
+  friendsRow:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatarStack:     { flexDirection: 'row', alignItems: 'center' },
+  friendAvWrap:    { position: 'relative' },
+  friendAv:        { width: 38, height: 38, borderRadius: 19, borderWidth: 2.5, borderColor: 'rgba(10,0,22,0.9)' },
+  friendBadge:     { position: 'absolute', bottom: -2, right: -2, width: 16, height: 16, borderRadius: 8, backgroundColor: P.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(10,0,22,0.9)' },
+  followBtn:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(146,64,214,0.25)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, borderWidth: 1, borderColor: P.bord },
+  followDot:       { width: 6, height: 6, borderRadius: 3, backgroundColor: P.primL },
+  followTxt:       { color: P.t1, fontSize: 13, fontWeight: '700' },
+  comment:         { color: P.t2, fontSize: 13, fontStyle: 'italic' },
 });
 
 // ═══════════════════════════════════════════════════════════════════
-//  FEED ITEM — plein écran, vidéo responsive
-//  ✦ Auto-play dès que isActive passe à true
-//  ✦ Pause quand isActive devient false (scroll vers un autre item)
-//  ✦ Tap : toggle pause/play
-//  ✦ Double-tap : like animation
+//  SKELETON LOADER (pendant le chargement vidéo)
+// ═══════════════════════════════════════════════════════════════════
+
+const SkeletonLoader = memo(function SkeletonLoader() {
+  const anim = useRef(new Animated.Value(0.35)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 0.7, duration: 800, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+        Animated.timing(anim, { toValue: 0.35, duration: 800, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+      ])
+    ).start();
+  }, [anim]);
+
+  return (
+    <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: P.surface, opacity: anim }]}>
+      <ActivityIndicator
+        style={{ position: 'absolute', top: '50%', left: '50%', marginTop: -15, marginLeft: -15 }}
+        size="large"
+        color={P.primL}
+      />
+    </Animated.View>
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  FEED ITEM
+//  ✦ useVideoPlayer (expo-video) — stable, non-deprecated
+//  ✦ useEvent pour playingChange + timeUpdate
+//  ✦ Auto-play/pause selon isActive + screenFocused
+//  ✦ Tap simple : toggle pause | Double-tap : like
+//  ✦ Bouton mute inline
 // ═══════════════════════════════════════════════════════════════════
 
 interface FeedItemProps {
   film: FeedFilm;
   isActive: boolean;
-  screenFocused: boolean;          // ← transmis depuis l'écran parent
+  screenFocused: boolean;
   onFollowFriend: (fid: string) => void;
 }
 
-function FeedItem({ film, isActive, screenFocused, onFollowFriend }: FeedItemProps) {
-  const router  = useRouter();
-  const videoRef = useRef<Video>(null);
+const FeedItem = memo(function FeedItem({
+  film, isActive, screenFocused, onFollowFriend,
+}: FeedItemProps) {
+  const router = useRouter();
 
-  const [liked,    setLiked]    = useState(false);
-  const [progress, setProgress] = useState(0.0);
-  const [playing,  setPlaying]  = useState(false);
-  const [loaded,   setLoaded]   = useState(false);
+  // ── expo-video player ──────────────────────────────────────────
+  const player = useVideoPlayer(
+    film.video_url ?? null,
+    (p) => {
+      p.loop  = true;
+      p.muted = false;
+    },
+  );
 
-  // ── Auto-play / pause selon visibilité & focus écran ─────────
+  // ── Reactive events ────────────────────────────────────────────
+  const { isPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
+
+  const { status }    = useEvent(player, 'statusChange', {
+    status:    player.status,
+    oldStatus: undefined as any,
+    error:     undefined,
+  });
+
+  const { currentTime } = useEvent(player, 'timeUpdate', {
+    currentTime:           player.currentTime,
+    currentLiveTimestamp:  null,
+    currentOffsetFromLive: null,
+    bufferedPosition:      0,
+  });
+
+  // ── Local state ────────────────────────────────────────────────
+  const [liked, setLiked] = useState(false);
+  const [muted, setMuted] = useState(false);
+
+  const isReady    = status === 'readyToPlay';
+  const isLoading  = !isReady && !!film.video_url;
+  const duration   = player.duration ?? 0;
+  const progress   = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
+
+  // ── Auto-play / pause ──────────────────────────────────────────
   useEffect(() => {
-    if (!videoRef.current || !film.video_url) return;
-    const shouldPlay = isActive && screenFocused;
-    if (shouldPlay && loaded) {
-      videoRef.current.playAsync().catch(() => {});
-      setPlaying(true);
+    if (!isReady) return;
+    if (isActive && screenFocused) {
+      player.play();
     } else {
-      videoRef.current.pauseAsync().catch(() => {});
-      setPlaying(false);
+      player.pause();
     }
-  }, [isActive, screenFocused, loaded, film.video_url]);
+  }, [isActive, screenFocused, isReady, player]);
 
-  // ── Callback onLoad ───────────────────────────────────────────
-  const handleLoad = useCallback(() => {
-    setLoaded(true);
-  }, []);
+  // ── Sync mute ──────────────────────────────────────────────────
+  useEffect(() => {
+    player.muted = muted;
+  }, [muted, player]);
 
-  // ── Progress bar ──────────────────────────────────────────────
-  const handlePlaybackStatus = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-    if (status.durationMillis && status.positionMillis != null) {
-      setProgress(status.positionMillis / status.durationMillis);
-    }
-  }, []);
-
-  // ── Tap → toggle pause ────────────────────────────────────────
+  // ── Tap / double-tap ───────────────────────────────────────────
   const lastTap   = useRef(0);
   const heartAnim = useRef(new Animated.Value(0)).current;
 
   const handleTap = useCallback(() => {
     const now = Date.now();
-    if (now - lastTap.current < 300) {
-      // Double-tap → like
+    if (now - lastTap.current < 280) {
+      // Double-tap → like + animation
       if (!liked) setLiked(true);
       Animated.sequence([
         Animated.timing(heartAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.delay(500),
+        Animated.delay(480),
         Animated.timing(heartAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
       ]).start();
     } else {
-      // Single tap → toggle
-      if (playing) {
-        videoRef.current?.pauseAsync().catch(() => {});
-        setPlaying(false);
+      // Single tap → toggle play/pause
+      if (isPlaying) {
+        player.pause();
       } else {
-        videoRef.current?.playAsync().catch(() => {});
-        setPlaying(true);
+        player.play();
       }
     }
     lastTap.current = now;
-  }, [playing, liked, heartAnim]);
+  }, [isPlaying, liked, heartAnim, player]);
 
-  const heartScale   = heartAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1.3, 1] });
-  const captionLines = film.caption.split('\n');
+  const heartScale    = heartAnim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 1.3, 1] });
+  const captionLines  = useMemo(() => film.caption.split('\n'), [film.caption]);
+
+  const handleLike    = useCallback(() => setLiked(p => !p), []);
+  const handleMute    = useCallback(() => setMuted(p => !p), []);
+  const handleInfo    = useCallback(() => router.push(`/film/${film.id}`), [film.id, router]);
+  const handleStar    = useCallback(() => router.push(`/film/${film.id}`), [film.id, router]);
 
   return (
     <TouchableWithoutFeedback onPress={handleTap}>
-      {/* Conteneur exactement aux dimensions de l'écran du device */}
       <View style={{ width: W, height: H, backgroundColor: '#000' }}>
 
-        {/* ── Vidéo ou image de poster ── */}
-        {film.video_url ? (
-          <Video
-            ref={videoRef}
-            source={{ uri: film.video_url }}
+        {/* ── Affiche (fond / fallback) ── */}
+        <Image
+          source={{ uri: film.poster_url }}
+          style={[StyleSheet.absoluteFill, { width: W, height: H }]}
+          resizeMode="cover"
+        />
+
+        {/* ── Skeleton loader ── */}
+        {isLoading && <SkeletonLoader />}
+
+        {/* ── VideoView (expo-video) ── */}
+        {film.video_url && (
+          <VideoView
+            player={player}
             style={[StyleSheet.absoluteFill, { width: W, height: H }]}
-            resizeMode={ResizeMode.COVER}      // Remplit toujours l'écran
-            isLooping
-            isMuted={false}
-            shouldPlay={false}                  // Contrôle manuel via playAsync
-            onLoad={handleLoad}
-            onPlaybackStatusUpdate={handlePlaybackStatus}
-          />
-        ) : (
-          <Image
-            source={{ uri: film.poster_url }}
-            style={[StyleSheet.absoluteFill, { width: W, height: H }]}
-            resizeMode="cover"
+            contentFit="cover"
+            nativeControls={false}
+            allowsFullscreen={false}
+            allowsPictureInPicture={false}
           />
         )}
 
-        {/* Overlays de couleur */}
+        {/* ── Gradients overlay ── */}
         <LinearGradient
           colors={['rgba(7,0,15,0.12)', 'transparent', 'rgba(7,0,15,0.40)', 'rgba(7,0,15,0.92)']}
           locations={[0, 0.30, 0.65, 1]}
           style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
         <LinearGradient
           colors={['rgba(110,28,205,0.35)', 'transparent']}
           start={{ x: 0, y: 0.5 }} end={{ x: 0.35, y: 0.5 }}
           style={StyleSheet.absoluteFill}
+          pointerEvents="none"
         />
 
-        {/* Caption */}
+        {/* ── Caption ── */}
         <View style={cap.wrap} pointerEvents="none">
           {captionLines.map((line, i) => (
             <Text key={i} style={cap.line}>{line}</Text>
           ))}
         </View>
 
-        {/* Cœur double-tap */}
+        {/* ── Cœur double-tap ── */}
         <Animated.View
           style={[cap.bigHeart, { opacity: heartAnim, transform: [{ scale: heartScale }] }]}
           pointerEvents="none"
@@ -617,53 +732,61 @@ function FeedItem({ film, isActive, screenFocused, onFollowFriend }: FeedItemPro
           <Ionicons name="heart" size={90} color="#C060FF" />
         </Animated.View>
 
-        {/* Icône pause */}
-        {!playing && loaded && (
+        {/* ── Icône pause ── */}
+        {!isPlaying && isReady && (
           <View style={cap.pauseIcon} pointerEvents="none">
             <Ionicons name="pause" size={48} color="rgba(255,255,255,0.70)" />
           </View>
         )}
 
-        {/* Actions droite */}
+        {/* ── Actions droite ── */}
         <RightBar
           film={film}
           liked={liked}
-          onLike={() => setLiked(p => !p)}
-          onInfo={() => router.push(`/film/${film.id}`)}
-          onStar={() => router.push(`/film/${film.id}`)}
+          muted={muted}
+          onLike={handleLike}
+          onMute={handleMute}
+          onInfo={handleInfo}
+          onStar={handleStar}
         />
 
-        {/* Carte épisode bas */}
-        <BottomCard film={film} progress={progress} onFollow={onFollowFriend} />
+        {/* ── Carte épisode bas ── */}
+        <BottomCard
+          film={film}
+          progress={progress}
+          onFollow={onFollowFriend}
+        />
       </View>
     </TouchableWithoutFeedback>
   );
-}
+});
 
 const cap = StyleSheet.create({
-  wrap:     { position: 'absolute', bottom: 310, left: 16, right: 90 },
-  line:     { color: 'rgba(255,255,255,0.90)', fontSize: 22, fontWeight: '700', lineHeight: 30, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 },
-  bigHeart: { position: 'absolute', top: '50%', left: '50%', marginTop: -45, marginLeft: -45 },
-  pauseIcon:{ position: 'absolute', top: '50%', left: '50%', marginTop: -24, marginLeft: -24 },
+  wrap:      { position: 'absolute', bottom: 310, left: 16, right: 90 },
+  line:      { color: 'rgba(255,255,255,0.90)', fontSize: 22, fontWeight: '700', lineHeight: 30, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 },
+  bigHeart:  { position: 'absolute', top: '50%', left: '50%', marginTop: -45, marginLeft: -45 },
+  pauseIcon: { position: 'absolute', top: '50%', left: '50%', marginTop: -24, marginLeft: -24 },
 });
 
 // ═══════════════════════════════════════════════════════════════════
 //  GALAXY TAB BAR
 // ═══════════════════════════════════════════════════════════════════
 
-function GalaxyTabBar({ active, set }: { active: string; set: (v: string) => void }) {
+const GalaxyTabBar = memo(function GalaxyTabBar({
+  active, set,
+}: { active: string; set: (v: string) => void }) {
   const glow  = useRef(new Animated.Value(0.5)).current;
   const spinV = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.loop(Animated.sequence([
-      Animated.timing(glow, { toValue: 1,   duration: 1650, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(glow, { toValue: 0.5, duration: 1650, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(glow,  { toValue: 1,   duration: 1650, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(glow,  { toValue: 0.5, duration: 1650, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ])).start();
     Animated.loop(
       Animated.timing(spinV, { toValue: 1, duration: 9500, easing: Easing.linear, useNativeDriver: true })
     ).start();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const spin = spinV.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
@@ -684,7 +807,6 @@ function GalaxyTabBar({ active, set }: { active: string; set: (v: string) => voi
           const on = active === item.key;
           const c  = on ? P.primL : 'rgba(240,232,255,0.38)';
 
-   
           if (item.key === 'profil') return (
             <TouchableOpacity key={item.key} onPress={() => set(item.key)} style={tb.tab} activeOpacity={0.8}>
               <View style={[tb.avBox, on && tb.avBoxOn]}>
@@ -706,28 +828,20 @@ function GalaxyTabBar({ active, set }: { active: string; set: (v: string) => voi
       </View>
     </View>
   );
-}
+});
 
 const tb = StyleSheet.create({
-  wrap:       { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: 20 },
-  glass:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(7,0,15,0.90)' },
-  borderTop:  { height: 1, backgroundColor: 'rgba(146,64,214,0.42)' },
-  row:        { flexDirection: 'row', alignItems: 'center', paddingTop: 8, paddingHorizontal: 4 },
-  tab:        { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4 },
-  iconBox:    { width: 40, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
-  iconOn:     { backgroundColor: 'rgba(146,64,214,0.18)' },
-  label:      { fontSize: 10, fontWeight: '500', color: 'rgba(240,232,255,0.38)' },
-  labelOn:    { color: P.primL, fontWeight: '800' },
-  avBox:      { width: 28, height: 28, borderRadius: 14, overflow: 'hidden', backgroundColor: P.surface },
-  avBoxOn:    { borderWidth: 2, borderColor: P.primL },
-  sparkWrap:  { width: 64, alignItems: 'center', justifyContent: 'center', marginTop: -22 },
-  sparkGlow:  { ...StyleSheet.absoluteFillObject, borderRadius: 32, backgroundColor: P.primary, transform: [{ scale: 1.55 }] },
-  sparkRing:  { position: 'absolute', width: 58, height: 58, borderRadius: 29, overflow: 'hidden' },
-  sparkInner: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
-  spkV:       { position: 'absolute', width: 1.8, height: 28, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.94)' },
-  spkH:       { position: 'absolute', height: 1.8, width: 28, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.94)' },
-  spkD:       { position: 'absolute', width: 1.3, height: 19, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.58)' },
-  spkCtr:     { width: 5.5, height: 5.5, borderRadius: 2.75, backgroundColor: '#fff' },
+  wrap:      { position: 'absolute', bottom: 0, left: 0, right: 0, paddingBottom: 20 },
+  glass:     { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(7,0,15,0.90)' },
+  borderTop: { height: 1, backgroundColor: 'rgba(146,64,214,0.42)' },
+  row:       { flexDirection: 'row', alignItems: 'center', paddingTop: 8, paddingHorizontal: 4 },
+  tab:       { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 4 },
+  iconBox:   { width: 40, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+  iconOn:    { backgroundColor: 'rgba(146,64,214,0.18)' },
+  label:     { fontSize: 10, fontWeight: '500', color: 'rgba(240,232,255,0.38)' },
+  labelOn:   { color: P.primL, fontWeight: '800' },
+  avBox:     { width: 28, height: 28, borderRadius: 14, overflow: 'hidden', backgroundColor: P.surface },
+  avBoxOn:   { borderWidth: 2, borderColor: P.primL },
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -737,22 +851,19 @@ const tb = StyleSheet.create({
 export default function ReelsScreen() {
   const router = useRouter();
 
-  const [feedFilms,      setFeedFilms]      = useState<FeedFilm[]>(MOCK_FEED);
-  const [activeIndex,    setActiveIndex]    = useState(0);
-  const [menuOpen,       setMenuOpen]       = useState(false);
-  const [feedKey,        setFeedKey]        = useState('foryou');
-  const [activeTab,      setActiveTab]      = useState('reels');
-  // ✦ Focus screen : true quand l'écran est visible, false sinon
-  const [screenFocused,  setScreenFocused]  = useState(true);
+  const [feedFilms,     setFeedFilms]     = useState<FeedFilm[]>(MOCK_FEED);
+  const [activeIndex,   setActiveIndex]   = useState(0);
+  const [menuOpen,      setMenuOpen]      = useState(false);
+  const [feedKey,       setFeedKey]       = useState<MenuKey>('foryou');
+  const [activeTab,     setActiveTab]     = useState('reels');
+  const [screenFocused, setScreenFocused] = useState(true);
 
-  // ── Pause toutes les vidéos quand on quitte l'écran ──────────
+  // ── Pause toutes les vidéos en quittant l'écran ───────────────
   useFocusEffect(
     useCallback(() => {
       setScreenFocused(true);
-      return () => {
-        setScreenFocused(false);
-      };
-    }, [])
+      return () => setScreenFocused(false);
+    }, []),
   );
 
   // ── Viewability ───────────────────────────────────────────────
@@ -768,11 +879,13 @@ export default function ReelsScreen() {
   const handleFollowFriend = useCallback((fid: string) => {
     setFeedFilms(prev => prev.map(film => ({
       ...film,
-      liked_by_friends: film.liked_by_friends.map(f => f.id === fid ? { ...f, followed: true } : f),
+      liked_by_friends: film.liked_by_friends.map(f =>
+        f.id === fid ? { ...f, followed: true } : f,
+      ),
     })));
   }, []);
 
-  // ── Rendu item stabilisé ──────────────────────────────────────
+  // ── Render item ───────────────────────────────────────────────
   const renderItem = useCallback(({ item, index }: { item: FeedFilm; index: number }) => (
     <FeedItem
       film={item}
@@ -786,6 +899,8 @@ export default function ReelsScreen() {
     length: ITEM_H, offset: ITEM_H * index, index,
   }), []);
 
+  const keyExtractor = useCallback((item: FeedFilm) => item.id, []);
+
   return (
     <View style={sc.root}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
@@ -793,7 +908,7 @@ export default function ReelsScreen() {
       {/* ── Feed vertical plein écran ── */}
       <FlatList
         data={feedFilms}
-        keyExtractor={item => item.id}
+        keyExtractor={keyExtractor}
         renderItem={renderItem}
         pagingEnabled
         showsVerticalScrollIndicator={false}
@@ -807,6 +922,8 @@ export default function ReelsScreen() {
         windowSize={3}
         maxToRenderPerBatch={2}
         initialNumToRender={2}
+        overScrollMode="never"
+        bounces={false}
       />
 
       {/* ── Header flottant ── */}
@@ -815,7 +932,7 @@ export default function ReelsScreen() {
       </SafeAreaView>
 
       {/* ── Tab bar ── */}
-      {/* <GalaxyTabBar active={activeTab} set={setActiveTab} /> */}
+      <GalaxyTabBar active={activeTab} set={setActiveTab} />
 
       {/* ── Menu déroulant ── */}
       <Modal

@@ -121,9 +121,7 @@ import React, {
     return (
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         <LinearGradient colors={[G.bg0, G.bg1, G.bg2]} style={StyleSheet.absoluteFill} />
-        {/* Nebula glows */}
-        <View style={nb.neb1} />
-        <View style={nb.neb2} />
+        
         {STARS.map(s => <StarDot key={s.id} p={s} />)}
         {meteors.map(m => (
           <ShootingStar key={m.id} m={m}

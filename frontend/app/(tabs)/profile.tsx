@@ -2,12 +2,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 //  UNIVERSE — Profil Cinéaste  /  Galaxy System
 //  ─────────────────────────────────────────────────────────────────────────────
-//  • Galaxy background PARTOUT — header inclus (pas de gradient opaque)
-//  • Instagram pixel-perfect grid + header
-//  • Cards avec vrais films / séries / courts métrages
-//  • Shimmer skeleton violet + prefetch optimiste onPressIn
-//  • Studio IA vidéo : génération + export réel (FileSystem · MediaLibrary · Sharing)
-//  • Architecture ultra-scalable & mémo-optimisée
+//  ✦ FIX : toutes les URLs image.tmdb.org remplacées par picsum.photos (CDN
+//    fiable, seeds fixes = images cohérentes entre sessions)
+//  ✦ ImageWithFallback : skeleton + retry automatique + fallback gradient
+//  ✦ Galaxy background partout — header inclus
+//  ✦ Instagram pixel-perfect grid + header
+//  ✦ Cards avec vrais films / séries / courts métrages
+//  ✦ Shimmer skeleton violet + prefetch optimiste onPressIn
+//  ✦ Studio IA vidéo : génération + export réel (FileSystem · MediaLibrary · Sharing)
+//  ✦ Architecture ultra-scalable & mémo-optimisée
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import React, {
@@ -42,7 +45,7 @@ const GRID_GUTTER = 1;
 const HEADER_SCROLL_DISTANCE = 80;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🌌 PALETTE GALAXY (identique search.tsx)
+// 🌌 PALETTE GALAXY
 // ─────────────────────────────────────────────────────────────────────────────
 const G = {
   bg0: '#060010', bg1: '#0A001E', bg2: '#070014',
@@ -58,10 +61,111 @@ const G = {
   success: '#1ED760',
   danger: '#FF4D6A',
   textSub: '#BCB8C2',
-};
+} as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🌟 GALAXY ANIMATION ENGINE — Portage intégral depuis search.tsx
+// 🖼️ IMAGE WITH FALLBACK
+//  Résout le ERR_NAME_NOT_RESOLVED : skeleton pendant le chargement,
+//  fallback gradient si l'URL échoue, retry automatique une fois.
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ImageWithFallbackProps {
+  uri: string;
+  style?: any;
+  resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
+  fallbackColors?: [string, string];
+}
+
+const ImageWithFallback = memo(function ImageWithFallback({
+  uri,
+  style,
+  resizeMode = 'cover',
+  fallbackColors = ['#1A0035', '#060010'],
+}: ImageWithFallbackProps) {
+  const [state, setState] = useState<'loading' | 'loaded' | 'error'>('loading');
+  const [retried, setRetried] = useState(false);
+  const shimTx = useRef(new Animated.Value(-W)).current;
+
+  useEffect(() => {
+    setState('loading');
+    setRetried(false);
+  }, [uri]);
+
+  useEffect(() => {
+    if (state !== 'loading') return;
+    const anim = Animated.loop(
+      Animated.timing(shimTx, { toValue: W, duration: 1100, easing: Easing.linear, useNativeDriver: true }),
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [state, shimTx]);
+
+  const handleError = useCallback(() => {
+    if (!retried) {
+      // Retry une fois après 400 ms
+      setRetried(true);
+      setTimeout(() => setState('loading'), 400);
+    } else {
+      setState('error');
+    }
+  }, [retried]);
+
+  return (
+    <View style={[{ overflow: 'hidden' }, style]}>
+      {/* Fallback gradient (visible si erreur ou pendant chargement) */}
+      <LinearGradient
+        colors={fallbackColors}
+        style={StyleSheet.absoluteFillObject}
+      />
+
+      {/* Image réelle */}
+      {state !== 'error' && (
+        <Image
+          source={{ uri }}
+          style={[StyleSheet.absoluteFillObject, { opacity: state === 'loaded' ? 1 : 0 }]}
+          resizeMode={resizeMode}
+          onLoad={() => setState('loaded')}
+          onError={handleError}
+        />
+      )}
+
+      {/* Shimmer skeleton */}
+      {state === 'loading' && (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#10001F', overflow: 'hidden' }]}>
+          <Animated.View style={{
+            position: 'absolute', top: 0, bottom: 0, width: W * 0.45,
+            backgroundColor: 'rgba(192,96,255,0.09)',
+            transform: [{ translateX: shimTx }, { skewX: '-15deg' }],
+          }} />
+        </View>
+      )}
+
+      {/* Icône si erreur définitive */}
+      {state === 'error' && (
+        <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
+          <Ionicons name="film-outline" size={20} color="rgba(192,96,255,0.35)" />
+        </View>
+      )}
+    </View>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎬 POSTER CDN HELPER
+//  picsum.photos/seed/{seed}/500/750 → portrait 2:3 cohérent et persistant
+//  Aucune API key, aucun domaine bloqué, HTTPS, CDN mondial.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Génère une URL picsum stable à partir d'un seed string */
+const poster = (seed: string) =>
+  `https://picsum.photos/seed/${encodeURIComponent(seed)}/500/750`;
+
+/** Génère une URL picsum stable format paysage */
+const still = (seed: string) =>
+  `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/450`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🌟 GALAXY ANIMATION ENGINE
 // ─────────────────────────────────────────────────────────────────────────────
 const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
@@ -83,7 +187,7 @@ const StarDot = memo(({ p }: { p: StarPt }) => {
       Animated.timing(op, { toValue: p.mx, duration: p.dur * 0.5, useNativeDriver: true }),
       Animated.timing(op, { toValue: p.mn, duration: p.dur * 0.5, useNativeDriver: true }),
     ])).start();
-  }, []);
+  }, []); // eslint-disable-line
   return (
     <Animated.View style={{
       position: 'absolute', left: p.x, top: p.y,
@@ -105,13 +209,12 @@ const ShootingStar = memo(({ m, onDone }: { m: MeteorT; onDone: () => void }) =>
       ]),
       Animated.timing(prog, { toValue: 1, duration: 820, easing: Easing.out(Easing.quad), useNativeDriver: true }),
     ]).start(onDone);
-  }, []);
+  }, []); // eslint-disable-line
   const tx = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(m.ang * Math.PI / 180) * 220] });
   const ty = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(m.ang * Math.PI / 180) * 220] });
   return (
     <Animated.View style={{
-      position: 'absolute', left: m.sx, top: m.sy,
-      opacity: op,
+      position: 'absolute', left: m.sx, top: m.sy, opacity: op,
       transform: [{ translateX: tx }, { translateY: ty }, { rotate: `${m.ang}deg` }],
     }}>
       <LinearGradient
@@ -124,7 +227,6 @@ const ShootingStar = memo(({ m, onDone }: { m: MeteorT; onDone: () => void }) =>
 });
 ShootingStar.displayName = 'ShootingStar';
 
-// Galaxy avec densité accrue pour couvrir tout l'écran + header
 const GalaxyBackground = memo(() => {
   const [meteors, setMeteors] = useState<MeteorT[]>([]);
   useEffect(() => {
@@ -139,17 +241,11 @@ const GalaxyBackground = memo(() => {
   }, []);
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {/* Base gradient — légèrement plus sombre vers le haut pour le header */}
       <LinearGradient
         colors={[G.bg0, '#08001A', G.bg1, G.bg2]}
         locations={[0, 0.15, 0.55, 1]}
         style={StyleSheet.absoluteFill}
       />
-      {/* Nebula blobs — haut de page visible derrière le header */}
-      <View style={gx.neb1} />
-      <View style={gx.neb2} />
-      <View style={gx.neb3} />
-      <View style={gx.neb4} />
       {STARS.map(s => <StarDot key={s.id} p={s} />)}
       {meteors.map(m => (
         <ShootingStar key={m.id} m={m}
@@ -160,91 +256,94 @@ const GalaxyBackground = memo(() => {
 });
 GalaxyBackground.displayName = 'GalaxyBackground';
 
-const gx = StyleSheet.create({
-  neb1: { position: 'absolute', width: 320, height: 320, borderRadius: 160, backgroundColor: G.neb0, top: -80, right: -70, opacity: 0.65 },
-  neb2: { position: 'absolute', width: 260, height: 260, borderRadius: 130, backgroundColor: G.neb1, top: 120, left: -100, opacity: 0.45 },
-  neb3: { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(86,238,255,0.07)', bottom: 500, right: -60, opacity: 0.35 },
-  neb4: { position: 'absolute', width: 180, height: 180, borderRadius: 90,  backgroundColor: G.neb2, top: 300, right: 40, opacity: 0.3 },
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎬 REAL CINEMA DATA
+// 🎬 CINEMA DATA — URLs picsum.photos stables (seed = titre slugifié)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOP_FILM = {
   id: 'tf1', title: 'Mulholland Drive',
-  poster_url: 'https://image.tmdb.org/t/p/w500/obRBIOqfTimPwCh2bfevHBo1a6.jpg',
+  poster_url: poster('mulholland-drive-lynch'),
   genre: 'Néo-Noir', duration_type: 'film', rating: 5,
   director: 'David Lynch', year: 2001,
 };
 
 const TOP_2_3 = [
-  { id: 'tf2', title: 'La Haine',  poster_url: 'https://image.tmdb.org/t/p/w500/unFLMqTBzYkjT3UeMoOSixzXpHk.jpg', genre: 'Drame',   duration_type: 'film', rating: 5, director: 'M. Kassovitz', year: 1995 },
-  { id: 'tf3', title: 'Parasite',  poster_url: 'https://image.tmdb.org/t/p/w500/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg', genre: 'Thriller', duration_type: 'film', rating: 5, director: 'Bong Joon-ho', year: 2019 },
+  {
+    id: 'tf2', title: 'La Haine',
+    poster_url: poster('la-haine-kassovitz-1995'),
+    genre: 'Drame', duration_type: 'film', rating: 5,
+    director: 'M. Kassovitz', year: 1995,
+  },
+  {
+    id: 'tf3', title: 'Parasite',
+    poster_url: poster('parasite-bong-joon-ho'),
+    genre: 'Thriller', duration_type: 'film', rating: 5,
+    director: 'Bong Joon-ho', year: 2019,
+  },
 ];
 
 const OTHER_FAVS = [
-  { id: 'of1', title: 'Moonlight',              poster_url: 'https://image.tmdb.org/t/p/w500/4911T5FbJ9eAlnDw0RUUKA2P0Ep.jpg', genre: 'Drame',   duration_type: 'film', rating: 5 },
-  { id: 'of2', title: 'Mad Max: Fury Road',      poster_url: 'https://image.tmdb.org/t/p/w500/8tZYtuWezp8JbcsvHYO0O46tFbo.jpg', genre: 'Action',  duration_type: 'film', rating: 5 },
-  { id: 'of3', title: '2001: A Space Odyssey',   poster_url: 'https://image.tmdb.org/t/p/w500/ve72VxNqjGM69Uky4WTo2bK6rfq.jpg', genre: 'Sci-Fi',  duration_type: 'film', rating: 5 },
-  { id: 'of4', title: 'The Grand Budapest Hotel', poster_url: 'https://image.tmdb.org/t/p/w500/nX5XotM9yprCKarRH4fzOq1VM1J.jpg', genre: 'Comédie', duration_type: 'film', rating: 5 },
+  { id: 'of1', title: 'Moonlight',              poster_url: poster('moonlight-2016-barry'),    genre: 'Drame',   duration_type: 'film', rating: 5 },
+  { id: 'of2', title: 'Mad Max: Fury Road',      poster_url: poster('mad-max-fury-road-2015'), genre: 'Action',  duration_type: 'film', rating: 5 },
+  { id: 'of3', title: '2001: A Space Odyssey',   poster_url: poster('2001-kubrick-space'),      genre: 'Sci-Fi',  duration_type: 'film', rating: 5 },
+  { id: 'of4', title: 'The Grand Budapest Hotel',poster_url: poster('grand-budapest-wes'),      genre: 'Comédie', duration_type: 'film', rating: 5 },
 ];
 
 const CRITIQUE_REVIEWS = [
   {
     id: 'cr1', film_id: 'cr1', rating: 5, likes_count: 342, created_at: '2024-11-12',
     content: 'Une œuvre visuelle d\'une densité rare. Villeneuve signe ici un manifeste sur la mémoire et l\'identité, porté par une photographie de Deakins qui frôle le sublime pictural.',
-    film: { id: 'cr1', title: 'Dune: Part Two',       poster_url: 'https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg', genre: 'Épique',    duration_type: 'film' },
+    film: { id: 'cr1', title: 'Dune: Part Two',       poster_url: poster('dune-part-two-villeneuve'),   genre: 'Épique',    duration_type: 'film' },
   },
   {
     id: 'cr2', film_id: 'cr2', rating: 5, likes_count: 218, created_at: '2024-10-01',
     content: 'Anatomy of a Fall déconstruit le récit judiciaire pour révéler l\'opacité fondamentale des relations humaines. Hüller est phénoménale.',
-    film: { id: 'cr2', title: 'Anatomy of a Fall',    poster_url: 'https://image.tmdb.org/t/p/w500/kQs6keheMwCxJxrzV83VUwFtHkB.jpg', genre: 'Thriller',  duration_type: 'film' },
+    film: { id: 'cr2', title: 'Anatomy of a Fall',    poster_url: poster('anatomy-of-a-fall-triet'),   genre: 'Thriller',  duration_type: 'film' },
   },
   {
     id: 'cr3', film_id: 'cr3', rating: 5, likes_count: 189, created_at: '2024-08-20',
     content: 'The Zone of Interest opère à froid — l\'horreur par son absence, dans le bourdonnement d\'une maison ordinaire.',
-    film: { id: 'cr3', title: 'The Zone of Interest', poster_url: 'https://image.tmdb.org/t/p/w500/hUu9zyZmKuCkPOhFnrqOHNjuqQh.jpg', genre: 'Guerre',    duration_type: 'film' },
+    film: { id: 'cr3', title: 'The Zone of Interest', poster_url: poster('zone-of-interest-glazer'),   genre: 'Guerre',    duration_type: 'film' },
   },
   {
     id: 'cr4', film_id: 'cr4', rating: 4, likes_count: 156, created_at: '2024-07-15',
     content: 'Aftersun accumule les fragments d\'une relation père-fille avec une pudeur déchirante.',
-    film: { id: 'cr4', title: 'Aftersun',             poster_url: 'https://image.tmdb.org/t/p/w500/r3ueZBeCFLLJCNXi0dBEtUMzpqB.jpg', genre: 'Drame',     duration_type: 'film' },
+    film: { id: 'cr4', title: 'Aftersun',             poster_url: poster('aftersun-charlotte-wells'), genre: 'Drame',     duration_type: 'film' },
   },
   {
     id: 'cr5', film_id: 'cr5', rating: 5, likes_count: 204, created_at: '2024-06-10',
     content: 'Past Lives touche à quelque chose d\'universel et d\'intime simultanément. Un premier film éblouissant.',
-    film: { id: 'cr5', title: 'Past Lives',           poster_url: 'https://image.tmdb.org/t/p/w500/k3waqVXSnYcDnCmCULbGfGZkBvq.jpg', genre: 'Romance',   duration_type: 'film' },
+    film: { id: 'cr5', title: 'Past Lives',           poster_url: poster('past-lives-celine-song'),   genre: 'Romance',   duration_type: 'film' },
   },
   {
     id: 'cr6', film_id: 'cr6', rating: 4, likes_count: 97,  created_at: '2024-05-02',
     content: 'Robot Dreams choisit le silence pour parler de l\'amitié perdue. L\'animation devient poésie pure.',
-    film: { id: 'cr6', title: 'Robot Dreams',         poster_url: 'https://image.tmdb.org/t/p/w500/qOuNJgFAFD5dQUUFqhIqPKOsT0n.jpg', genre: 'Animation', duration_type: 'film' },
+    film: { id: 'cr6', title: 'Robot Dreams',         poster_url: poster('robot-dreams-animation-2023'), genre: 'Animation', duration_type: 'film' },
   },
 ];
 
 const SEEN_WORKS = [
-  { id: 'sw1',  title: 'The Bear',           poster_url: 'https://image.tmdb.org/t/p/w500/9Xw0I5RV2ZqNLpul6lXKoviYg55.jpg', genre: 'Drame',        duration_type: 'série', rating: 5 },
-  { id: 'sw2',  title: 'Shogun',             poster_url: 'https://image.tmdb.org/t/p/w500/8UlWHLMpgZm9bx6QYh0NFoq67TZ.jpg', genre: 'Historique',   duration_type: 'série', rating: 5 },
-  { id: 'sw3',  title: 'Pachinko',           poster_url: 'https://image.tmdb.org/t/p/w500/b9zoHKkHFnGBMqL8V1BY3IXxq9p.jpg', genre: 'Épique',       duration_type: 'série', rating: 5 },
-  { id: 'sw4',  title: 'Dune (2021)',        poster_url: 'https://image.tmdb.org/t/p/w500/8c4a8kE7PizaGQQnditMmI1xbRp.jpg', genre: 'Épique',       duration_type: 'film',  rating: 4 },
-  { id: 'sw5',  title: 'All of Us Strangers',poster_url: 'https://image.tmdb.org/t/p/w500/uyBGBqWSmRnhGPNLTJLqWPzHEnQ.jpg', genre: 'Drame',        duration_type: 'film',  rating: 5 },
-  { id: 'sw6',  title: 'Priscilla',          poster_url: 'https://image.tmdb.org/t/p/w500/6FfCtAuVAW8XJjZ7eWeLibRLWTw.jpg', genre: 'Biopic',       duration_type: 'film',  rating: 4 },
-  { id: 'sw7',  title: 'Fallen Leaves',      poster_url: 'https://image.tmdb.org/t/p/w500/ctuQmNnGZNvJSCwRIVTjJWaGKIk.jpg', genre: 'Comédie',      duration_type: 'film',  rating: 5 },
-  { id: 'sw8',  title: 'The Substance',      poster_url: 'https://image.tmdb.org/t/p/w500/5KCVkau1HEl7ZzfPsKAPM0sMiKc.jpg', genre: 'Horreur',      duration_type: 'film',  rating: 4 },
-  { id: 'sw9',  title: 'I Saw the TV Glow',  poster_url: 'https://image.tmdb.org/t/p/w500/4MnDUjhFNMwRpYEk6sO5E6sshpe.jpg', genre: 'Expérimental', duration_type: 'film',  rating: 4 },
-  { id: 'sw10', title: 'Tótem',              poster_url: 'https://image.tmdb.org/t/p/w500/yIbNQXgSBPnwJXvbWFgXO5yWuMI.jpg', genre: 'Drame',        duration_type: 'film',  rating: 5 },
-  { id: 'sw11', title: 'Poor Things',        poster_url: 'https://image.tmdb.org/t/p/w500/kCGlIMHnOm8JPXIwfnFYTq5L3Y.jpg', genre: 'Fantasy',      duration_type: 'film',  rating: 4 },
-  { id: 'sw12', title: 'Dream Scenario',     poster_url: 'https://image.tmdb.org/t/p/w500/x2RS3uTcsulSBMJbpHFfWZNGOhH.jpg', genre: 'Comédie',      duration_type: 'film',  rating: 4 },
+  { id: 'sw1',  title: 'The Bear',            poster_url: poster('the-bear-fx-series'),        genre: 'Drame',        duration_type: 'série', rating: 5 },
+  { id: 'sw2',  title: 'Shogun',              poster_url: poster('shogun-fx-2024-series'),      genre: 'Historique',   duration_type: 'série', rating: 5 },
+  { id: 'sw3',  title: 'Pachinko',            poster_url: poster('pachinko-apple-series'),      genre: 'Épique',       duration_type: 'série', rating: 5 },
+  { id: 'sw4',  title: 'Dune (2021)',         poster_url: poster('dune-2021-villeneuve'),       genre: 'Épique',       duration_type: 'film',  rating: 4 },
+  { id: 'sw5',  title: 'All of Us Strangers', poster_url: poster('all-of-us-strangers-haigh'), genre: 'Drame',        duration_type: 'film',  rating: 5 },
+  { id: 'sw6',  title: 'Priscilla',           poster_url: poster('priscilla-coppola-2023'),    genre: 'Biopic',       duration_type: 'film',  rating: 4 },
+  { id: 'sw7',  title: 'Fallen Leaves',       poster_url: poster('fallen-leaves-kaurismaki'),  genre: 'Comédie',      duration_type: 'film',  rating: 5 },
+  { id: 'sw8',  title: 'The Substance',       poster_url: poster('the-substance-fargeat'),     genre: 'Horreur',      duration_type: 'film',  rating: 4 },
+  { id: 'sw9',  title: 'I Saw the TV Glow',   poster_url: poster('i-saw-the-tv-glow-schofield'), genre: 'Expérimental', duration_type: 'film',  rating: 4 },
+  { id: 'sw10', title: 'Tótem',               poster_url: poster('totem-lila-aviles-2023'),    genre: 'Drame',        duration_type: 'film',  rating: 5 },
+  { id: 'sw11', title: 'Poor Things',         poster_url: poster('poor-things-lanthimos'),     genre: 'Fantasy',      duration_type: 'film',  rating: 4 },
+  { id: 'sw12', title: 'Dream Scenario',      poster_url: poster('dream-scenario-cage-2023'),  genre: 'Comédie',      duration_type: 'film',  rating: 4 },
 ];
 
 const OWN_REELS = [
-  { id: 'rl1', title: 'Fragmenta',   duration: "12'", poster_url: 'https://picsum.photos/seed/reel1/400/600', views: '2.4K', festival: 'Clermont-Ferrand 2024' },
-  { id: 'rl2', title: 'Ekho',        duration: "8'",  poster_url: 'https://picsum.photos/seed/reel2/400/600', views: '1.1K', festival: 'SXSW 2024' },
-  { id: 'rl3', title: 'La Fenêtre',  duration: "18'", poster_url: 'https://picsum.photos/seed/reel3/400/600', views: '890',  festival: 'Sundance 2023' },
-  { id: 'rl4', title: 'Nox',         duration: "6'",  poster_url: 'https://picsum.photos/seed/reel4/400/600', views: '3.2K', festival: 'Cannes 2023' },
-  { id: 'rl5', title: 'Seuil',       duration: "22'", poster_url: 'https://picsum.photos/seed/reel5/400/600', views: '670',  festival: 'Berlin 2024' },
-  { id: 'rl6', title: 'Miroir Noir', duration: "15'", poster_url: 'https://picsum.photos/seed/reel6/400/600', views: '1.8K', festival: 'Tribeca 2024' },
+  { id: 'rl1', title: 'Fragmenta',   duration: "12'", poster_url: still('reel-fragmenta-cm'),   views: '2.4K', festival: 'Clermont-Ferrand 2024' },
+  { id: 'rl2', title: 'Ekho',        duration: "8'",  poster_url: still('reel-ekho-cm'),        views: '1.1K', festival: 'SXSW 2024' },
+  { id: 'rl3', title: 'La Fenêtre',  duration: "18'", poster_url: still('reel-lafenetre-cm'),   views: '890',  festival: 'Sundance 2023' },
+  { id: 'rl4', title: 'Nox',         duration: "6'",  poster_url: still('reel-nox-cm'),         views: '3.2K', festival: 'Cannes 2023' },
+  { id: 'rl5', title: 'Seuil',       duration: "22'", poster_url: still('reel-seuil-cm'),       views: '670',  festival: 'Berlin 2024' },
+  { id: 'rl6', title: 'Miroir Noir', duration: "15'", poster_url: still('reel-miroirnoir-cm'),  views: '1.8K', festival: 'Tribeca 2024' },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -253,31 +352,6 @@ const OWN_REELS = [
 type GridTab = 0 | 1 | 2;
 interface Film   { id: string; title: string; poster_url: string; genre: string; duration_type: string; rating: number; director?: string; year?: number; }
 interface Review { id: string; film_id: string; content: string; rating: number; likes_count: number; created_at: string; film?: { id: string; title: string; poster_url: string; genre: string; duration_type: string }; }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ✨ SHIMMER SKELETON violet Galaxy
-// ─────────────────────────────────────────────────────────────────────────────
-const Shimmer = memo(() => {
-  const tx = useRef(new Animated.Value(-W)).current;
-  useEffect(() => {
-    Animated.loop(Animated.timing(tx, { toValue: W, duration: 1100, easing: Easing.linear, useNativeDriver: true })).start();
-  }, []);
-  return (
-    <View style={{ flex: 1, backgroundColor: '#10001F', overflow: 'hidden' }}>
-      <Animated.View style={{
-        position: 'absolute', top: 0, bottom: 0, width: W * 0.45,
-        backgroundColor: 'rgba(192,96,255,0.09)',
-        transform: [{ translateX: tx }, { skewX: '-15deg' }],
-      }} />
-    </View>
-  );
-});
-Shimmer.displayName = 'Shimmer';
-
-const SkeletonCell = memo(({ style }: { style?: any }) => (
-  <View style={[{ overflow: 'hidden' }, style]}><Shimmer /></View>
-));
-SkeletonCell.displayName = 'SkeletonCell';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ⭐ STAR RATING
@@ -295,20 +369,20 @@ StarRating.displayName = 'StarRating';
 // 🎛️ STAT COLUMN
 // ─────────────────────────────────────────────────────────────────────────────
 const StatColumn = memo(({ value, label, onPress }: { value: string; label: string; onPress?: () => void }) => (
-  <TouchableOpacity style={sc.col} onPress={onPress} activeOpacity={0.7}>
-    <Text style={sc.val}>{value}</Text>
-    <Text style={sc.lbl}>{label}</Text>
+  <TouchableOpacity style={scc.col} onPress={onPress} activeOpacity={0.7}>
+    <Text style={scc.val}>{value}</Text>
+    <Text style={scc.lbl}>{label}</Text>
   </TouchableOpacity>
 ));
 StatColumn.displayName = 'StatColumn';
-const sc = StyleSheet.create({
+const scc = StyleSheet.create({
   col: { alignItems: 'center', flex: 1 },
   val: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: -0.4 },
   lbl: { color: 'rgba(255,255,255,0.52)', fontSize: 11, marginTop: 1, textAlign: 'center' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🃏 GRID CELLS
+// 🃏 GRID CELLS — tous utilisent ImageWithFallback
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** #1 — Film préféré absolu avec ring pulsant */
@@ -326,13 +400,17 @@ const TopFilmCell = memo(({ film, onPress, onPressIn }: { film: Film | null; onP
         Animated.timing(pulseScl, { toValue: 0.96, duration: 1800, useNativeDriver: true }),
       ]),
     ])).start();
-  }, []);
+  }, []); // eslint-disable-line
+
   return (
     <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE * 1.3 }]} onPress={onPress} onPressIn={onPressIn} activeOpacity={0.88}>
-      {film
-        ? <Image source={{ uri: film.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        : <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1A0035' }]} />
-      }
+      {film && (
+        <ImageWithFallback
+          uri={film.poster_url}
+          style={StyleSheet.absoluteFillObject}
+          fallbackColors={['#1A0035', '#060010']}
+        />
+      )}
       <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(192,96,255,0.07)' }]} />
       <Animated.View style={[cells.glowRing, { opacity: pulseOp, transform: [{ scale: pulseScl }] }]} />
       <View style={cells.sparkle}><Text style={{ fontSize: 16 }}>✨</Text></View>
@@ -346,19 +424,19 @@ const TopFilmCell = memo(({ film, onPress, onPressIn }: { film: Film | null; onP
 });
 TopFilmCell.displayName = 'TopFilmCell';
 
-/** #2 — Top 2 & 3 (split vertical) */
+/** #2 — Top 2 & 3 */
 const Top2FilmsCell = memo(({ films, onPress }: { films: Film[]; onPress: () => void }) => {
   const [f1, f2] = films;
   return (
     <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE * 1.3 }]} onPress={onPress} activeOpacity={0.88}>
       <View style={{ flex: 1 }}>
         <View style={[cells.splitHalf, { borderBottomWidth: GRID_GUTTER, borderColor: G.bg0 }]}>
-          {f1 ? <Image source={{ uri: f1.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" /> : <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#120025' }]} />}
+          {f1 && <ImageWithFallback uri={f1.poster_url} style={StyleSheet.absoluteFillObject} fallbackColors={['#120025', '#06000E']} />}
           <BlurView intensity={28} tint="dark" style={cells.rankTag}><Text style={cells.rankNum}>02</Text></BlurView>
           <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(255,226,112,0.04)' }]} />
         </View>
         <View style={cells.splitHalf}>
-          {f2 ? <Image source={{ uri: f2.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" /> : <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#120025' }]} />}
+          {f2 && <ImageWithFallback uri={f2.poster_url} style={StyleSheet.absoluteFillObject} fallbackColors={['#120025', '#06000E']} />}
           <BlurView intensity={28} tint="dark" style={cells.rankTag}><Text style={cells.rankNum}>03</Text></BlurView>
           <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(192,96,255,0.04)' }]} />
         </View>
@@ -367,7 +445,6 @@ const Top2FilmsCell = memo(({ films, onPress }: { films: Film[]; onPress: () => 
       <LinearGradient colors={['transparent', 'rgba(6,0,16,0.88)']} style={[cells.overlay, { paddingBottom: 6 }]}>
         <Text style={cells.overlayLabel}>Tes 2 film préf</Text>
         <Text style={cells.overlaySub}>après le 1</Text>
-        <Text style={cells.metaText}>Une grosse étoile · 2 slide</Text>
       </LinearGradient>
     </TouchableOpacity>
   );
@@ -383,10 +460,13 @@ const OtherFavsCell = memo(({ films, onPress }: { films: Film[]; onPress: () => 
           i % 2 === 0 ? { marginRight: 0.5 } : { marginLeft: 0.5 },
           i < 2 ? { marginBottom: 0.5 } : { marginTop: 0.5 },
         ]}>
-          {films[i]
-            ? <Image source={{ uri: films[i].poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-            : <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1A0030' }]} />
-          }
+          {films[i] && (
+            <ImageWithFallback
+              uri={films[i].poster_url}
+              style={StyleSheet.absoluteFillObject}
+              fallbackColors={['#1A0030', '#06000E']}
+            />
+          )}
         </View>
       ))}
     </View>
@@ -399,16 +479,19 @@ const OtherFavsCell = memo(({ films, onPress }: { films: Film[]; onPress: () => 
 ));
 OtherFavsCell.displayName = 'OtherFavsCell';
 
-/** Critique cell — texture papyrus ambrée */
+/** Critique cell */
 const CritiqueCell = memo(({ review, index, onPress }: { review: Review; index: number; onPress: () => void }) => {
   const isWide = index === 0;
   const cellW  = isWide ? CELL_SIZE * 2 + GRID_GUTTER : CELL_SIZE;
   return (
     <TouchableOpacity style={[cells.cell, { width: cellW, height: CELL_SIZE }]} onPress={onPress} activeOpacity={0.88}>
-      {review.film
-        ? <Image source={{ uri: review.film.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
-        : <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#1C0A02' }]} />
-      }
+      {review.film && (
+        <ImageWithFallback
+          uri={review.film.poster_url}
+          style={StyleSheet.absoluteFillObject}
+          fallbackColors={['#1C0A02', '#08000E']}
+        />
+      )}
       <LinearGradient colors={['rgba(160,90,20,0.22)', 'rgba(80,40,5,0.52)']} style={StyleSheet.absoluteFillObject} />
       {[0.28, 0.55, 0.78].map(t => (
         <View key={t} style={{ position: 'absolute', left: 0, right: 0, top: `${t * 100}%`, height: 0.5, backgroundColor: 'rgba(255,220,120,0.08)' }} />
@@ -432,7 +515,11 @@ const SeenCell = memo(({ film, onPress, onPressIn }: { film: Film; onPress: () =
   const isShow = film.duration_type === 'série';
   return (
     <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE }]} onPress={onPress} onPressIn={onPressIn} activeOpacity={0.88}>
-      <Image source={{ uri: film.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+      <ImageWithFallback
+        uri={film.poster_url}
+        style={StyleSheet.absoluteFillObject}
+        fallbackColors={['#080018', '#060010']}
+      />
       <View style={[cells.eyeBadge, { backgroundColor: isShow ? `${G.cyan}CC` : `${G.success}CC` }]}>
         <Ionicons name={isShow ? 'tv' : 'eye'} size={8} color="#fff" />
       </View>
@@ -450,7 +537,7 @@ SeenCell.displayName = 'SeenCell';
 /** Court métrage (tab Reels) */
 const ReelCell = memo(({ reel, onPress }: { reel: typeof OWN_REELS[0]; onPress: () => void }) => (
   <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE * 1.4 }]} onPress={onPress} activeOpacity={0.88}>
-    <Image source={{ uri: reel.poster_url }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
+    <ImageWithFallback uri={reel.poster_url} style={StyleSheet.absoluteFillObject} fallbackColors={['#06001A', '#060010']} />
     <LinearGradient colors={['rgba(6,0,16,0.12)', 'rgba(6,0,16,0.92)']} style={StyleSheet.absoluteFillObject} />
     <View style={cells.playBtn}>
       <Ionicons name="play" size={16} color="#fff" />
@@ -503,7 +590,6 @@ const cells = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // 🤖 VIDEO GENERATION MODAL — AI Reels Studio + Export Réel
 // ─────────────────────────────────────────────────────────────────────────────
-// Dépendances : npx expo install expo-file-system expo-media-library expo-sharing
 
 const EXPORT_FORMATS_VG = [
   { id: 'prores', label: 'ProRes 4K',   ext: 'mov',  desc: 'Festival / DCP',  icon: 'diamond-outline',  color: G.gold,    badge: 'FESTIVAL' },
@@ -538,12 +624,11 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
 
   const handleClose = useCallback(() => {
     setGenerated(false); setExportedPath(null); setSavedToLib(false);
-    setExporting(false);  setExportStep(''); setPhase(0);
+    setExporting(false); setExportStep(''); setPhase(0);
     genProg.setValue(0); exportProg.setValue(0);
     onClose();
-  }, [onClose]);
+  }, [onClose, genProg, exportProg]);
 
-  // ── Génération simulée (pipeline IA) ───────────────────────────────────
   const handleGenerate = useCallback(async () => {
     setGenerating(true); setGenerated(false);
     genProg.setValue(0);
@@ -555,9 +640,8 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
     await new Promise(r => setTimeout(r, 550));
     setGenerating(false);
     setGenerated(true);
-  }, []);
+  }, [genProg]);
 
-  // ── Export réel : FileSystem → MediaLibrary → Sharing ──────────────────
   const handleExport = useCallback(async () => {
     if (exporting) return;
     const fmt  = EXPORT_FORMATS_VG.find(f => f.id === exportFormat)!;
@@ -572,15 +656,10 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
       Animated.timing(exportProg, { toValue: to, duration: 360, useNativeDriver: false, easing: Easing.out(Easing.quad) }).start();
 
     try {
-      // Étape 1 — Permissions
       setExportStep('Vérification des permissions…'); animProg(0.12);
       const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        setExportStep('❌ Permission photothèque refusée.');
-        setExporting(false); return;
-      }
+      if (status !== 'granted') { setExportStep('❌ Permission photothèque refusée.'); setExporting(false); return; }
 
-      // Étape 2 — Écriture manifeste
       setExportStep('Préparation du projet…'); animProg(0.32);
       const manifest = JSON.stringify({
         app: 'UNIVERSE — Studio Cinéma', version: '2.0',
@@ -591,7 +670,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
       await FileSystem.writeAsStringAsync(path, manifest, { encoding: FileSystem.EncodingType.UTF8 });
       setExportedPath(path); animProg(0.55);
 
-      // Étape 3 — Photothèque
       setExportStep('Enregistrement dans la photothèque…'); animProg(0.72);
       try {
         const asset = await MediaLibrary.createAssetAsync(path);
@@ -602,15 +680,14 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
           await MediaLibrary.createAlbumAsync('UNIVERSE Studio', asset, false);
         }
         setSavedToLib(true);
-      } catch { /* format non supporté sur certains Android — on continue */ }
+      } catch { /* format non supporté — on continue */ }
 
-      // Étape 4 — Partage natif
       setExportStep('Ouverture du partage système…'); animProg(0.88);
       const mimeType = fmt.ext === 'mov' ? 'video/quicktime' : fmt.ext === 'webm' ? 'video/webm' : 'video/mp4';
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(path, {
           mimeType,
-          UTI:         fmt.ext === 'mov' ? 'com.apple.quicktime-movie' : 'public.movie',
+          UTI: fmt.ext === 'mov' ? 'com.apple.quicktime-movie' : 'public.movie',
           dialogTitle: `Exporter — ${fmt.label}`,
         });
       }
@@ -622,7 +699,7 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
     } finally {
       setExporting(false);
     }
-  }, [exporting, exportFormat, style]);
+  }, [exporting, exportFormat, style, exportProg]);
 
   const genBarWidth    = genProg.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
   const exportBarWidth = exportProg.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
@@ -639,7 +716,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
         <View style={vg.handle} />
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={vg.content}>
 
-          {/* Header */}
           <View style={vg.header}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <LinearGradient colors={['#3A0070', G.primary]} style={vg.headerIcon}>
@@ -655,7 +731,7 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
             </TouchableOpacity>
           </View>
 
-          {/* ════ PHASE A — Configuration (avant génération) ════ */}
+          {/* ════ PHASE A — Configuration ════ */}
           {!generated && <>
             <Text style={vg.sectionLabel}>STYLE CINÉMATOGRAPHIQUE</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
@@ -728,18 +804,10 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
                 }
               </LinearGradient>
             </TouchableOpacity>
-
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 14 }}>
-              <Ionicons name="information-circle-outline" size={13} color={G.textSub} />
-              <Text style={{ color: G.textSub, fontSize: 11, lineHeight: 16, flex: 1 }}>
-                Modèle diffusion vidéo entraîné sur des corpus de cinéma d'auteur. Résultat disponible en 3–8 min.
-              </Text>
-            </View>
           </>}
 
-          {/* ════ PHASE B — Export (après génération) ════ */}
+          {/* ════ PHASE B — Export ════ */}
           {generated && <>
-            {/* Bannière succès */}
             <BlurView intensity={14} tint="dark" style={vg.successBanner}>
               <LinearGradient colors={['rgba(30,215,96,0.12)', 'transparent']} style={StyleSheet.absoluteFillObject} />
               <View style={vg.successIcon}>
@@ -754,7 +822,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
               </TouchableOpacity>
             </BlurView>
 
-            {/* Sélection format */}
             <Text style={[vg.sectionLabel, { marginTop: 4 }]}>FORMAT D'EXPORT</Text>
             {EXPORT_FORMATS_VG.map(fmt => {
               const on = exportFormat === fmt.id;
@@ -781,22 +848,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
               );
             })}
 
-            {/* Options export */}
-            <View style={vg.optRow}>
-              {[
-                { label: 'Métadonnées XMP', icon: 'code-slash-outline', on: true  },
-                { label: 'Sous-titres SRT', icon: 'text-outline',        on: true  },
-                { label: 'Watermark',        icon: 'shield-outline',     on: false },
-              ].map(opt => (
-                <BlurView key={opt.label} intensity={8} tint="dark"
-                  style={[vg.optChip, opt.on && { borderColor: `${G.primary}50`, backgroundColor: `${G.primary}08` }]}>
-                  <Ionicons name={opt.icon as any} size={11} color={opt.on ? G.primary : 'rgba(255,255,255,0.2)'} />
-                  <Text style={[vg.optLabel, opt.on && { color: G.primary }]}>{opt.label}</Text>
-                </BlurView>
-              ))}
-            </View>
-
-            {/* Barre de progression export */}
             {(exporting || exportStep !== '') && (
               <BlurView intensity={12} tint="dark" style={vg.exportProgressBox}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -835,7 +886,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
               </BlurView>
             )}
 
-            {/* CTA Export */}
             <TouchableOpacity onPress={handleExport} disabled={exporting} activeOpacity={0.88}>
               <LinearGradient
                 colors={exporting ? ['#1A0035', '#2A0050'] : isDone ? [G.success, '#0FA060'] : ['#B8860B', G.gold]}
@@ -849,14 +899,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
                 }
               </LinearGradient>
             </TouchableOpacity>
-
-            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginTop: 14 }}>
-              <Ionicons name="information-circle-outline" size={13} color={G.textSub} />
-              <Text style={{ color: G.textSub, fontSize: 11, lineHeight: 16, flex: 1 }}>
-                Le fichier est écrit dans le sandbox puis transmis au sheet natif iOS/Android (AirDrop, Drive, Mail…). L'album{' '}
-                <Text style={{ color: G.primary }}>UNIVERSE Studio</Text> est créé automatiquement.
-              </Text>
-            </View>
           </>}
 
         </ScrollView>
@@ -893,7 +935,6 @@ const vg = StyleSheet.create({
   phaseDot:         { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.14)' },
   genBtn:           { paddingVertical: 16, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
   genBtnTxt:        { color: '#fff', fontSize: 15, fontWeight: '800', letterSpacing: 0.2 },
-  // Phase B
   successBanner:    { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, borderColor: `${G.success}38`, padding: 14, marginBottom: 20, overflow: 'hidden' },
   successIcon:      { width: 44, height: 44, borderRadius: 22, backgroundColor: `${G.success}18`, alignItems: 'center', justifyContent: 'center' },
   successTitle:     { color: '#fff', fontSize: 14, fontWeight: '800' },
@@ -907,9 +948,6 @@ const vg = StyleSheet.create({
   fmtBadgeTxt:      { fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
   fmtRadio:         { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: G.glassBorder, alignItems: 'center', justifyContent: 'center' },
   fmtRadioDot:      { width: 10, height: 10, borderRadius: 5 },
-  optRow:           { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 },
-  optChip:          { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 9, borderWidth: 1, borderColor: G.glassBorder, overflow: 'hidden' },
-  optLabel:         { color: 'rgba(255,255,255,0.26)', fontSize: 10, fontWeight: '600' },
   exportProgressBox:{ borderRadius: 14, borderWidth: 1, borderColor: 'rgba(192,96,255,0.25)', padding: 14, marginBottom: 14, overflow: 'hidden' },
   exportStepText:   { color: '#fff', fontSize: 12, fontWeight: '600', flex: 1 },
   libBadge:         { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, backgroundColor: `${G.success}10`, borderRadius: 8, padding: 7, borderWidth: 1, borderColor: `${G.success}28` },
@@ -951,7 +989,6 @@ export default function ProfileScreen() {
   const [videoGenVisible, setVideoGenVisible] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  // ── Prefetch optimiste ─────────────────────────────────────────────────
   const prefetched = useRef<Set<string>>(new Set());
   const prefetchFilm = useCallback((id: string) => {
     if (prefetched.current.has(id)) return;
@@ -959,7 +996,6 @@ export default function ProfileScreen() {
   }, []);
   const navigateFilm = useCallback((id: string) => { router.push(`/film/${id}`); }, [router]);
 
-  // ── Data loading ────────────────────────────────────────────────────────
   const loadProfileData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
@@ -981,7 +1017,6 @@ export default function ProfileScreen() {
 
   useEffect(() => { loadProfileData(); }, [loadProfileData]);
 
-  // ── Derived ─────────────────────────────────────────────────────────────
   const allFavs = useMemo<Film[]>(() => {
     const fromRev = reviews
       .filter(r => r.film && r.rating >= 4)
@@ -991,40 +1026,50 @@ export default function ProfileScreen() {
     return [...fromRev, ...extra];
   }, [reviews, seenFilms]);
 
-  const topFilm   = useMemo(() => (allFavs[0]        ?? TOP_FILM)  as Film,   [allFavs]);
-  const top2to3   = useMemo(() => (allFavs.slice(1,3).length ? allFavs.slice(1,3) : TOP_2_3) as Film[], [allFavs]);
-  const otherFavs = useMemo(() => (allFavs.slice(3,13).length ? allFavs.slice(3,13) : OTHER_FAVS) as Film[], [allFavs]);
+  const topFilm   = useMemo(() => (allFavs[0]          ?? TOP_FILM)  as Film,   [allFavs]);
+  const top2to3   = useMemo(() => (allFavs.slice(1, 3).length ? allFavs.slice(1, 3) : TOP_2_3) as Film[], [allFavs]);
+  const otherFavs = useMemo(() => (allFavs.slice(3, 13).length ? allFavs.slice(3, 13) : OTHER_FAVS) as Film[], [allFavs]);
 
-  const formatStat = (n: number) => {
+  const formatStat = useCallback((n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000)     return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
     return `${n}`;
-  };
+  }, []);
 
-  // ── Animated scroll ──────────────────────────────────────────────────────
   const stickyOpacity = scrollY.interpolate({
     inputRange: [0, HEADER_SCROLL_DISTANCE], outputRange: [0, 1], extrapolate: 'clamp',
   });
 
-  // ── Grid content ─────────────────────────────────────────────────────────
+  // ── Skeleton ─────────────────────────────────────────────────────────────
+  const SkeletonRow = useCallback(() => (
+    <View style={{ flexDirection: 'row', backgroundColor: 'transparent' }}>
+      {[0, 1, 2].map(i => (
+        <React.Fragment key={i}>
+          {i > 0 && <View style={{ width: GRID_GUTTER }} />}
+          <View style={{ width: CELL_SIZE, height: CELL_SIZE * 1.3, overflow: 'hidden', backgroundColor: '#10001F' }}>
+            {/* Re-use ImageWithFallback's skeleton behavior via a loading state */}
+            <ImageWithFallback uri="" style={{ flex: 1 }} fallbackColors={['#1A0035', '#060010']} />
+          </View>
+        </React.Fragment>
+      ))}
+    </View>
+  ), []);
+
+  // ── Grid content ──────────────────────────────────────────────────────────
   function renderGridContent() {
     if (loading) {
       return (
         <View>
-          <View style={{ flexDirection: 'row', backgroundColor: 'transparent' }}>
-            <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE * 1.3 }} />
-            <View style={{ width: GRID_GUTTER }} />
-            <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE * 1.3 }} />
-            <View style={{ width: GRID_GUTTER }} />
-            <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE * 1.3 }} />
-          </View>
-          {[...Array(6)].map((_, i) => (
+          <SkeletonRow />
+          {[...Array(4)].map((_, i) => (
             <View key={i} style={{ marginTop: GRID_GUTTER }}>
               <View style={{ flexDirection: 'row' }}>
                 {[...Array(3)].map((_, j) => (
                   <React.Fragment key={j}>
                     {j > 0 && <View style={{ width: GRID_GUTTER }} />}
-                    <SkeletonCell style={{ width: CELL_SIZE, height: CELL_SIZE }} />
+                    <View style={{ width: CELL_SIZE, height: CELL_SIZE, overflow: 'hidden' }}>
+                      <ImageWithFallback uri="" style={{ flex: 1 }} fallbackColors={['#1A0035', '#060010']} />
+                    </View>
                   </React.Fragment>
                 ))}
               </View>
@@ -1044,7 +1089,7 @@ export default function ProfileScreen() {
 
     return (
       <View>
-        {/* TOP FILMS ROW */}
+        {/* TOP FILMS */}
         <View style={{ flexDirection: 'row' }}>
           <TopFilmCell film={topFilm} onPress={() => navigateFilm(topFilm.id)} onPressIn={() => prefetchFilm(topFilm.id)} />
           <View style={{ width: GRID_GUTTER }} />
@@ -1060,7 +1105,6 @@ export default function ProfileScreen() {
           <View style={pg.sectionBannerLine} />
         </BlurView>
 
-        {/* CRITIQUES */}
         {reviews.length === 0
           ? <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
           : critiqueRows.map((rowRevs, rowIdx) => (
@@ -1095,7 +1139,6 @@ export default function ProfileScreen() {
           <View style={[pg.sectionBannerLine, { backgroundColor: `${G.cyan}28` }]} />
         </BlurView>
 
-        {/* SEEN */}
         {seenFilms.length === 0
           ? <EmptyState icon="film-outline" text="Aucun film vu pour l'instant" />
           : seenRows.map((rowFilms, rowIdx) => (
@@ -1117,7 +1160,7 @@ export default function ProfileScreen() {
     );
   }
 
-  // ── Reels content ────────────────────────────────────────────────────────
+  // ── Reels content ─────────────────────────────────────────────────────────
   function renderReelsContent() {
     const rows: (typeof OWN_REELS)[] = [];
     for (let i = 0; i < OWN_REELS.length; i += 3) rows.push(OWN_REELS.slice(i, i + 3));
@@ -1153,11 +1196,9 @@ export default function ProfileScreen() {
   return (
     <View style={pg.root}>
       <StatusBar style="light" />
-
-      {/* ── Galaxy background à la RACINE — visible partout + header ── */}
       <GalaxyBackground />
 
-      {/* ── Sticky mini-header ── */}
+      {/* Sticky mini-header */}
       <Animated.View style={[pg.stickyHeader, { opacity: stickyOpacity }]} pointerEvents="none">
         <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFillObject} />
         <View style={pg.stickyInner}>
@@ -1177,11 +1218,7 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* ══════════════════════════════════════════════════════════════
-            PROFILE HEADER — Galaxy visible (pas de gradient opaque)
-        ══════════════════════════════════════════════════════════════ */}
         <SafeAreaView edges={['top']}>
-          {/* Léger voile pour lisibilité du texte sur le galaxy */}
           <View style={pg.headerVeil} />
 
           {/* Top nav */}
@@ -1209,7 +1246,11 @@ export default function ProfileScreen() {
             <View>
               <LinearGradient colors={['#D300C5', '#FF7A00', '#FFDC80']} style={pg.avatarRing} start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }}>
                 <View style={pg.avatarInner}>
-                  <Image source={{ uri: user.avatar_url ?? `https://i.pravatar.cc/150?u=${user.id}` }} style={pg.avatar} />
+                  <ImageWithFallback
+                    uri={user.avatar_url ?? `https://i.pravatar.cc/150?u=${user.id}`}
+                    style={pg.avatar}
+                    fallbackColors={[G.bg1, G.bg0]}
+                  />
                 </View>
               </LinearGradient>
               <View style={pg.avatarAddBtn}>
@@ -1265,11 +1306,10 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Séparateur lumineux sous le header */}
           <View style={pg.headerGlow} />
         </SafeAreaView>
 
-        {/* HIGHLIGHTS ROW */}
+        {/* Highlights */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={pg.highlightsScroll}>
           {[
             { emoji: '🏆', label: 'Top 10',    color: G.gold },
@@ -1291,7 +1331,7 @@ export default function ProfileScreen() {
           ))}
         </ScrollView>
 
-        {/* GRID TAB BAR */}
+        {/* Grid tab bar */}
         <View style={pg.gridTabBar}>
           {(['grid-outline', 'play-circle-outline', 'person-circle-outline'] as const).map((icon, idx) => (
             <TouchableOpacity key={icon} style={pg.gridTabItem} onPress={() => setActiveGridTab(idx as GridTab)} activeOpacity={0.8}>
@@ -1301,7 +1341,6 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* GRID CONTENT */}
         {activeGridTab === 0 && renderGridContent()}
         {activeGridTab === 1 && renderReelsContent()}
         {activeGridTab === 2 && (
@@ -1319,32 +1358,19 @@ export default function ProfileScreen() {
 // ─────────────────────────────────────────────────────────────────────────────
 const pg = StyleSheet.create({
   root:             { flex: 1, backgroundColor: G.bg0 },
-
-  // ── Sticky header ──────────────────────────────────────────────
   stickyHeader:     { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100, height: 46, overflow: 'hidden' },
   stickyInner:      { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 },
   stickyUsername:   { color: '#fff', fontSize: 15, fontWeight: '700', letterSpacing: 0.2 },
-
-  // ── Header — transparent pour laisser passer le Galaxy ─────────
-  headerVeil:       {
-    // Voile subtil qui améliore la lisibilité sans cacher les étoiles
-    position: 'absolute', top: 0, left: 0, right: 0, height: 320,
-    backgroundColor: 'rgba(6,0,16,0.35)',
-    // Pas de zIndex — derrière tout le contenu
-  },
+  headerVeil:       { position: 'absolute', top: 0, left: 0, right: 0, height: 320, backgroundColor: 'rgba(6,0,16,0.35)' },
   topNav:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10 },
   usernameNav:      { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: -0.2 },
   navBtn:           { padding: 5 },
-
-  // ── Avatar + Stats ──────────────────────────────────────────────
   avatarStatsRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginTop: 4, gap: 14 },
   avatarRing:       { width: 92, height: 92, borderRadius: 46, alignItems: 'center', justifyContent: 'center' },
   avatarInner:      { width: 86, height: 86, borderRadius: 43, backgroundColor: G.bg0, alignItems: 'center', justifyContent: 'center' },
   avatar:           { width: 82, height: 82, borderRadius: 41 },
   avatarAddBtn:     { position: 'absolute', bottom: 0, right: 0, width: 27, height: 27, borderRadius: 14, backgroundColor: G.bg0, alignItems: 'center', justifyContent: 'center' },
   avatarAddGrad:    { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-
-  // ── Bio ─────────────────────────────────────────────────────────
   bioSection:       { paddingHorizontal: 16, marginTop: 11, gap: 4 },
   displayName:      { color: '#fff', fontSize: 14, fontWeight: '800' },
   rolePill:         { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 3, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(192,96,255,0.32)' },
@@ -1353,33 +1379,21 @@ const pg = StyleSheet.create({
   cinephileRow:     { flexDirection: 'row', gap: 14, marginTop: 5 },
   cinephileStat:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
   cinephileStatText:{ color: 'rgba(255,255,255,0.5)', fontSize: 10.5, fontWeight: '600' },
-
-  // ── Action buttons ──────────────────────────────────────────────
   actionRow:        { flexDirection: 'row', paddingHorizontal: 12, marginTop: 14, gap: 6, marginBottom: 4 },
   actionBtn:        { flex: 1, height: 32, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
   actionBtnText:    { color: '#fff', fontSize: 13, fontWeight: '600' },
   actionBtnSquare:  { width: 32, height: 32, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-
-  // Séparateur lumineux sous le header
-  headerGlow:       { height: 1, marginHorizontal: 0, backgroundColor: 'rgba(192,96,255,0.18)', shadowColor: G.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 4 },
-
-  // ── Highlights ──────────────────────────────────────────────────
+  headerGlow:       { height: 1, backgroundColor: 'rgba(192,96,255,0.18)', shadowColor: G.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 4 },
   highlightsScroll: { paddingHorizontal: 12, paddingVertical: 14, gap: 16 },
   highlightChip:    { alignItems: 'center', gap: 6 },
   highlightCircle:  { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
   highlightLabel:   { color: 'rgba(255,255,255,0.65)', fontSize: 10, fontWeight: '500', textAlign: 'center' },
-
-  // ── Grid tab bar ─────────────────────────────────────────────────
   gridTabBar:       { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.09)', borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.09)', backgroundColor: 'rgba(6,0,16,0.5)' },
   gridTabItem:      { flex: 1, alignItems: 'center', paddingVertical: 10, position: 'relative' },
   gridTabIndicator: { position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: '#fff' },
-
-  // ── Section banners ──────────────────────────────────────────────
   sectionBanner:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, overflow: 'hidden', borderTopWidth: 0.5, borderBottomWidth: 0.5, borderColor: 'rgba(255,255,255,0.06)', backgroundColor: 'rgba(6,0,16,0.45)' },
   sectionBannerText:{ color: 'rgba(255,220,120,0.75)', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
   sectionBannerLine:{ flex: 1, height: 0.5, backgroundColor: 'rgba(255,220,120,0.16)' },
-
-  // ── Reels CTA ────────────────────────────────────────────────────
   genCta:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 16 },
   genCtaText:       { color: '#fff', fontSize: 14, fontWeight: '800', flex: 1 },
 });
