@@ -333,9 +333,8 @@ import React, {
           return (
             <TouchableOpacity key={g} style={[gp.chip, on && gp.chipOn]} onPress={() => onSelect(g)} activeOpacity={0.75}>
               {on
-                ? <LinearGradient colors={['#7B2FBE', '#C060FF']} style={gp.chipGrad} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
+                ?
                     <Text style={gp.txtOn}>{g}</Text>
-                  </LinearGradient>
                 : <Text style={gp.txt}>{g}</Text>
               }
             </TouchableOpacity>
@@ -520,7 +519,7 @@ import React, {
                 </View>
               </>
             ) : (
-              <Animated.View style={[si.emptyContent, { transform: [{ scale: pulseAnim }] }]}>
+              <Animated.View style={[si.emptyContent]}>
                 <LinearGradient colors={['rgba(192,96,255,0.12)', 'rgba(108,16,195,0.2)']} style={si.uploadCircle}>
                   <Ionicons name="film" size={38} color={G.primary} />
                 </LinearGradient>
