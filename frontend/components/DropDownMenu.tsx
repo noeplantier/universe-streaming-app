@@ -1,3 +1,15 @@
+// ═══════════════════════════════════════════════════════════════════
+//  DropdownMenu.tsx — Sidebar Universe (composant extrait)
+//  ─────────────────────────────────────────────────────────────────
+//  ✦ Slide-in animé depuis la gauche (spring physique)
+//  ✦ Overlay backdrop avec blur natif
+//  ✦ Haptic feedback sur chaque item
+//  ✦ Section profil utilisateur en tête
+//  ✦ Icônes + badges + indicateurs visuels
+//  ✦ Scroll intérieur si items nombreux
+//  ✦ Fermeture par swipe gauche (PanResponder)
+//  ✦ Entièrement mémoïsé — zéro re-render parasite
+// ═══════════════════════════════════════════════════════════════════
 
 import React, {
     memo, useEffect, useRef, useCallback, useMemo,
@@ -17,17 +29,17 @@ import React, {
   
   export const MENU_ITEMS = [
     { icon: '🎬', label: 'Pour vous',        key: 'foryou',   badge: null,   hot: true  },
-    { icon: '🌟', label: 'Courts métrages',  key: 'short',    badge: null,  hot: false },
+    { icon: '🌟', label: 'Courts métrages',  key: 'short',    badge: 'NEW',  hot: false },
     { icon: '🎭', label: 'Drame',            key: 'drama',    badge: null,   hot: false },
     { icon: '🚀', label: 'Science-Fiction',  key: 'scifi',    badge: null,   hot: false },
     { icon: '💜', label: 'Romance',          key: 'romance',  badge: null,   hot: false },
-    { icon: '🔪', label: 'Thriller',         key: 'thriller', badge: null,   hot: false  },
+    { icon: '🔪', label: 'Thriller',         key: 'thriller', badge: '12',   hot: true  },
     { icon: '✨', label: 'Films ORIGINAL',   key: 'original', badge: null,   hot: false },
     { icon: '🏆', label: 'Sélection Cannes', key: 'cannes',   badge: null,   hot: false },
     { icon: '🎪', label: 'Fantasy',          key: 'fantasy',  badge: null,   hot: false },
     { icon: '📽',  label: 'Documentaire',    key: 'docu',     badge: null,   hot: false },
-    { icon: '🎨', label: 'Animation',        key: 'anim',     badge: null,  hot: false },
-    { icon: '🔥', label: 'Tendances',        key: 'trend',    badge: null,   hot: false  },
+    { icon: '🎨', label: 'Animation',        key: 'anim',     badge: 'NEW',  hot: false },
+    { icon: '🔥', label: 'Tendances',        key: 'trend',    badge: null,   hot: true  },
   ] as const;
   
   export type MenuKey = typeof MENU_ITEMS[number]['key'];
@@ -61,7 +73,17 @@ import React, {
   const { width: W } = Dimensions.get('window');
   const PANEL_W = Math.min(W * 0.82, 340);
   
-
+  // ─── Constante profil mock ────────────────────────────────────────
+  
+  const USER_PROFILE = {
+    name:     'Alexandre D.',
+    handle:   '@alex.cinema',
+    avatar:   'https://i.pravatar.cc/100?img=11',
+    films:    247,
+    watchlist: 38,
+    niveau:   'Cinéphile Confirmé',
+    stars:    4,
+  };
   
   // ─── Animated Star Row ────────────────────────────────────────────
   
@@ -129,7 +151,14 @@ import React, {
                 <Text style={s.hotTxt}>🔥</Text>
               </View>
             )}
-           
+            {item.badge && (
+              <View style={[s.badge, item.badge === 'NEW' && s.badgeNew]}>
+                <Text style={s.badgeTxt}>{item.badge}</Text>
+              </View>
+            )}
+            {isActive && (
+              <Ionicons name="play" size={12} color={P.primL} />
+            )}
           </View>
         </TouchableOpacity>
       </Animated.View>
@@ -165,25 +194,46 @@ import React, {
         },
       }),
     ).current;
-// ── Ouverture / fermeture instantanée ──────────────────────────────
-useEffect(() => {
-    if (visible) {
+  
+    // ── Ouverture / fermeture animée ──────────────────────────────
+    useEffect(() => {
+      if (visible) {
         // Reset item anims
         itemAnims.forEach(a => a.setValue(0));
-
+  
         Animated.parallel([
-            Animated.timing(slideX, {
-                toValue: 0, useNativeDriver: true, duration: 0,
-            }),
-            Animated.timing(bgOpacity, {
-                toValue: 1, useNativeDriver: true, duration: 0,
-            }),
+          Animated.spring(slideX, {
+            toValue: 0, useNativeDriver: true, speed: 20, bounciness: 6,
+          }),
+          Animated.timing(bgOpacity, {
+            toValue: 1, duration: 220, useNativeDriver: true,
+          }),
         ]).start(() => {
-            // Trigger all item animations instantly
-            itemAnims.forEach(a => a.setValue(1));
+          // Cascade d'entrée des items
+          Animated.stagger(
+            28,
+            itemAnims.map(a =>
+              Animated.spring(a, {
+                toValue: 1, useNativeDriver: true, speed: 24, bounciness: 5,
+              }),
+            ),
+          ).start();
         });
-    }
-}, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+      } else {
+        Animated.parallel([
+          Animated.timing(slideX, {
+            toValue: -PANEL_W,
+            duration: 240,
+            easing: Easing.in(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(bgOpacity, {
+            toValue: 0, duration: 200, useNativeDriver: true,
+          }),
+        ]).start();
+      }
+    }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+  
     // ── Handler item ─────────────────────────────────────────────
     const handleSelect = useCallback((key: MenuKey) => {
       if (Platform.OS !== 'web') {
@@ -231,10 +281,49 @@ useEffect(() => {
             pointerEvents="none"
           />
   
-
-                    
-                {/* ── Titre section ── */}
-                    <Text style={[s.sectionTitle, { marginTop: 20 }]}>MON UNIVERS</Text>
+          <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
+            {/* ── Profil ── */}
+            <Animated.View
+              style={[s.profileSection, {
+                opacity: statsAnim,
+                transform: [{ translateY: statsAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
+              }]}
+            >
+              <View style={s.profileRow}>
+                <View style={s.avatarWrap}>
+                  <Image source={{ uri: USER_PROFILE.avatar }} style={s.profileAvatar} />
+                  <View style={s.onlineDot} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.profileName}>{USER_PROFILE.name}</Text>
+                  <Text style={s.profileHandle}>{USER_PROFILE.handle}</Text>
+                  <StarRow count={USER_PROFILE.stars} />
+                </View>
+              </View>
+  
+              <View style={s.statsRow}>
+                <View style={s.statBlock}>
+                  <Text style={s.statVal}>{USER_PROFILE.films}</Text>
+                  <Text style={s.statLbl}>Films vus</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statBlock}>
+                  <Text style={s.statVal}>{USER_PROFILE.watchlist}</Text>
+                  <Text style={s.statLbl}>Watchlist</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statBlock}>
+                  <Text style={[s.statVal, { color: P.gold }]}>★</Text>
+                  <Text style={s.statLbl}>{USER_PROFILE.niveau}</Text>
+                </View>
+              </View>
+            </Animated.View>
+  
+            {/* ── Séparateur ── */}
+            <View style={s.sep} />
+  
+            {/* ── Titre section ── */}
+            <Text style={s.sectionTitle}>MON UNIVERS</Text>
   
             {/* ── Items scrollables ── */}
             <ScrollView
@@ -265,11 +354,11 @@ useEffect(() => {
               <Text style={s.footerBrand}>UNIVERSE</Text>
               <Text style={s.footerSub}>Films indépendants · Beta</Text>
             </View>
-        
+          </SafeAreaView>
         </Animated.View>
-        </View>
+      </View>
     );
-    });
+  });
   
   export default DropdownMenu;
   
@@ -321,7 +410,9 @@ useEffect(() => {
     rightGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     hotDot:     { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
     hotTxt:     { fontSize: 11 },
-   
+    badge:      { backgroundColor: 'rgba(146,64,214,0.35)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: P.bord },
+    badgeNew:   { backgroundColor: 'rgba(34,197,94,0.22)', borderColor: 'rgba(34,197,94,0.45)' },
+    badgeTxt:   { color: P.t1, fontSize: 9, fontWeight: '800' },
   
     // Footer
     footer:      { paddingHorizontal: 20, paddingBottom: 8, paddingTop: 14, position: 'relative' },
