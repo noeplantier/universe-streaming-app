@@ -1,1117 +1,1321 @@
-// ═══════════════════════════════════════════════════════════════════
-//  index.tsx — UNIVERSE / Feed Reels (version optimisée)
-//  ─────────────────────────────────────────────────────────────────
-//  ✦ expo-video stable (SDK 52+) — VideoView + useVideoPlayer
-//  ✦ Fix chargement vidéo : source guard + retry + error recovery
-//  ✦ Mobile-first responsive : useWindowDimensions + SafeArea insets
-//  ✦ Rendu sélectif : vidéo uniquement pour active ± 1 (perf)
-//  ✦ Auto-play / pause via useEvent + isActive + screenFocused
-//  ✦ Preloading stratégique des voisins (player pool)
-//  ✦ Double-tap like avec animation cœur plein écran
-//  ✦ Shimmer skeleton pendant le buffering
-//  ✦ Haptic feedback sur toutes les actions
-//  ✦ useFocusEffect → pause globale à la navigation
-//  ✦ Sidebar extrait → <DropdownMenu /> (DropdownMenu.tsx)
-//  ✦ Architecture mémoïsée 100% (memo + useCallback + useMemo)
-// ═══════════════════════════════════════════════════════════════════
+// app/(tabs)/index.tsx
+// UNIVERSE — Indie Cinema Feed · Full CDN Supabase · Auto-play · v3.0
 
 import React, {
-  useState, useEffect, useRef, useCallback, memo, useMemo,
+  useState, useEffect, useRef, useCallback, useMemo, memo,
 } from 'react';
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity, Image,
-  Animated, Easing, Modal, StatusBar, ActivityIndicator,
-  TouchableWithoutFeedback, Platform, useWindowDimensions,
+  View, Text, StyleSheet, Image, TouchableOpacity, TouchableWithoutFeedback,
+  FlatList, Animated, Easing, Dimensions, Platform, ActivityIndicator,
+  StatusBar as RNStatusBar, Alert, Pressable, ScrollView,
 } from 'react-native';
-import { LinearGradient }         from 'expo-linear-gradient';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView }               from 'expo-blur';
-import { Ionicons }               from '@expo/vector-icons';
+import { useWindowDimensions } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { useEvent }               from 'expo';
-import { useRouter, useFocusEffect } from 'expo-router';
-import * as Haptics               from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { createClient } from '@supabase/supabase-js';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 
-// Sidebar extrait
-import DropdownMenu, { MENU_ITEMS, type MenuKey } from '../../components/DropDownMenu';
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔑 SUPABASE CLIENT — CDN-optimised
+// ─────────────────────────────────────────────────────────────────────────────
+const supabase = createClient(
+  process.env.EXPO_PUBLIC_SUPABASE_URL!,
+  process.env.EXPO_PUBLIC_SUPABASE_KEY!,
+  {
+    auth: { persistSession: true },
+    global: { headers: { 'x-app': 'universe-cinema' } },
+  }
+);
 
-// ═══════════════════════════════════════════════════════════════════
-//  PALETTE
-// ═══════════════════════════════════════════════════════════════════
+/** Returns the CDN public URL for a storage object */
+const getCdnUrl = (bucket: string, path?: string | null): string | null => {
+  if (!path) return null;
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path, {
+    transform: undefined, // use raw CDN path — no transform overhead for video
+  });
+  return data?.publicUrl ?? null;
+};
 
-const P = {
-  bg:      '#07000F',
-  surface: '#130025',
-  glass:   'rgba(255,255,255,0.07)',
-  primary: '#9240D6',
-  primL:   '#C060FF',
-  primGl:  'rgba(146,64,214,0.38)',
-  t1:      '#F0E8FF',
-  t2:      'rgba(240,232,255,0.62)',
-  t3:      'rgba(240,232,255,0.36)',
-  bord:    'rgba(146,64,214,0.30)',
-  bordL:   'rgba(255,255,255,0.10)',
-  red:     '#EF4444',
-  gold:    '#FFD60A',
-  green:   '#22C55E',
-} as const;
+/** Increment view count without blocking UI */
+const incrementViews = async (filmId: string) => {
+  try {
+    await supabase.rpc('increment_film_views', { film_id: filmId });
+  } catch { /* non-blocking */ }
+};
 
-// ═══════════════════════════════════════════════════════════════════
-//  TYPES
-// ═══════════════════════════════════════════════════════════════════
+/** Toggle like — optimistic, syncs in background */
+const toggleLike = async (filmId: string, liked: boolean): Promise<boolean> => {
+  try {
+    if (liked) {
+      await supabase.from('film_likes').delete().match({ film_id: filmId });
+    } else {
+      await supabase.from('film_likes').insert({ film_id: filmId });
+    }
+    return !liked;
+  } catch { return liked; }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📐 TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+interface Film {
+  id:          string;
+  title:       string;
+  director:    string;
+  genre:       string;
+  synopsis:    string;
+  year:        number;
+  runtime:     string;
+  poster_url:  string | null;
+  video_path:  string | null;
+  likes_count: number;
+  views_count: number;
+  is_featured: boolean;
+  aspect_ratio: string;
+  language:    string;
+  director_avatar?: string | null;
+}
 
 interface Friend {
-  id: string;
-  name: string;
-  avatar: string;
-  followed: boolean;
+  id:          string;
+  username:    string;
+  avatar_url:  string | null;
+  has_story:   boolean;
+  is_online:   boolean;
 }
 
-interface FeedFilm {
-  id: string;
-  title: string;
-  series: string;
-  episode: number;
-  episode_title: string;
-  poster_url: string;
-  video_url?: string;
-  caption: string;
-  duration: string;
-  likes: number;
-  liked_by_friends: Friend[];
-  tags: string[];
-  director: string;
-  year: number;
-  comment?: string;
-  verified?: boolean;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-//  MOCK DATA
-// ═══════════════════════════════════════════════════════════════════
-
-const FRIENDS_POOL: Friend[] = [
-  { id: 'f1', name: '@lucie_mv',  avatar: 'https://i.pravatar.cc/60?img=9',  followed: true  },
-  { id: 'f2', name: '@marc.film', avatar: 'https://i.pravatar.cc/60?img=12', followed: false },
-  { id: 'f3', name: '@anaelle_c', avatar: 'https://i.pravatar.cc/60?img=22', followed: true  },
-  { id: 'f4', name: '@hugo_cine', avatar: 'https://i.pravatar.cc/60?img=33', followed: false },
-  { id: 'f5', name: '@soph_art',  avatar: 'https://i.pravatar.cc/60?img=47', followed: true  },
-];
-
-// Vidéos MP4 directement streamables (CDN Google — pas de redirect)
-const MOCK_FEED: FeedFilm[] = [
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎭 FALLBACK DATA — shown while Supabase loads
+// ─────────────────────────────────────────────────────────────────────────────
+const FALLBACK_FILMS: Film[] = [
   {
-    id: '1', title: 'Puffers', series: 'Puffers', episode: 1,
-    episode_title: 'Reprends là où tu t\'es arrêté',
-    poster_url: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    caption: 'oh you are an actor…\nwhat have i seen you in?',
-    duration: '9:56', likes: 1324,
-    liked_by_friends: [FRIENDS_POOL[0], FRIENDS_POOL[1], FRIENDS_POOL[2]],
-    tags: ['Thriller', 'Indépendant'], director: 'Sophie Martin', year: 2024,
-    comment: 'ça a l\'air super…', verified: true,
+    id: '1', title: 'La Chambre Inversée', director: 'Élise Moreau',
+    genre: 'Néo-Noir', synopsis: 'Dans une ville qui dort, une femme cherche ce qu\'elle a laissé derrière elle. Plan fixe. Silence. Puis la lumière décline.',
+    year: 2024, runtime: '18 min',
+    poster_url: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=900&q=85',
+    video_path: 'films/bunny.mp4',
+    likes_count: 2841, views_count: 18432, is_featured: true,
+    aspect_ratio: '2.39:1', language: 'Français', director_avatar: 'https://i.pravatar.cc/150?img=5',
   },
   {
-    id: '2', title: 'Nuit de Verre', series: 'Nuit de Verre', episode: 1,
-    episode_title: 'La première fracture',
-    poster_url: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    caption: 'parfois l\'obscurité\nest la seule lumière',
-    duration: '10:54', likes: 872,
-    liked_by_friends: [FRIENDS_POOL[2], FRIENDS_POOL[4]],
-    tags: ['Drame', 'Court métrage'], director: 'Karim Belhadj', year: 2024,
-    comment: 'cette scène m\'a touché…',
+    id: '2', title: 'Éclats de verre', director: 'Karim Benhadi',
+    genre: 'Drame', synopsis: 'Un père et son fils traversent le désert. Chaque kilomètre est une phrase qu\'ils n\'ont pas su se dire.',
+    year: 2024, runtime: '24 min',
+    poster_url: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=900&q=85',
+    video_path: 'films/elephant.mp4',
+    likes_count: 1204, views_count: 9870, is_featured: false,
+    aspect_ratio: '16:9', language: 'Arabe / FR', director_avatar: 'https://i.pravatar.cc/150?img=12',
   },
   {
-    id: '3', title: 'Horizon Brisé', series: 'Horizon Brisé', episode: 2,
-    episode_title: 'Le dernier signal',
-    poster_url: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    caption: 'jusqu\'où peut-on\naller pour la vérité ?',
-    duration: '0:15', likes: 2100,
-    liked_by_friends: [FRIENDS_POOL[0], FRIENDS_POOL[3], FRIENDS_POOL[4]],
-    tags: ['Sci-Fi', 'ORIGINAL'], director: 'Emma Dupont', year: 2023,
-    comment: 'le bro Enzo boit l\'eau des pâtes', verified: true,
+    id: '3', title: 'Sintel', director: 'Colin Levy',
+    genre: 'Animation', synopsis: 'Une guerrière solitaire part à la recherche d\'un jeune dragon qu\'elle a élevé. Un voyage épique aux confins du monde.',
+    year: 2023, runtime: '14 min',
+    poster_url: 'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=900&q=85',
+    video_path: 'films/sintel.mp4',
+    likes_count: 5612, views_count: 34201, is_featured: true,
+    aspect_ratio: '16:9', language: 'English', director_avatar: 'https://i.pravatar.cc/150?img=33',
   },
   {
-    id: '4', title: 'Velours Rouge', series: 'Velours Rouge', episode: 3,
-    episode_title: 'Masques',
-    poster_url: 'https://images.unsplash.com/photo-1518998053901-5348d3961a04?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    caption: 'qui sommes-nous\nsans nos masques ?',
-    duration: '0:15', likes: 3400,
-    liked_by_friends: [FRIENDS_POOL[1], FRIENDS_POOL[2]],
-    tags: ['Romance', 'Festival'], director: 'Isabelle Morin', year: 2024,
-    comment: 'romantique et douloureux…',
+    id: '4', title: 'Brume de mer', director: 'Jade Tanaka',
+    genre: 'Documentaire', synopsis: 'Sur les côtes bretonnes, des pêcheurs perpétuent un geste millénaire. Le brouillard comme personnage principal.',
+    year: 2024, runtime: '31 min',
+    poster_url: 'https://images.unsplash.com/photo-1518173946687-a4c8892bbd9f?w=900&q=85',
+    video_path: 'films/bunny.mp4',
+    likes_count: 873, views_count: 4210, is_featured: false,
+    aspect_ratio: '4:3', language: 'Français', director_avatar: 'https://i.pravatar.cc/150?img=47',
   },
   {
-    id: '5', title: 'Fractures', series: 'Fractures', episode: 1,
-    episode_title: 'Avant le tremblement',
-    poster_url: 'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-    caption: 'dans chaque fissure\nse cache une histoire',
-    duration: '14:48', likes: 2750,
-    liked_by_friends: [FRIENDS_POOL[0], FRIENDS_POOL[1], FRIENDS_POOL[2], FRIENDS_POOL[3]],
-    tags: ['Documentaire', 'Indépendant'], director: 'Lucas Moreau', year: 2023,
-  },
-  {
-    id: '6', title: 'Échos du Passé', series: 'Échos du Passé', episode: 4,
-    episode_title: 'Les voix oubliées',
-    poster_url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
-    caption: 'les souvenirs\nsont des fantômes bienveillants',
-    duration: '12:14', likes: 2890,
-    liked_by_friends: [FRIENDS_POOL[0], FRIENDS_POOL[1], FRIENDS_POOL[3]],
-    tags: ['Fantasy', 'Indépendant'], director: 'Sophie Martin', year: 2023,
-    comment: 'une aventure onirique incroyable !', verified: true,
-  },
-  {
-    id: '7', title: 'Miroirs Brisés', series: 'Miroirs Brisés', episode: 2,
-    episode_title: 'Reflets déformés',
-    poster_url: 'https://images.unsplash.com/photo-1494526585095-c41746248156?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Yosemite.mp4',
-    caption: 'parfois le reflet\nest plus vrai que la réalité',
-    duration: '2:22', likes: 1980,
-    liked_by_friends: [FRIENDS_POOL[1], FRIENDS_POOL[4]],
-    tags: ['Thriller', 'Festival'], director: 'Karim Belhadj', year: 2024,
-  },
-  {
-    id: '8', title: 'Sables Mouvants', series: 'Sables Mouvants', episode: 1,
-    episode_title: 'Enfouis sous les pas',
-    poster_url: 'https://images.unsplash.com/photo-1494526585095-c41746248156?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
-    caption: 'parfois il faut s\'enfoncer\npour mieux se relever',
-    duration: '1:00', likes: 1650,
-    liked_by_friends: [FRIENDS_POOL[2], FRIENDS_POOL[3]],
-    tags: ['Thriller', 'ORIGINAL'], director: 'Emma Dupont', year: 2024,
-  },
-  {
-    id: '9', title: 'Lueurs d\'Espoir', series: 'Lueurs d\'Espoir', episode: 3,
-    episode_title: 'Au bout du tunnel',
-    poster_url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-    caption: 'même dans les ténèbres\nune lueur peut guider nos pas',
-    duration: '0:15', likes: 2200,
-    liked_by_friends: [FRIENDS_POOL[0], FRIENDS_POOL[4]],
-    tags: ['Drame', 'Indépendant'], director: 'Isabelle Morin', year: 2023,
-  },
-  {
-    id: '10', title: 'Rêves Suspendus', series: 'Rêves Suspendus', episode: 2,
-    episode_title: 'Entre deux mondes',
-    poster_url: 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
-    caption: 'parfois les rêves\nsont les seuls refuges qui restent',
-    duration: '0:15', likes: 3100,
-    liked_by_friends: [FRIENDS_POOL[1], FRIENDS_POOL[2], FRIENDS_POOL[3], FRIENDS_POOL[4]],
-    tags: ['Fantasy', 'Festival'], director: 'Lucas Moreau', year: 2024,
+    id: '5', title: 'Phosphore', director: 'Naomi Stein',
+    genre: 'Expérimental', synopsis: 'Un essai visuel sur la mémoire et la lumière. Images d\'archives, son abstrait, montage non-linéaire.',
+    year: 2025, runtime: '9 min',
+    poster_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=900&q=85',
+    video_path: 'films/sintel.mp4',
+    likes_count: 3190, views_count: 21050, is_featured: true,
+    aspect_ratio: '1:1', language: 'Sans dialogue', director_avatar: 'https://i.pravatar.cc/150?img=22',
   },
 ];
 
-// ═══════════════════════════════════════════════════════════════════
-//  SHIMMER SKELETON — animation shimmer CSS-like
-// ═══════════════════════════════════════════════════════════════════
+const FALLBACK_FRIENDS: Friend[] = [
+  { id: 'f1', username: 'élise.m',  avatar_url: 'https://i.pravatar.cc/150?img=5',  has_story: true,  is_online: true  },
+  { id: 'f2', username: 'karim_b', avatar_url: 'https://i.pravatar.cc/150?img=12', has_story: true,  is_online: false },
+  { id: 'f3', username: 'jade.t',  avatar_url: 'https://i.pravatar.cc/150?img=47', has_story: false, is_online: true  },
+  { id: 'f4', username: 'naomi_s', avatar_url: 'https://i.pravatar.cc/150?img=22', has_story: true,  is_online: false },
+  { id: 'f5', username: 'leo.r',   avatar_url: 'https://i.pravatar.cc/150?img=67', has_story: false, is_online: true  },
+  { id: 'f6', username: 'sara.v',  avatar_url: 'https://i.pravatar.cc/150?img=44', has_story: true,  is_online: false },
+  { id: 'f7', username: 'armin.h', avatar_url: 'https://i.pravatar.cc/150?img=59', has_story: false, is_online: false },
+];
 
-interface ShimmerProps { width: number; height: number }
+// ─────────────────────────────────────────────────────────────────────────────
+// 🌌 PALETTE
+// ─────────────────────────────────────────────────────────────────────────────
+const G = {
+  bg:          '#060010',
+  primary:     '#C060FF',
+  gold:        '#FFE270',
+  cyan:        '#86EEFF',
+  danger:      '#FF4D6A',
+  success:     '#1ED760',
+  textSub:     '#BCB8C2',
+  glass:       'rgba(255,255,255,0.07)',
+  glassBorder: 'rgba(255,255,255,0.10)',
+  overlay:     'rgba(6,0,16,0.55)',
+};
 
-const Shimmer = memo(function Shimmer({ width, height }: ShimmerProps) {
-  const anim = useRef(new Animated.Value(0)).current;
+const GENRE_COLORS: Record<string, string> = {
+  'Néo-Noir': '#CF98FF', 'Drame': '#86EEFF', 'Animation': '#FFE270',
+  'Documentaire': '#1ED760', 'Expérimental': '#FF9F43', 'Thriller': '#FF4D6A',
+  'Horreur': '#FF6B9D', 'Comédie': '#54D7A2', 'Sci-Fi': '#86EEFF',
+};
+
+const getGenreColor = (genre: string) => GENRE_COLORS[genre] ?? G.primary;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📏 DIMENSIONS
+// ─────────────────────────────────────────────────────────────────────────────
+const { width: SW } = Dimensions.get('window');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔢 FORMAT HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const fmtCount = (n: number): string => {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 💫 HEART BURST ANIMATION (double-tap like)
+// ─────────────────────────────────────────────────────────────────────────────
+const HeartBurst = memo(({ visible, x, y }: { visible: boolean; x: number; y: number }) => {
+  const scale   = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.loop(
-      Animated.timing(anim, {
-        toValue:         1,
-        duration:        1400,
-        easing:          Easing.inOut(Easing.ease),
-        useNativeDriver: true,
-      }),
-    ).start();
-    return () => anim.stopAnimation();
-  }, [anim]);
+    if (!visible) return;
+    scale.setValue(0); opacity.setValue(0);
+    Animated.parallel([
+      Animated.sequence([
+        Animated.spring(scale, { toValue: 1.4, useNativeDriver: true, tension: 160, friction: 8 }),
+        Animated.timing(scale, { toValue: 1.0, duration: 100, useNativeDriver: true }),
+      ]),
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 1, duration: 80, useNativeDriver: true }),
+        Animated.delay(500),
+        Animated.timing(opacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, [visible]);
 
-  const translateX = anim.interpolate({
-    inputRange:  [0, 1],
-    outputRange: [-width, width],
-  });
-
+  if (!visible) return null;
   return (
-    <View style={{ width, height, backgroundColor: P.surface, overflow: 'hidden' }}>
-      <Animated.View
-        style={{
-          ...StyleSheet.absoluteFillObject,
-          transform: [{ translateX }],
-        }}
-      >
-        <LinearGradient
-          colors={['transparent', 'rgba(192,96,255,0.18)', 'transparent']}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-          style={{ flex: 1 }}
-        />
-      </Animated.View>
-      <ActivityIndicator
-        style={{ position: 'absolute', top: '50%', alignSelf: 'center', marginTop: -20 }}
-        size="large"
-        color={P.primL}
-      />
-    </View>
-  );
-});
-
-// ═══════════════════════════════════════════════════════════════════
-//  TOP HEADER
-// ═══════════════════════════════════════════════════════════════════
-
-interface TopHeaderProps {
-  feedKey:     MenuKey;
-  onMenuPress: () => void;
-  scrollY:     Animated.Value;
-}
-
-const TopHeader = memo(function TopHeader({ feedKey, onMenuPress, scrollY }: TopHeaderProps) {
-  const router  = useRouter();
-  const item    = useMemo(() => MENU_ITEMS.find(m => m.key === feedKey) ?? MENU_ITEMS[0], [feedKey]);
-
-  // Légère disparition au scroll vers le bas
-  const opacity = scrollY.interpolate({
-    inputRange:  [0, 80],
-    outputRange: [1, 0.4],
-    extrapolate: 'clamp',
-  });
-
-  return (
-    <Animated.View style={[th.container, { opacity }]} pointerEvents="box-none">
-      {/* Hamburger + label feed */}
-      <TouchableOpacity
-        onPress={() => {
-          if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onMenuPress();
-        }}
-        style={th.leftBtn}
-        activeOpacity={0.7}
-        hitSlop={{ top: 14, bottom: 14, left: 14, right: 14 }}
-      >
-        <View style={th.hamburger}>
-          <View style={[th.hLine, { width: 20 }]} />
-          <View style={[th.hLine, { width: 13 }]} />
-          <View style={[th.hLine, { width: 20 }]} />
-        </View>
-        <Text style={th.feedLabel} numberOfLines={1}>{item.label}</Text>
-        <Ionicons name="chevron-down" size={13} color={P.t2} style={{ marginTop: 1 }} />
-      </TouchableOpacity>
-
-      {/* Amies + avatars */}
-      <TouchableOpacity
-        style={th.rightGroup}
-        activeOpacity={0.7}
-        onPress={() => router.push('/social')}
-      >
-        <Text style={th.amiesLabel}>Amies</Text>
-        <View style={th.avatarPile}>
-          {FRIENDS_POOL.slice(0, 2).map((f, i) => (
-            <Image
-              key={f.id}
-              source={{ uri: f.avatar }}
-              style={[th.avatar, { marginLeft: i > 0 ? -10 : 0, zIndex: 10 - i }]}
-            />
-          ))}
-          <View style={[th.avatar, th.globeCircle, { marginLeft: -10, zIndex: 0 }]}>
-            <Text style={{ fontSize: 12 }}>🌍</Text>
-          </View>
-        </View>
-      </TouchableOpacity>
+    <Animated.View style={[hb.wrap, { left: x - 55, top: y - 55, opacity, transform: [{ scale }] }]} pointerEvents="none">
+      <Ionicons name="heart" size={110} color="#FF4D6A" style={hb.shadow} />
     </Animated.View>
   );
 });
+HeartBurst.displayName = 'HeartBurst';
 
-const th = StyleSheet.create({
-  container:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 12 },
-  leftBtn:     { flexDirection: 'row', alignItems: 'center', gap: 10, maxWidth: '70%' },
-  hamburger:   { gap: 4.5 },
-  hLine:       { height: 2.5, borderRadius: 2, backgroundColor: P.t1 },
-  feedLabel:   { color: P.t1, fontSize: 18, fontWeight: '700', letterSpacing: 0.2, flexShrink: 1 },
-  rightGroup:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  amiesLabel:  { color: P.t2, fontSize: 15, fontWeight: '600' },
-  avatarPile:  { flexDirection: 'row', alignItems: 'center' },
-  avatar:      { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: P.bg },
-  globeCircle: { backgroundColor: P.surface, alignItems: 'center', justifyContent: 'center', borderColor: P.bg },
+const hb = StyleSheet.create({
+  wrap:   { position: 'absolute', zIndex: 99, alignItems: 'center', justifyContent: 'center' },
+  shadow: { textShadowColor: 'rgba(255,77,106,0.6)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 24 },
 });
 
-// ═══════════════════════════════════════════════════════════════════
-//  RIGHT ACTION BAR
-// ═══════════════════════════════════════════════════════════════════
-
-interface RightBarProps {
-  film:    FeedFilm;
-  liked:   boolean;
-  muted:   boolean;
-  saved:   boolean;
-  onLike:  () => void;
-  onMute:  () => void;
-  onInfo:  () => void;
-  onSave:  () => void;
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔔 ACTION BUTTON (right rail)
+// ─────────────────────────────────────────────────────────────────────────────
+interface ActionBtnProps {
+  icon:    string;
+  iconAlt?: string;
+  label?:  string;
+  count?:  number;
+  color?:  string;
+  active?: boolean;
+  onPress: () => void;
+  pulse?:  boolean;
 }
 
-const RightBar = memo(function RightBar({
-  film, liked, muted, saved, onLike, onMute, onInfo, onSave,
-}: RightBarProps) {
-  const heartSc  = useRef(new Animated.Value(1)).current;
-  const saveSc   = useRef(new Animated.Value(1)).current;
+const ActionBtn = memo(({
+  icon, iconAlt, label, count, color = '#fff', active = false, onPress, pulse,
+}: ActionBtnProps) => {
+  const scale    = useRef(new Animated.Value(1)).current;
+  const pulsAnim = useRef(new Animated.Value(1)).current;
 
-  const triggerAnim = useCallback((anim: Animated.Value) => {
+  const tap = () => {
     Animated.sequence([
-      Animated.timing(anim, { toValue: 1.42, duration: 100, useNativeDriver: true }),
-      Animated.spring(anim, { toValue: 1, useNativeDriver: true, speed: 28, bounciness: 12 }),
+      Animated.spring(scale, { toValue: 0.80, useNativeDriver: true, tension: 300 }),
+      Animated.spring(scale, { toValue: 1.15, useNativeDriver: true, tension: 200 }),
+      Animated.spring(scale, { toValue: 1.00, useNativeDriver: true, tension: 150 }),
     ]).start();
-  }, []);
+    onPress();
+  };
 
-  const pressHeart = useCallback(() => {
-    triggerAnim(heartSc);
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onLike();
-  }, [onLike, heartSc, triggerAnim]);
+  useEffect(() => {
+    if (!pulse) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulsAnim, { toValue: 1.12, duration: 800, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+      Animated.timing(pulsAnim, { toValue: 1.00, duration: 800, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
 
-  const pressSave = useCallback(() => {
-    triggerAnim(saveSc);
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSave();
-  }, [onSave, saveSc, triggerAnim]);
-
-  const likeCount = film.likes + (liked ? 1 : 0);
+  const displayIcon = (active && iconAlt) ? iconAlt : icon;
 
   return (
-    <View style={rb.bar}>
-      {/* Mute / Unmute */}
-      <TouchableOpacity
-        style={rb.iconBtn}
-        onPress={() => {
-          if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onMute();
-        }}
-        activeOpacity={0.75}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        <View style={[rb.iconWrap, muted && rb.iconWrapActive]}>
-          <Ionicons
-            name={muted ? 'volume-mute' : 'volume-high'}
-            size={22}
-            color={muted ? P.primL : P.t1}
-          />
-        </View>
-      </TouchableOpacity>
-
-      {/* Like */}
-      <View style={rb.item}>
-        <TouchableOpacity onPress={pressHeart} activeOpacity={0.82} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Animated.View style={{ transform: [{ scale: heartSc }] }}>
-            <Ionicons
-              name={liked ? 'heart' : 'heart-outline'}
-              size={34}
-              color={liked ? '#EF4444' : 'rgba(240,232,255,0.90)'}
-            />
-          </Animated.View>
-        </TouchableOpacity>
-        <Text style={rb.count}>{likeCount.toLocaleString('fr-FR')}</Text>
-      </View>
-
-      {/* Info / détail */}
-      <View style={rb.item}>
-        <TouchableOpacity
-          onPress={() => {
-            if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            onInfo();
-          }}
-          activeOpacity={0.8}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <View style={rb.iconWrap}>
-            <Ionicons name="information-circle-outline" size={26} color="rgba(240,232,255,0.90)" />
-          </View>
-        </TouchableOpacity>
-        <Text style={rb.count}>Infos</Text>
-      </View>
-
-      {/* Watchlist */}
-      <View style={rb.item}>
-        <TouchableOpacity onPress={pressSave} activeOpacity={0.8} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Animated.View style={{ transform: [{ scale: saveSc }] }}>
-            <Ionicons
-              name={saved ? 'bookmark' : 'bookmark-outline'}
-              size={30}
-              color={saved ? P.gold : 'rgba(240,232,255,0.90)'}
-            />
-          </Animated.View>
-        </TouchableOpacity>
-        <Text style={rb.count}>Sauver</Text>
-      </View>
-
-      {/* Share */}
-      <View style={rb.item}>
-        <TouchableOpacity
-          onPress={() => {
-            if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }}
-          activeOpacity={0.8}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <View style={rb.iconWrap}>
-            <Ionicons name="arrow-redo-outline" size={26} color="rgba(240,232,255,0.90)" />
-          </View>
-        </TouchableOpacity>
-        <Text style={rb.count}>Partager</Text>
-      </View>
-    </View>
+    <TouchableOpacity onPress={tap} activeOpacity={1} style={ab.btn}>
+      <Animated.View style={{ transform: [{ scale: Animated.multiply(scale, pulsAnim) }] }}>
+        <BlurView intensity={active ? 0 : 18} tint="dark" style={[ab.iconWrap, active && { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
+          <Ionicons name={displayIcon as any} size={26} color={active ? color : 'rgba(255,255,255,0.9)'} />
+        </BlurView>
+      </Animated.View>
+      {(label || count !== undefined) && (
+        <Text style={[ab.label, active && { color, fontWeight: '800' }]}>
+          {count !== undefined ? fmtCount(count) : label}
+        </Text>
+      )}
+    </TouchableOpacity>
   );
 });
+ActionBtn.displayName = 'ActionBtn';
 
-const rb = StyleSheet.create({
-  bar:           { position: 'absolute', right: 14, bottom: 220, alignItems: 'center', gap: 20 },
-  iconBtn:       { alignItems: 'center', justifyContent: 'center' },
-  iconWrap:      { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.08)' },
-  iconWrapActive:{ backgroundColor: 'rgba(146,64,214,0.28)' },
-  item:          { alignItems: 'center', gap: 4 },
-  count:         { color: 'rgba(240,232,255,0.82)', fontSize: 11, fontWeight: '700' },
+const ab = StyleSheet.create({
+  btn:      { alignItems: 'center', gap: 5, marginBottom: 6 },
+  iconWrap: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  label:    { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '600', letterSpacing: 0.2 },
 });
 
-// ═══════════════════════════════════════════════════════════════════
-//  BOTTOM EPISODE CARD
-// ═══════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
+// 👥 FRIENDS BAR — horizontal story ring avatars
+// ─────────────────────────────────────────────────────────────────────────────
+const FriendsBar = memo(({ friends, onPress }: { friends: Friend[]; onPress: (f: Friend) => void }) => {
+  const enterAnim = useRef(new Animated.Value(0)).current;
 
-interface BottomCardProps {
-  film:      FeedFilm;
-  progress:  number;
-  onFollow:  (fid: string) => void;
-  insetBot:  number;
-}
-
-const BottomCard = memo(function BottomCard({
-  film, progress, onFollow, insetBot,
-}: BottomCardProps) {
-  const [min, sec] = film.duration.split(':').map(Number);
-  const totalSec   = (min || 0) * 60 + (sec || 0);
-  const elapsed    = Math.floor(totalSec * Math.min(progress, 1));
-  const elMin      = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const elSec      = String(elapsed % 60).padStart(2, '0');
-  const clampedPct = Math.min(progress * 100, 100);
-  const unfollowed = film.liked_by_friends.find(f => !f.followed);
+  useEffect(() => {
+    Animated.timing(enterAnim, { toValue: 1, duration: 600, delay: 200, useNativeDriver: true, easing: Easing.out(Easing.back(1.2)) }).start();
+  }, []);
 
   return (
-    <View style={[bc.wrap, { bottom: insetBot + 88 }]}>
-      {/* Caption */}
-      <View style={bc.captionBlock}>
-        {film.caption.split('\n').map((line, i) => (
-          <Text key={i} style={bc.captionLine}>{line}</Text>
-        ))}
-      </View>
+    <Animated.View style={[fb.container, { opacity: enterAnim, transform: [{ translateY: enterAnim.interpolate({ inputRange: [0, 1], outputRange: [-20, 0] }) }] }]}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={fb.scroll}>
+        {/* Add story button */}
+        <TouchableOpacity style={fb.addBtn} activeOpacity={0.8}>
+          <LinearGradient colors={['rgba(192,96,255,0.25)', 'rgba(108,16,195,0.15)']} style={fb.addGrad}>
+            <Ionicons name="add" size={22} color={G.primary} />
+          </LinearGradient>
+          <Text style={fb.label} numberOfLines={1}>Ma story</Text>
+        </TouchableOpacity>
 
-      {/* Info card */}
-      <BlurView intensity={40} tint="dark" style={bc.blurCard}>
-        <LinearGradient
-          colors={['rgba(146,64,214,0.12)', 'rgba(7,0,15,0.10)']}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <View style={bc.inner}>
-          {/* Header row */}
-          <View style={bc.topRow}>
-            <View style={{ flex: 1 }}>
-              <View style={bc.titleRow}>
-                <Text style={bc.seriesName} numberOfLines={1}>{film.series}</Text>
-                {film.verified && (
-                  <Ionicons name="checkmark-circle" size={14} color={P.primL} style={{ marginLeft: 4 }} />
-                )}
-              </View>
-              <Text style={bc.epLabel} numberOfLines={1}>
-                Ép. {film.episode} · {film.episode_title}
-              </Text>
-            </View>
-
-            <View style={bc.tagsRow}>
-              {film.tags.slice(0, 2).map(tag => (
-                <View key={tag} style={[bc.tag, tag === 'ORIGINAL' && bc.tagOriginal]}>
-                  <Text style={[bc.tagTxt, tag === 'ORIGINAL' && bc.tagTxtOriginal]}>{tag}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Director + year */}
-          <Text style={bc.directorTxt}>
-            {film.director} · {film.year}
-          </Text>
-
-          {/* Progress bar interactive */}
-          <View style={bc.progressTrack}>
-            <View style={[bc.progressFill, { width: `${clampedPct}%` as any }]}>
-              <View style={bc.progressGlow} />
-            </View>
-            <View style={[bc.progressThumb, { left: `${Math.min(clampedPct, 98)}%` as any }]} />
-          </View>
-
-          <View style={bc.timesRow}>
-            <Text style={bc.timeText}>{elMin}:{elSec}</Text>
-            <Text style={[bc.timeText, { color: P.t3 }]}>{film.duration}</Text>
-          </View>
-
-          {/* Friends row */}
-          <View style={bc.friendsRow}>
-            <View style={bc.avatarStack}>
-              {film.liked_by_friends.slice(0, 3).map((f, i) => (
-                <View key={f.id} style={[bc.friendAvWrap, { marginLeft: i > 0 ? -11 : 0, zIndex: 10 - i }]}>
-                  <Image source={{ uri: f.avatar }} style={bc.friendAv} />
-                  {f.followed && (
-                    <View style={bc.followedDot} />
-                  )}
-                </View>
-              ))}
-              {film.liked_by_friends.length > 3 && (
-                <View style={[bc.friendAvWrap, bc.extraCount, { marginLeft: -11 }]}>
-                  <Text style={bc.extraCountTxt}>+{film.liked_by_friends.length - 3}</Text>
-                </View>
-              )}
-            </View>
-
-            {unfollowed ? (
-              <TouchableOpacity
-                onPress={() => {
-                  if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  onFollow(unfollowed.id);
-                }}
-                style={bc.followBtn}
-                activeOpacity={0.8}
+        {friends.map(f => (
+          <TouchableOpacity key={f.id} onPress={() => onPress(f)} activeOpacity={0.85} style={fb.item}>
+            {/* Story ring */}
+            {f.has_story ? (
+              <LinearGradient
+                colors={['#C060FF', '#86EEFF', '#FFE270']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={fb.ring}
               >
-                <Ionicons name="person-add" size={13} color={P.primL} />
-                <Text style={bc.followTxt}>{unfollowed.name.replace('@', '')}</Text>
-              </TouchableOpacity>
+                <View style={fb.ringInner}>
+                  <Image source={{ uri: f.avatar_url ?? '' }} style={fb.avatar} />
+                </View>
+              </LinearGradient>
             ) : (
-              <View style={bc.allFollowedBadge}>
-                <Ionicons name="checkmark-circle" size={13} color={P.green} />
-                <Text style={[bc.followTxt, { color: P.green }]}>Tous suivis</Text>
+              <View style={[fb.ring, fb.ringInactive]}>
+                <View style={fb.ringInner}>
+                  <Image source={{ uri: f.avatar_url ?? '' }} style={fb.avatar} />
+                </View>
               </View>
             )}
-          </View>
+            {/* Online dot */}
+            {f.is_online && <View style={fb.onlineDot} />}
+            <Text style={fb.label} numberOfLines={1}>{f.username}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </Animated.View>
+  );
+});
+FriendsBar.displayName = 'FriendsBar';
 
-          {/* Comment */}
-          {film.comment && (
-            <View style={bc.commentRow}>
-              <Ionicons name="chatbubble-outline" size={12} color={P.t3} />
-              <Text style={bc.commentTxt} numberOfLines={1}>{film.comment}</Text>
-            </View>
-          )}
-        </View>
-      </BlurView>
+const fb = StyleSheet.create({
+  container:   { paddingTop: 10, paddingBottom: 6 },
+  scroll:      { paddingHorizontal: 14, gap: 14 },
+  item:        { alignItems: 'center', gap: 5, position: 'relative', width: 58 },
+  ring:        { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center' },
+  ringInner:   { width: 52, height: 52, borderRadius: 26, backgroundColor: '#060010', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#060010' },
+  ringInactive:{ backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 0 },
+  avatar:      { width: 48, height: 48, borderRadius: 24 },
+  onlineDot:   { position: 'absolute', bottom: 20, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: G.success, borderWidth: 2, borderColor: '#060010' },
+  label:       { color: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: '600', width: 58, textAlign: 'center' },
+  addBtn:      { alignItems: 'center', gap: 5, width: 58 },
+  addGrad:     { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(192,96,255,0.4)' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📊 PROGRESS BAR — real video playback progress
+// ─────────────────────────────────────────────────────────────────────────────
+const VideoProgress = memo(({ player }: { player: ReturnType<typeof useVideoPlayer> }) => {
+  const [progress, setProgress] = useState(0);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const tick = () => {
+      try {
+        const { currentTime, duration } = player;
+        if (duration && duration > 0) setProgress(currentTime / duration);
+      } catch { /* ignore */ }
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
+  }, [player]);
+
+  return (
+    <View style={vp.track} pointerEvents="none">
+      <Animated.View style={[vp.bar, { width: `${Math.min(progress * 100, 100)}%` }]}>
+        <LinearGradient colors={[G.primary, G.cyan]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject as any} />
+      </Animated.View>
+      {/* Playhead knob */}
+      <View style={[vp.knob, { left: `${Math.min(progress * 100, 99)}%` }]} />
     </View>
   );
 });
+VideoProgress.displayName = 'VideoProgress';
 
-const bc = StyleSheet.create({
-  wrap:          { position: 'absolute', left: 14, right: 14 },
-  captionBlock:  { marginBottom: 12, paddingHorizontal: 4 },
-  captionLine:   { color: 'rgba(255,255,255,0.92)', fontSize: 22, fontWeight: '800', lineHeight: 30, textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10 },
-  blurCard:      { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(146,64,214,0.32)' },
-  inner:         { padding: 15, gap: 9 },
-  topRow:        { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  titleRow:      { flexDirection: 'row', alignItems: 'center' },
-  seriesName:    { color: P.t1, fontSize: 15, fontWeight: '900', letterSpacing: 0.1, flexShrink: 1 },
-  epLabel:       { color: P.t2, fontSize: 12, marginTop: 2 },
-  directorTxt:   { color: P.t3, fontSize: 11, fontWeight: '500' },
-  tagsRow:       { flexDirection: 'row', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' },
-  tag:           { backgroundColor: 'rgba(146,64,214,0.22)', borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: P.bord },
-  tagOriginal:   { backgroundColor: 'rgba(192,96,255,0.22)', borderColor: P.primL },
-  tagTxt:        { color: P.t2, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  tagTxtOriginal:{ color: P.primL },
-  progressTrack: { height: 3.5, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 2, overflow: 'visible' },
-  progressFill:  { height: '100%', backgroundColor: P.primL, borderRadius: 2, position: 'relative', overflow: 'hidden' },
-  progressGlow:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.30)' },
-  progressThumb: { position: 'absolute', top: -5, marginLeft: -6, width: 13, height: 13, borderRadius: 7, backgroundColor: '#fff', borderWidth: 2.5, borderColor: P.primL, shadowColor: P.primL, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 4, elevation: 4 },
-  timesRow:      { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
-  timeText:      { color: P.t2, fontSize: 11, fontWeight: '600' },
-  friendsRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatarStack:   { flexDirection: 'row', alignItems: 'center' },
-  friendAvWrap:  { position: 'relative' },
-  friendAv:      { width: 36, height: 36, borderRadius: 18, borderWidth: 2.5, borderColor: 'rgba(8,0,18,0.9)' },
-  followedDot:   { position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5, backgroundColor: P.green, borderWidth: 1.5, borderColor: 'rgba(8,0,18,0.9)' },
-  extraCount:    { width: 36, height: 36, borderRadius: 18, backgroundColor: P.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 2.5, borderColor: 'rgba(8,0,18,0.9)' },
-  extraCountTxt: { color: P.t2, fontSize: 10, fontWeight: '800' },
-  followBtn:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(146,64,214,0.22)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: P.bord },
-  allFollowedBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(34,197,94,0.12)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(34,197,94,0.28)' },
-  followTxt:     { color: P.t1, fontSize: 12, fontWeight: '700' },
-  commentRow:    { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
-  commentTxt:    { color: P.t2, fontSize: 12, fontStyle: 'italic', flex: 1 },
+const vp = StyleSheet.create({
+  track: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 3, backgroundColor: 'rgba(255,255,255,0.15)' },
+  bar:   { height: '100%', overflow: 'hidden' },
+  knob:  { position: 'absolute', top: -4, width: 11, height: 11, borderRadius: 6, backgroundColor: '#fff', marginLeft: -5, shadowColor: G.primary, shadowOpacity: 0.8, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
 });
 
-// ═══════════════════════════════════════════════════════════════════
-//  FEED ITEM — core du reel
-//  Fix vidéo :
-//    · source guard (empty string → null interprétable)
-//    · statusChange initial shape allégée
-//    · rendu VideoView conditionnel (near-active seulement)
-//    · error state + bouton retry
-//    · dimensions depuis props (mobile-first responsive)
-// ═══════════════════════════════════════════════════════════════════
-
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎬 FEED ITEM — main card
+// ─────────────────────────────────────────────────────────────────────────────
 interface FeedItemProps {
-  film:           FeedFilm;
-  isActive:       boolean;
-  isNear:         boolean;   // active ± 1 → on instancie le player
-  screenFocused:  boolean;
-  itemW:          number;
-  itemH:          number;
-  insetBot:       number;
-  onFollowFriend: (fid: string) => void;
+  item:       Film;
+  isActive:   boolean;
+  isNear:     boolean;
+  isNext:     boolean;
+  height:     number;
+  onComment:  (film: Film) => void;
+  onShare:    (film: Film) => void;
+  onDirector: (film: Film) => void;
 }
 
-const FeedItem = memo(function FeedItem({
-  film, isActive, isNear, screenFocused, itemW, itemH, insetBot, onFollowFriend,
-}: FeedItemProps) {
-  const router = useRouter();
+const FeedItem = memo(({
+  item, isActive, isNear, isNext, height, onComment, onShare, onDirector,
+}: FeedItemProps) => {
+  // ── Video player ────────────────────────────────────────────
+  const videoUrl  = useMemo(() => getCdnUrl('videos', item.video_path), [item.video_path]);
+  const player    = useVideoPlayer(null, p => { p.loop = true; p.muted = true; });
 
-  // ── expo-video : instancié seulement si near ──────────────────
-  // Source vide → null pour éviter l'erreur « invalid source »
-  const videoSource = (film.video_url && film.video_url.length > 0)
-    ? film.video_url
-    : null;
+  // ── State ───────────────────────────────────────────────────
+  const [hasError,   setHasError]   = useState(false);
+  const [isBuffering, setBuffering] = useState(false);
+  const [isPlaying,  setIsPlaying]  = useState(false);
+  const [isMuted,    setIsMuted]    = useState(true);
+  const [liked,      setLiked]      = useState(false);
+  const [likesCount, setLikesCount] = useState(item.likes_count);
+  const [saved,      setSaved]      = useState(false);
+  const [showSynopsis, setShowSynopsis] = useState(false);
+  const [heartPos,   setHeartPos]   = useState<{ x: number; y: number; v: boolean }>({ x: 0, y: 0, v: false });
 
-  const player = useVideoPlayer(isNear ? videoSource : null, (p) => {
-    p.loop  = true;
-    p.muted = false;
-  });
+  // ── Refs ────────────────────────────────────────────────────
+  const lastTap     = useRef(0);
+  const viewedRef   = useRef(false);
+  const pausedByUser = useRef(false);
 
-  // ── Events expo-video ─────────────────────────────────────────
-  // playingChange — shape : { isPlaying: boolean }
-  const { isPlaying } = useEvent(player, 'playingChange', {
-    isPlaying: player.playing,
-  });
-
-  // statusChange — shape : { status, oldStatus?, error? }
-  const { status } = useEvent(player, 'statusChange', {
-    status:    player.status,
-    oldStatus: player.status,
-    error:     undefined as (Error | undefined),
-  });
-
-  // timeUpdate — shape : { currentTime, bufferedPosition, ... }
-  const { currentTime } = useEvent(player, 'timeUpdate', {
-    currentTime:           player.currentTime,
-    bufferedPosition:      0,
-    currentLiveTimestamp:  null,
-    currentOffsetFromLive: null,
-  });
-
-  // ── State local ────────────────────────────────────────────────
-  const [liked,  setLiked]  = useState(false);
-  const [muted,  setMuted]  = useState(false);
-  const [saved,  setSaved]  = useState(false);
-  const [hasErr, setHasErr] = useState(false);
-
-  const isReady   = status === 'readyToPlay';
-  const isLoading = isNear && !!videoSource && !isReady && !hasErr;
-  const duration  = player.duration ?? 0;
-  const progress  = duration > 0 ? Math.min(currentTime / duration, 1) : 0;
-
-  // ── Error watch ───────────────────────────────────────────────
+  // ── Load & preload logic ─────────────────────────────────────
   useEffect(() => {
-    if (status === 'error') setHasErr(true);
-    else if (status === 'readyToPlay') setHasErr(false);
-  }, [status]);
+    if (!videoUrl) return;
+    if (!isNear && !isNext) return;
 
-  // ── Auto-play / pause ─────────────────────────────────────────
+    setHasError(false);
+    try {
+      player.replace({ uri: videoUrl });
+      player.loop   = true;
+      player.muted  = true;
+    } catch { setHasError(true); }
+  }, [videoUrl, isNear, isNext]);
+
+  // ── Play / pause based on active state ──────────────────────
   useEffect(() => {
-    if (!isNear || !player) return;
-    if (isActive && screenFocused && isReady) {
-      player.play();
+    if (!isNear || !videoUrl) return;
+
+    if (isActive && !pausedByUser.current) {
+      try {
+        player.play();
+        setIsPlaying(true);
+      } catch { /* expo-video may not be ready */ }
+      // Increment view once per activation
+      if (!viewedRef.current) {
+        viewedRef.current = true;
+        incrementViews(item.id);
+      }
     } else {
-      player.pause();
+      try {
+        player.pause();
+        setIsPlaying(false);
+      } catch { }
     }
-  }, [isActive, screenFocused, isReady, isNear, player]);
+  }, [isActive, isNear, videoUrl, item.id]);
 
-  // ── Sync mute ─────────────────────────────────────────────────
+  // ── Player status listener ───────────────────────────────────
   useEffect(() => {
-    if (!isNear) return;
-    player.muted = muted;
-  }, [muted, isNear, player]);
+    const sub = player.addListener('statusChange', ({ status, error }) => {
+      if (status === 'error')   { setHasError(true); setBuffering(false); }
+      if (status === 'loading') setBuffering(true);
+      if (status === 'readyToPlay') setBuffering(false);
+    });
+    return () => sub.remove();
+  }, [player]);
 
-  // ── Double-tap ────────────────────────────────────────────────
-  const lastTap    = useRef(0);
-  const heartAnim  = useRef(new Animated.Value(0)).current;
+  // ── Reset view tracker when not active ──────────────────────
+  useEffect(() => {
+    if (!isActive) { viewedRef.current = false; pausedByUser.current = false; }
+  }, [isActive]);
 
+  // ── TAP: pause/resume + unmute ───────────────────────────────
   const handleTap = useCallback(() => {
     const now = Date.now();
-    if (now - lastTap.current < 300) {
-      // Double-tap → like
-      if (!liked) {
-        setLiked(true);
-        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      }
-      Animated.sequence([
-        Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 30, bounciness: 15 }),
-        Animated.delay(500),
-        Animated.timing(heartAnim, { toValue: 0, duration: 280, useNativeDriver: true }),
-      ]).start();
-    } else {
-      // Simple-tap → toggle play/pause
-      if (isPlaying) {
-        player.pause();
-      } else {
-        player.play();
-      }
+    if (now - lastTap.current < 280) {
+      // Double tap → like
+      lastTap.current = 0;
+      return;
     }
     lastTap.current = now;
-  }, [isPlaying, liked, heartAnim, player]);
 
-  const heartScale = heartAnim.interpolate({
-    inputRange:  [0, 0.4, 1],
-    outputRange: [0, 1.3, 1],
-  });
-  const heartOpac = heartAnim.interpolate({
-    inputRange:  [0, 0.2, 0.8, 1],
-    outputRange: [0, 1, 1, 0],
-  });
+    setTimeout(() => {
+      if (now !== lastTap.current) return; // was a double tap
+      // Single tap = toggle pause / unmute audio
+      if (isMuted) {
+        player.muted = false;
+        setIsMuted(false);
+        return;
+      }
+      if (isPlaying) {
+        player.pause();
+        setIsPlaying(false);
+        pausedByUser.current = true;
+      } else {
+        player.play();
+        setIsPlaying(true);
+        pausedByUser.current = false;
+      }
+    }, 280);
+  }, [isMuted, isPlaying, player]);
 
-  // ── Handlers mémoïsés ─────────────────────────────────────────
-  const handleLike = useCallback(() => setLiked(p => !p), []);
-  const handleMute = useCallback(() => setMuted(p => !p), []);
-  const handleSave = useCallback(() => setSaved(p => !p), []);
-  const handleInfo = useCallback(() => router.push(`/film/${film.id}`), [film.id, router]);
+  // ── DOUBLE TAP: heart like ───────────────────────────────────
+  const handleDoubleTap = useCallback((evt: any) => {
+    const { locationX, locationY } = evt.nativeEvent;
+    setHeartPos({ x: locationX, y: locationY, v: true });
+    setTimeout(() => setHeartPos(p => ({ ...p, v: false })), 900);
 
-  // ── Retry ─────────────────────────────────────────────────────
+    if (!liked) {
+      setLiked(true);
+      setLikesCount(c => c + 1);
+      toggleLike(item.id, false);
+    }
+  }, [liked, item.id]);
+
+  // ── LIKE button ──────────────────────────────────────────────
+  const handleLike = useCallback(() => {
+    const next = !liked;
+    setLiked(next);
+    setLikesCount(c => next ? c + 1 : Math.max(0, c - 1));
+    toggleLike(item.id, liked);
+  }, [liked, item.id]);
+
+  // ── SAVE ─────────────────────────────────────────────────────
+  const handleSave = useCallback(() => setSaved(s => !s), []);
+
+  // ── MUTE toggle ──────────────────────────────────────────────
+  const handleMute = useCallback(() => {
+    const next = !isMuted;
+    player.muted = next;
+    setIsMuted(next);
+  }, [isMuted, player]);
+
+  // ── Retry on error ───────────────────────────────────────────
   const handleRetry = useCallback(() => {
-    setHasErr(false);
-    player.replace(videoSource ?? '');
-    player.play();
-  }, [player, videoSource]);
+    setHasError(false);
+    if (videoUrl) {
+      try { player.replace({ uri: videoUrl }); player.play(); } catch { }
+    }
+  }, [videoUrl, player]);
+
+  const genreColor = getGenreColor(item.genre);
 
   return (
-    <TouchableWithoutFeedback onPress={handleTap}>
-      <View style={{ width: itemW, height: itemH, backgroundColor: '#000' }}>
+    <View style={{ height, backgroundColor: '#000' }}>
 
-        {/* ── Poster / fallback ── */}
-        <Image
-          source={{ uri: film.poster_url }}
-          style={[StyleSheet.absoluteFill, { width: itemW, height: itemH }]}
-          resizeMode="cover"
-        />
+      {/* ── POSTER — always visible as bg ── */}
+      {item.poster_url && (
+        <Image source={{ uri: item.poster_url }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      )}
 
-        {/* ── Skeleton loader ── */}
-        {isLoading && (
-          <View style={StyleSheet.absoluteFill}>
-            <Shimmer width={itemW} height={itemH} />
-          </View>
-        )}
-
-        {/* ── VideoView — uniquement si near et source valide ── */}
-        {isNear && !!videoSource && !hasErr && (
-          <VideoView
-            player={player}
-            style={[StyleSheet.absoluteFill, { width: itemW, height: itemH }]}
-            contentFit="cover"
-            nativeControls={false}
-            allowsFullscreen={false}
-            allowsPictureInPicture={false}
-          />
-        )}
-
-        {/* ── Erreur + retry ── */}
-        {hasErr && (
-          <View style={fi.errOverlay}>
-            <Ionicons name="warning-outline" size={36} color={P.primL} />
-            <Text style={fi.errTxt}>Impossible de charger la vidéo</Text>
-            <TouchableOpacity style={fi.retryBtn} onPress={handleRetry} activeOpacity={0.8}>
-              <Ionicons name="refresh" size={16} color={P.t1} />
-              <Text style={fi.retryTxt}>Réessayer</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* ── Gradient overlay cinématique ── */}
-        <LinearGradient
-          colors={[
-            'rgba(7,0,15,0.10)',
-            'transparent',
-            'rgba(7,0,15,0.28)',
-            'rgba(7,0,15,0.88)',
-          ]}
-          locations={[0, 0.28, 0.62, 1]}
+      {/* ── VIDEO — mounted when near/next ── */}
+      {(isNear || isNext) && videoUrl && !hasError && (
+        <VideoView
+          player={player}
           style={StyleSheet.absoluteFill}
-          pointerEvents="none"
+          contentFit="cover"
+          nativeControls={false}
+          allowsFullscreen={false}
+          allowsPictureInPicture={false}
         />
-        {/* Teinture latérale violette */}
-        <LinearGradient
-          colors={['rgba(100,20,200,0.32)', 'transparent']}
-          start={{ x: 0, y: 0.5 }} end={{ x: 0.40, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
+      )}
 
-        {/* ── Cœur double-tap ── */}
-        <Animated.View
-          style={[fi.bigHeart, { opacity: heartOpac, transform: [{ scale: heartScale }] }]}
-          pointerEvents="none"
+      {/* ── ERROR OVERLAY ── */}
+      {hasError && (
+        <TouchableOpacity onPress={handleRetry} style={fi.errorOverlay} activeOpacity={0.8}>
+          <BlurView intensity={50} tint="dark" style={fi.errorCard}>
+            <Ionicons name="refresh-circle-outline" size={42} color="rgba(255,255,255,0.7)" />
+            <Text style={fi.errorTxt}>Tap pour relancer</Text>
+          </BlurView>
+        </TouchableOpacity>
+      )}
+
+      {/* ── BUFFERING SPINNER ── */}
+      {isBuffering && !hasError && isActive && (
+        <View style={fi.bufferWrap} pointerEvents="none">
+          <BlurView intensity={30} tint="dark" style={fi.bufferCard}>
+            <ActivityIndicator color={G.primary} size="large" />
+          </BlurView>
+        </View>
+      )}
+
+      {/* ── GRADIENT OVERLAYS ── */}
+      <LinearGradient
+        colors={['rgba(6,0,16,0.85)', 'transparent', 'transparent', 'rgba(6,0,16,0.95)']}
+        locations={[0, 0.18, 0.55, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      {/* ── DOUBLE-TAP ZONE ── */}
+      <TouchableWithoutFeedback
+        onPress={handleTap}
+        onLongPress={undefined}
+      >
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={handleTap}
+          onLongPress={() => setShowSynopsis(s => !s)}
+          delayLongPress={600}
+          android_ripple={null}
         >
-          <Ionicons name="heart" size={100} color="#EF4444" />
-        </Animated.View>
+          <View style={StyleSheet.absoluteFill} />
+        </Pressable>
+      </TouchableWithoutFeedback>
 
-        {/* ── Icône pause ── */}
-        {!isPlaying && isReady && (
-          <View style={fi.pauseIcon} pointerEvents="none">
-            <BlurView intensity={20} tint="dark" style={fi.pauseBlur}>
-              <Ionicons name="pause" size={32} color="rgba(255,255,255,0.90)" />
-            </BlurView>
-          </View>
+      {/* Separate double-tap detection overlay */}
+      <TouchableWithoutFeedback
+        onPress={(e) => {
+          const now = Date.now();
+          if (now - lastTap.current < 280) {
+            handleDoubleTap(e);
+          } else {
+            lastTap.current = now;
+          }
+        }}
+      >
+        <View style={fi.doubleTapZone} />
+      </TouchableWithoutFeedback>
+
+      {/* ── HEART BURST ── */}
+      <HeartBurst visible={heartPos.v} x={heartPos.x} y={heartPos.y} />
+
+      {/* ── PAUSE ICON ── */}
+      {!isPlaying && isActive && !hasError && !isBuffering && (
+        <View style={fi.pauseIcon} pointerEvents="none">
+          <BlurView intensity={35} tint="dark" style={fi.pauseIconInner}>
+            <Ionicons name="play" size={36} color="rgba(255,255,255,0.9)" />
+          </BlurView>
+        </View>
+      )}
+
+      {/* ── LEFT RAIL — film info ── */}
+      <View style={fi.leftRail} pointerEvents="box-none">
+        {/* Featured badge */}
+        {item.is_featured && (
+          <BlurView intensity={25} tint="dark" style={fi.featuredBadge}>
+            <Ionicons name="star" size={10} color={G.gold} />
+            <Text style={fi.featuredTxt}>SÉLECTION</Text>
+          </BlurView>
         )}
 
-        {/* ── Bouton mute floating en haut à droite ── */}
-        <View style={[fi.muteFloating, { top: 56 }]} pointerEvents="box-none">
-          {/* handled by RightBar */}
+        {/* Title */}
+        <Text style={fi.title} numberOfLines={2}>{item.title}</Text>
+
+        {/* Director row */}
+        <TouchableOpacity onPress={() => onDirector(item)} style={fi.directorRow} activeOpacity={0.8}>
+          {item.director_avatar && (
+            <Image source={{ uri: item.director_avatar }} style={fi.dirAvatar} />
+          )}
+          <Text style={fi.directorName}>{item.director}</Text>
+          <View style={[fi.genrePill, { backgroundColor: `${genreColor}20`, borderColor: `${genreColor}55` }]}>
+            <Text style={[fi.genreTxt, { color: genreColor }]}>{item.genre}</Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Meta row */}
+        <View style={fi.metaRow}>
+          <Text style={fi.metaTxt}>{item.year}</Text>
+          <View style={fi.metaDot} />
+          <Text style={fi.metaTxt}>{item.runtime}</Text>
+          <View style={fi.metaDot} />
+          <Text style={fi.metaTxt}>{item.language}</Text>
         </View>
 
-        {/* ── Actions droite ── */}
-        <RightBar
-          film={film}
-          liked={liked}
-          muted={muted}
-          saved={saved}
-          onLike={handleLike}
-          onMute={handleMute}
-          onInfo={handleInfo}
-          onSave={handleSave}
+        {/* Synopsis — toggleable */}
+        <TouchableOpacity onPress={() => setShowSynopsis(s => !s)} activeOpacity={0.8}>
+          <Text style={fi.synopsis} numberOfLines={showSynopsis ? 0 : 2}>
+            {item.synopsis}
+          </Text>
+          {!showSynopsis && (
+            <Text style={fi.synopsisMore}>Voir plus</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* ── RIGHT RAIL — actions ── */}
+      <View style={fi.rightRail} pointerEvents="box-none">
+        {/* Director avatar */}
+        <TouchableOpacity onPress={() => onDirector(item)} style={fi.authorBtn} activeOpacity={0.9}>
+          <LinearGradient colors={[G.primary, G.cyan]} style={fi.authorRing}>
+            {item.director_avatar ? (
+              <Image source={{ uri: item.director_avatar }} style={fi.authorAvatar} />
+            ) : (
+              <Ionicons name="person" size={22} color="#fff" />
+            )}
+          </LinearGradient>
+          <View style={fi.followDot}>
+            <Ionicons name="add" size={10} color="#fff" />
+          </View>
+        </TouchableOpacity>
+
+        {/* Like */}
+        <ActionBtn
+          icon="heart-outline" iconAlt="heart"
+          count={likesCount}
+          color={G.danger} active={liked}
+          onPress={handleLike}
         />
 
-        {/* ── Card épisode bas ── */}
-        <BottomCard
-          film={film}
-          progress={progress}
-          onFollow={onFollowFriend}
-          insetBot={insetBot}
+        {/* Comment */}
+        <ActionBtn
+          icon="chatbubble-outline"
+          label="Critique"
+          color={G.cyan}
+          onPress={() => onComment(item)}
         />
-      </View>
-    </TouchableWithoutFeedback>
-  );
-});
 
-const fi = StyleSheet.create({
-  errOverlay:  { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(7,0,15,0.82)', gap: 14 },
-  errTxt:      { color: P.t2, fontSize: 14, textAlign: 'center' },
-  retryBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: P.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 },
-  retryTxt:    { color: P.t1, fontSize: 14, fontWeight: '700' },
-  bigHeart:    { position: 'absolute', top: '50%', left: '50%', marginTop: -50, marginLeft: -50 },
-  pauseIcon:   { position: 'absolute', top: '50%', left: '50%', marginTop: -32, marginLeft: -32 },
-  pauseBlur:   { width: 64, height: 64, borderRadius: 32, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  muteFloating:{ position: 'absolute', right: 14 },
-});
+        {/* Save */}
+        <ActionBtn
+          icon="bookmark-outline" iconAlt="bookmark"
+          label={saved ? 'Sauvé' : 'Sauver'}
+          color={G.gold} active={saved}
+          onPress={handleSave}
+        />
 
-// ═══════════════════════════════════════════════════════════════════
-//  GALAXY TAB BAR — responsive inset-aware
-// ═══════════════════════════════════════════════════════════════════
+        {/* Share */}
+        <ActionBtn
+          icon="share-social-outline"
+          label="Partager"
+          onPress={() => onShare(item)}
+        />
 
-interface GalaxyTabBarProps {
-  active:   string;
-  set:      (v: string) => void;
-  insetBot: number;
-}
+        {/* Mute */}
+        <ActionBtn
+          icon="volume-mute-outline" iconAlt="volume-high-outline"
+          active={!isMuted}
+          color={G.primary}
+          onPress={handleMute}
+        />
 
-const GalaxyTabBar = memo(function GalaxyTabBar({ active, set, insetBot }: GalaxyTabBarProps) {
-  const glowAnim = useRef(new Animated.Value(0.5)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, { toValue: 1,   duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(glowAnim, { toValue: 0.5, duration: 1800, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ]),
-    ).start();
-    return () => glowAnim.stopAnimation();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const TABS = [
-    { key: 'accueil', label: 'Accueil', icon: 'home-outline'    as const },
-    { key: 'reels',   label: 'Reels',   icon: 'play-circle'     as const },
-    { key: 'spark',   label: 'Spark',   icon: 'sparkles-outline' as const },
-    { key: 'amies',   label: 'Amies',   icon: 'people-outline'  as const },
-    { key: 'profil',  label: 'Profil',  icon: 'person-circle'   as const },
-  ] as const;
-
-  return (
-    <View style={[tb.wrap, { paddingBottom: Math.max(insetBot, 8) }]}>
-      <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-      <View style={tb.borderTop}>
-        <Animated.View style={[tb.borderGlow, { opacity: glowAnim }]} />
+        {/* Views */}
+        <View style={fi.viewsRow}>
+          <Ionicons name="eye-outline" size={14} color="rgba(255,255,255,0.45)" />
+          <Text style={fi.viewsTxt}>{fmtCount(item.views_count)}</Text>
+        </View>
       </View>
 
-      <View style={tb.row}>
-        {TABS.map(item => {
-          const on = active === item.key;
-          const c  = on ? P.primL : 'rgba(240,232,255,0.36)';
+      {/* ── PROGRESS BAR ── */}
+      {(isNear || isNext) && !hasError && (
+        <VideoProgress player={player} />
+      )}
 
-          if (item.key === 'profil') return (
-            <TouchableOpacity key={item.key} onPress={() => set(item.key)} style={tb.tab} activeOpacity={0.75}>
-              <View style={[tb.avBox, on && tb.avBoxOn]}>
-                <Image source={{ uri: 'https://i.pravatar.cc/50?img=11' }} style={{ width: '100%', height: '100%', borderRadius: on ? 10 : 13 }} />
-              </View>
-              <Text style={[tb.label, on && tb.labelOn]}>{item.label}</Text>
-            </TouchableOpacity>
-          );
-
-          return (
-            <TouchableOpacity key={item.key} onPress={() => set(item.key)} style={tb.tab} activeOpacity={0.75}>
-              <View style={[tb.iconBox, on && tb.iconBoxOn]}>
-                {on && <Animated.View style={[StyleSheet.absoluteFill, tb.iconGlow, { opacity: glowAnim }]} />}
-                <Ionicons name={item.icon} size={24} color={c} />
-              </View>
-              <Text style={[tb.label, on && tb.labelOn]}>{item.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
     </View>
   );
 });
+FeedItem.displayName = 'FeedItem';
 
-const tb = StyleSheet.create({
-  wrap:       { position: 'absolute', bottom: 0, left: 0, right: 0, overflow: 'hidden' },
-  borderTop:  { height: 1, position: 'relative', overflow: 'hidden', backgroundColor: 'rgba(146,64,214,0.35)' },
-  borderGlow: { position: 'absolute', left: 0, right: 0, top: 0, height: 1, backgroundColor: P.primL },
-  row:        { flexDirection: 'row', alignItems: 'center', paddingTop: 10, paddingHorizontal: 4 },
-  tab:        { flex: 1, alignItems: 'center', gap: 3, paddingVertical: 2 },
-  iconBox:    { width: 42, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, position: 'relative', overflow: 'hidden' },
-  iconBoxOn:  { backgroundColor: 'rgba(146,64,214,0.20)' },
-  iconGlow:   { borderRadius: 11, backgroundColor: 'rgba(192,96,255,0.15)' },
-  label:      { fontSize: 10, fontWeight: '600', color: 'rgba(240,232,255,0.36)' },
-  labelOn:    { color: P.primL, fontWeight: '800' },
-  avBox:      { width: 30, height: 30, borderRadius: 15, overflow: 'hidden', backgroundColor: P.surface },
-  avBoxOn:    { borderWidth: 2.5, borderColor: P.primL, borderRadius: 12 },
+const fi = StyleSheet.create({
+  errorOverlay: { ...StyleSheet.absoluteFillObject as any, alignItems: 'center', justifyContent: 'center' },
+  errorCard:    { alignItems: 'center', gap: 10, padding: 24, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  errorTxt:     { color: 'rgba(255,255,255,0.7)', fontSize: 13, fontWeight: '600' },
+  bufferWrap:   { ...StyleSheet.absoluteFillObject as any, alignItems: 'center', justifyContent: 'center' },
+  bufferCard:   { width: 72, height: 72, borderRadius: 36, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  pauseIcon:    { position: 'absolute', top: '50%', left: '50%', marginTop: -36, marginLeft: -36 },
+  pauseIconInner:{ width: 72, height: 72, borderRadius: 36, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', paddingLeft: 4 },
+  doubleTapZone:{ ...StyleSheet.absoluteFillObject as any },
+
+  // Left rail
+  leftRail:     { position: 'absolute', bottom: 28, left: 16, right: 80, gap: 7 },
+  featuredBadge:{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,226,112,0.35)', alignSelf: 'flex-start', marginBottom: 2 },
+  featuredTxt:  { color: G.gold, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  title:        { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: -0.5, lineHeight: 26, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 6 },
+  directorRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dirAvatar:    { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(192,96,255,0.5)' },
+  directorName: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
+  genrePill:    { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  genreTxt:     { fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
+  metaRow:      { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  metaTxt:      { color: 'rgba(255,255,255,0.45)', fontSize: 11 },
+  metaDot:      { width: 3, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.25)' },
+  synopsis:     { color: 'rgba(255,255,255,0.7)', fontSize: 13, lineHeight: 18 },
+  synopsisMore: { color: G.primary, fontSize: 12, fontWeight: '600', marginTop: 2 },
+
+  // Right rail
+  rightRail:    { position: 'absolute', bottom: 36, right: 12, alignItems: 'center', gap: 12 },
+  authorBtn:    { position: 'relative', marginBottom: 4 },
+  authorRing:   { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', padding: 2 },
+  authorAvatar: { width: 48, height: 48, borderRadius: 24 },
+  followDot:    { position: 'absolute', bottom: -4, left: '50%', marginLeft: -9, width: 18, height: 18, borderRadius: 9, backgroundColor: G.primary, borderWidth: 2, borderColor: '#000', alignItems: 'center', justifyContent: 'center' },
+  viewsRow:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  viewsTxt:     { color: 'rgba(255,255,255,0.4)', fontSize: 10, fontVariant: ['tabular-nums'] },
 });
 
-// ═══════════════════════════════════════════════════════════════════
-//  MAIN — ReelsScreen
-// ═══════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
+// 📱 HEADER — top bar with logo + hamburger
+// ─────────────────────────────────────────────────────────────────────────────
+const Header = memo(({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void }) => {
+  const enterAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(enterAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
+  }, []);
 
-export default function ReelsScreen() {
-  const router  = useRouter();
-  const { width: W, height: H } = useWindowDimensions();
-  const insets  = useSafeAreaInsets();
+  return (
+    <Animated.View style={[hd.wrap, { opacity: enterAnim }]} pointerEvents="box-none">
+      <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill as any} />
+      <View style={hd.inner}>
 
-  // ITEM_H = plein écran réel (inclus notch/barre de navigation)
-  const ITEM_H = H;
 
-  const [feedFilms,     setFeedFilms]     = useState<FeedFilm[]>(MOCK_FEED);
-  const [activeIndex,   setActiveIndex]   = useState(0);
-  const [menuOpen,      setMenuOpen]      = useState(false);
-  const [feedKey,       setFeedKey]       = useState<MenuKey>('foryou');
-  const [activeTab,     setActiveTab]     = useState('reels');
-  const [screenFocused, setScreenFocused] = useState(true);
+  
 
-  const scrollY = useRef(new Animated.Value(0)).current;
+        {/* Actions */}
+        <View style={hd.actions}>
+     
+          <TouchableOpacity onPress={onMenu} style={hd.iconBtn} activeOpacity={0.8}>
+            <Ionicons name="menu" size={23} color="rgba(255,255,255,0.85)" />
+          </TouchableOpacity>
 
-  // ── Pause globale en quittant l'écran ─────────────────────────
-  useFocusEffect(
-    useCallback(() => {
-      setScreenFocused(true);
-      return () => setScreenFocused(false);
-    }, []),
+        </View>
+      </View>
+
+      
+    </Animated.View>
+
+
+
   );
+});
+Header.displayName = 'Header';
 
-  // ── Viewability : 70% visible pour déclencher l'item ──────────
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 70 });
+const hd = StyleSheet.create({
+  wrap:        { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50, overflow: 'hidden', borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.06)' },
+  inner:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10 },
+  logo:        { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  logoGrad:    { width: 26, height: 26, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  logoText:    { color: '#fff', fontSize: 14, fontWeight: '900', letterSpacing: 2.5 },
+  tabs:        { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  tab:         { position: 'relative', paddingBottom: 2 },
+  tabActive:   {},
+  tabTxt:      { color: 'rgba(255,255,255,0.4)', fontSize: 13, fontWeight: '600' },
+  tabTxtActive:{ color: '#fff', fontWeight: '800' },
+  tabUnderline:{ position: 'absolute', bottom: -1, left: 0, right: 0, height: 2, backgroundColor: G.primary, borderRadius: 1 },
+  actions:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  iconBtn:     { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
+});
 
-  const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      setActiveIndex(viewableItems[0].index ?? 0);
+// ─────────────────────────────────────────────────────────────────────────────
+// 📋 DROPDOWN MENU — left sidebar
+// ─────────────────────────────────────────────────────────────────────────────
+const DropDownMenu = memo(({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+  const router    = useRouter();
+  const slideAnim = useRef(new Animated.Value(-SW)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 180, friction: 22 }),
+        Animated.timing(fadeAnim,  { toValue: 1, duration: 250, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, { toValue: -SW, duration: 230, useNativeDriver: true, easing: Easing.in(Easing.quad) }),
+        Animated.timing(fadeAnim,  { toValue: 0, duration: 200, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const navigate = (path: string) => { onClose(); setTimeout(() => router.push(path as any), 260); };
+
+  const menuItems = [
+    { icon: 'home-outline',        label: 'Accueil',          path: '/(tabs)/'           },
+    { icon: 'film-outline',        label: 'Mon Studio',       path: '/(tabs)/create'     },
+    { icon: 'compass-outline',     label: 'Découvrir',        path: '/(tabs)/search'     },
+    { icon: 'bookmark-outline',    label: 'Mes sauvegardes',  path: '/(tabs)/saved'      },
+    { icon: 'notifications-outline', label: 'Notifications',  path: '/(tabs)/notifs'     },
+    { icon: 'person-outline',      label: 'Mon profil',       path: '/(tabs)/profile'    },
+    { icon: 'settings-outline',    label: 'Paramètres',       path: '/settings'          },
+  ];
+
+  const quickActions = [
+    { icon: 'add-circle-outline',  label: 'Nouveau film',     path: '/(tabs)/create'     },
+    { icon: 'star-outline',        label: 'Rédiger critique', path: '/(tabs)/create'     },
+  ];
+
+  return (
+    <View style={dm.overlay} pointerEvents="box-none">
+      {/* Backdrop */}
+      <Animated.View style={[dm.backdrop, { opacity: fadeAnim }]} pointerEvents="auto">
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+      </Animated.View>
+
+
+      {/* Panel */}
+      <Animated.View style={[dm.panel, { transform: [{ translateX: slideAnim }] }]} pointerEvents="auto">
+        {/* Blur bg */}
+        <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill as any} />
+        <LinearGradient
+          colors={['rgba(108,16,195,0.18)', 'rgba(6,0,16,0.95)']}
+          style={StyleSheet.absoluteFill as any}
+        />
+
+        {/* Content */}
+        <SafeAreaView style={dm.safe}>
+          {/* Profile preview */}
+          <View style={dm.profileWrap}>
+            <LinearGradient colors={[G.primary, G.cyan]} style={dm.profileRing}>
+              <Image source={{ uri: 'https://i.pravatar.cc/150?img=30' }} style={dm.profileAvatar} />
+            </LinearGradient>
+            <View>
+              <Text style={dm.profileName}>Mon univers</Text>
+              <Text style={dm.profileSub}>@universe_user</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={dm.closeBtn} activeOpacity={0.8}>
+              <Ionicons name="close" size={20} color="rgba(255,255,255,0.6)" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick actions */}
+          <Text style={dm.sectionLabel}>CRÉER</Text>
+          <View style={dm.quickRow}>
+            {quickActions.map(a => (
+              <TouchableOpacity key={a.path + a.label} onPress={() => navigate(a.path)}
+                style={dm.quickBtn} activeOpacity={0.8}
+              >
+                <LinearGradient colors={['rgba(192,96,255,0.2)', 'rgba(108,16,195,0.12)']} style={dm.quickGrad}>
+                  <Ionicons name={a.icon as any} size={20} color={G.primary} />
+                  <Text style={dm.quickLabel}>{a.label}</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Nav items */}
+          <Text style={dm.sectionLabel}>NAVIGATION</Text>
+          {menuItems.map(item => (
+            <TouchableOpacity key={item.path + item.label} onPress={() => navigate(item.path)}
+              style={dm.navItem} activeOpacity={0.75}
+            >
+              <View style={dm.navIcon}>
+                <Ionicons name={item.icon as any} size={19} color={G.primary} />
+              </View>
+              <Text style={dm.navLabel}>{item.label}</Text>
+              <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.2)" />
+            </TouchableOpacity>
+          ))}
+
+          {/* Stats bar */}
+          <BlurView intensity={15} tint="dark" style={dm.statsCard}>
+            {[
+              { label: 'Films vus',   val: '47'  },
+              { label: 'Critiques',   val: '12'  },
+              { label: 'Abonnements', val: '8'   },
+            ].map(({ label, val }) => (
+              <View key={label} style={dm.stat}>
+                <Text style={dm.statVal}>{val}</Text>
+                <Text style={dm.statLabel}>{label}</Text>
+              </View>
+            ))}
+          </BlurView>
+        </SafeAreaView>
+      </Animated.View>
+    </View>
+  );
+});
+DropDownMenu.displayName = 'DropDownMenu';
+
+const dm = StyleSheet.create({
+  overlay:      { ...StyleSheet.absoluteFillObject as any, zIndex: 100 },
+  backdrop:     { ...StyleSheet.absoluteFillObject as any, backgroundColor: 'rgba(0,0,0,0.65)' },
+  panel:        { position: 'absolute', top: 0, left: 0, bottom: 0, width: SW * 0.78, overflow: 'hidden', borderRightWidth: 1, borderRightColor: 'rgba(192,96,255,0.15)' },
+  safe:         { flex: 1, paddingHorizontal: 20, paddingTop: 10, gap: 0 },
+  profileWrap:  { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.07)', marginBottom: 16 },
+  profileRing:  { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', padding: 2 },
+  profileAvatar:{ width: 50, height: 50, borderRadius: 25 },
+  profileName:  { color: '#fff', fontSize: 16, fontWeight: '800' },
+  profileSub:   { color: G.textSub, fontSize: 12, marginTop: 1 },
+  closeBtn:     { marginLeft: 'auto' as any, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(255,255,255,0.07)', alignItems: 'center', justifyContent: 'center' },
+  sectionLabel: { color: 'rgba(255,255,255,0.3)', fontSize: 10, fontWeight: '800', letterSpacing: 1.2, marginBottom: 10, marginTop: 4 },
+  quickRow:     { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  quickBtn:     { flex: 1, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(192,96,255,0.22)' },
+  quickGrad:    { padding: 14, alignItems: 'center', gap: 8 },
+  quickLabel:   { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  navItem:      { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  navIcon:      { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(192,96,255,0.1)', alignItems: 'center', justifyContent: 'center' },
+  navLabel:     { flex: 1, color: 'rgba(255,255,255,0.85)', fontSize: 14, fontWeight: '600' },
+  statsCard:    { marginTop: 16, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', padding: 16, flexDirection: 'row', overflow: 'hidden' },
+  stat:         { flex: 1, alignItems: 'center', gap: 3 },
+  statVal:      { color: '#fff', fontSize: 18, fontWeight: '800' },
+  statLabel:    { color: G.textSub, fontSize: 10, fontWeight: '600', letterSpacing: 0.4 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 💬 COMMENT SHEET — quick critique overlay
+// ─────────────────────────────────────────────────────────────────────────────
+const CommentSheet = memo(({ film, visible, onClose }: { film: Film | null; visible: boolean; onClose: () => void }) => {
+  const slideAnim = useRef(new Animated.Value(600)).current;
+  const [text, setText] = useState('');
+
+  useEffect(() => {
+    Animated.spring(slideAnim, {
+      toValue: visible ? 0 : 600, useNativeDriver: true,
+      tension: 180, friction: 22,
+    }).start();
+  }, [visible]);
+
+  if (!film && !visible) return null;
+
+  return (
+    <Animated.View style={[cs.sheet, { transform: [{ translateY: slideAnim }] }]} pointerEvents={visible ? 'auto' : 'none'}>
+      <BlurView intensity={85} tint="dark" style={StyleSheet.absoluteFill as any} />
+      <LinearGradient colors={['rgba(108,16,195,0.12)', 'rgba(6,0,16,0.98)']} style={StyleSheet.absoluteFill as any} />
+
+      <View style={cs.inner}>
+        {/* Handle */}
+        <View style={cs.handle} />
+
+        {/* Header */}
+        <View style={cs.header}>
+          <View>
+            <Text style={cs.title}>Laisser une critique</Text>
+            {film && <Text style={cs.sub}>{film.title}</Text>}
+          </View>
+          <TouchableOpacity onPress={onClose} style={cs.closeBtn} activeOpacity={0.8}>
+            <Ionicons name="close-circle" size={26} color="rgba(255,255,255,0.5)" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Stars */}
+        <View style={cs.starsRow}>
+          {[1, 2, 3, 4, 5].map(s => (
+            <TouchableOpacity key={s} activeOpacity={0.7}>
+              <Ionicons name="star-outline" size={32} color="rgba(255,226,112,0.3)" />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Input */}
+        <BlurView intensity={15} tint="dark" style={cs.inputWrap}>
+          <Text style={cs.inputLabel}>Votre critique</Text>
+          <View style={cs.textArea}>
+            <Text style={cs.placeholder}>Photographie, montage, mise en scène…</Text>
+          </View>
+        </BlurView>
+
+        {/* Submit */}
+        <TouchableOpacity style={cs.submitBtn} activeOpacity={0.85}>
+          <LinearGradient colors={['#7B2FBE', '#C060FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={cs.submitGrad}>
+            <Ionicons name="send" size={16} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={cs.submitTxt}>Publier la critique</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+});
+CommentSheet.displayName = 'CommentSheet';
+
+const cs = StyleSheet.create({
+  sheet:     { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 80, borderTopLeftRadius: 26, borderTopRightRadius: 26, overflow: 'hidden', borderTopWidth: 1, borderColor: 'rgba(192,96,255,0.2)' },
+  inner:     { padding: 22, gap: 16 },
+  handle:    { width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)', alignSelf: 'center', marginBottom: 4 },
+  header:    { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  title:     { color: '#fff', fontSize: 18, fontWeight: '800' },
+  sub:       { color: G.textSub, fontSize: 12, marginTop: 2 },
+  closeBtn:  {},
+  starsRow:  { flexDirection: 'row', gap: 12, justifyContent: 'center', paddingVertical: 4 },
+  inputWrap: { borderRadius: 16, borderWidth: 1, borderColor: G.glassBorder, overflow: 'hidden', padding: 14 },
+  inputLabel:{ color: 'rgba(255,255,255,0.45)', fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginBottom: 8, textTransform: 'uppercase' },
+  textArea:  { minHeight: 80 },
+  placeholder:{ color: 'rgba(255,255,255,0.18)', fontSize: 14, fontStyle: 'italic' },
+  submitBtn: { borderRadius: 16, overflow: 'hidden' },
+  submitGrad:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 15 },
+  submitTxt: { color: '#fff', fontSize: 15, fontWeight: '800' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚀 VIEWABILITY CONFIG — fire when 85% visible, prevent flicker
+// ─────────────────────────────────────────────────────────────────────────────
+const VIEWABILITY_CONFIG = {
+  itemVisiblePercentThreshold: 85,
+  minimumViewTime: 120,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📱 MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+export default function HomeScreen() {
+  const { height } = useWindowDimensions();
+  const insets     = useSafeAreaInsets();
+  const router     = useRouter();
+
+  // ── State ────────────────────────────────────────────────────
+  const [films,       setFilms]       = useState<Film[]>(FALLBACK_FILMS);
+  const [friends,     setFriends]     = useState<Friend[]>(FALLBACK_FRIENDS);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [menuOpen,    setMenuOpen]    = useState(false);
+  const [commentFilm, setCommentFilm] = useState<Film | null>(null);
+  const [loading,     setLoading]     = useState(true);
+  const [refreshing,  setRefreshing]  = useState(false);
+  const [showFriends, setShowFriends] = useState(true);
+  const [page,        setPage]        = useState(0);
+  const [hasMore,     setHasMore]     = useState(true);
+
+  const flatRef   = useRef<FlatList>(null);
+  const PAGE_SIZE = 10;
+
+  // ── Header height (status bar + header) ────────────────────
+  const HEADER_H    = insets.top + 54;
+  const FRIENDS_H   = showFriends ? 90 : 0;
+  const SCROLL_SNAP = height; // full screen per item
+
+  // ── Fetch films from Supabase ────────────────────────────────
+  const fetchFilms = useCallback(async (pageNum = 0, append = false) => {
+    try {
+      const { data, error } = await supabase
+        .from('films')
+        .select(`
+          id, title, director, genre, synopsis, year, runtime,
+          poster_url, video_path, likes_count, views_count,
+          is_featured, aspect_ratio, language, director_avatar
+        `)
+        .order('is_featured', { ascending: false })
+        .order('views_count', { ascending: false })
+        .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+
+      if (error) throw error;
+      if (!data || data.length === 0) { setHasMore(false); return; }
+      if (data.length < PAGE_SIZE)    setHasMore(false);
+
+      setFilms(prev => append ? [...prev, ...data] : data);
+    } catch {
+      // Keep fallback data — no crash
+      console.warn('[UNIVERSE] Supabase fetch failed — using fallback');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
-  // ── Follow friend ─────────────────────────────────────────────
-  const handleFollowFriend = useCallback((fid: string) => {
-    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setFeedFilms(prev => prev.map(film => ({
-      ...film,
-      liked_by_friends: film.liked_by_friends.map(f =>
-        f.id === fid ? { ...f, followed: true } : f,
-      ),
-    })));
+  // ── Fetch friends ────────────────────────────────────────────
+  const fetchFriends = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('friends')
+        .select('id, username, avatar_url, has_story, is_online')
+        .order('has_story', { ascending: false })
+        .limit(15);
+      if (data && data.length > 0) setFriends(data);
+    } catch { /* keep fallback */ }
   }, []);
 
-  // ── Render item ───────────────────────────────────────────────
-  const renderItem = useCallback(({ item, index }: { item: FeedFilm; index: number }) => (
-    <FeedItem
-      film={item}
-      isActive={index === activeIndex}
-      isNear={Math.abs(index - activeIndex) <= 1}   // ← player pool ± 1
-      screenFocused={screenFocused}
-      itemW={W}
-      itemH={ITEM_H}
-      insetBot={insets.bottom}
-      onFollowFriend={handleFollowFriend}
-    />
-  ), [activeIndex, screenFocused, W, ITEM_H, insets.bottom, handleFollowFriend]);
+  // ── Initial load ─────────────────────────────────────────────
+  useEffect(() => {
+    fetchFilms(0, false);
+    fetchFriends();
+  }, []);
 
+  // ── Pull to refresh ──────────────────────────────────────────
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setPage(0);
+    setHasMore(true);
+    fetchFilms(0, false);
+  }, [fetchFilms]);
+
+  // ── Load more (infinite scroll) ──────────────────────────────
+  const onEndReached = useCallback(() => {
+    if (!hasMore || loading) return;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchFilms(nextPage, true);
+  }, [hasMore, loading, page, fetchFilms]);
+
+  // ── Viewability callback ─────────────────────────────────────
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) {
+      const idx = viewableItems[0].index ?? 0;
+      setActiveIndex(idx);
+      // Auto-hide friends bar after first swipe
+      if (idx > 0) setShowFriends(false);
+    }
+  }).current;
+
+  // ── getItemLayout for performance (fixed height) ─────────────
   const getItemLayout = useCallback((_: any, index: number) => ({
-    length: ITEM_H, offset: ITEM_H * index, index,
-  }), [ITEM_H]);
+    length: SCROLL_SNAP, offset: SCROLL_SNAP * index, index,
+  }), [SCROLL_SNAP]);
 
-  const keyExtractor = useCallback((item: FeedFilm) => item.id, []);
+  // ── Render item ──────────────────────────────────────────────
+  const renderItem = useCallback(({ item, index }: { item: Film; index: number }) => (
+    <FeedItem
+      item={item}
+      isActive={index === activeIndex}
+      isNear={Math.abs(index - activeIndex) <= 1}
+      isNext={index === activeIndex + 1}
+      height={SCROLL_SNAP}
+      onComment={(f) => setCommentFilm(f)}
+      onShare={(f) => Alert.alert('Partager', `"${f.title}" par ${f.director}`)}
+      onDirector={(f) => Alert.alert(f.director, `Réalisateur de "${f.title}"`)}
+    />
+  ), [activeIndex, SCROLL_SNAP]);
+
+  // ── Footer loader ────────────────────────────────────────────
+  const ListFooter = useMemo(() => (
+    hasMore ? (
+      <View style={{ height: 80, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
+        <ActivityIndicator color={G.primary} />
+      </View>
+    ) : null
+  ), [hasMore]);
 
   return (
-    <View style={sc.root}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+    <View style={styles.root}>
+      <StatusBar style="light" />
 
-      {/* ── Feed plein écran ── */}
+      {/* ── DROPDOWN MENU ── */}
+      <DropDownMenu visible={menuOpen} onClose={() => setMenuOpen(false)} />
+
+
+      {/* ── FRIENDS BAR — absolutely on top of the feed ── */}
+      {showFriends && (
+        <View style={[styles.friendsWrap, { top: HEADER_H }]}>
+          <BlurView intensity={45} tint="dark" style={StyleSheet.absoluteFill as any} />
+          <LinearGradient
+            colors={['rgba(6,0,16,0.9)', 'rgba(6,0,16,0.0)']}
+            style={StyleSheet.absoluteFill as any}
+            pointerEvents="none"
+          />
+          <FriendsBar
+            friends={friends}
+            onPress={(f) => Alert.alert(f.username, f.has_story ? 'Story disponible' : 'Pas de story')}
+          />
+        </View>
+      )}
+
+      {/* ── FEED ── */}
       <FlatList
-        data={feedFilms}
-        keyExtractor={keyExtractor}
+        ref={flatRef}
+        data={films}
+        keyExtractor={item => item.id}
         renderItem={renderItem}
         pagingEnabled
-        showsVerticalScrollIndicator={false}
-        snapToInterval={ITEM_H}
+        snapToInterval={SCROLL_SNAP}
         snapToAlignment="start"
         decelerationRate="fast"
-        viewabilityConfig={viewabilityConfig.current}
+        showsVerticalScrollIndicator={false}
         onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={VIEWABILITY_CONFIG}
         getItemLayout={getItemLayout}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: false },
-        )}
-        scrollEventThrottle={16}
-        removeClippedSubviews
-        windowSize={3}
-        maxToRenderPerBatch={2}
-        initialNumToRender={1}
-        updateCellsBatchingPeriod={50}
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS === 'android'}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={ListFooter}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+        // Disable bounce on Android to prevent stutter
         overScrollMode="never"
-        bounces={false}
+        bounces={Platform.OS === 'ios'}
       />
 
-      {/* ── Header flottant (SafeArea top) ── */}
-      <SafeAreaView edges={['top']} style={sc.headerSafe} pointerEvents="box-none">
-        <TopHeader feedKey={feedKey} onMenuPress={() => setMenuOpen(true)} scrollY={scrollY} />
-      </SafeAreaView>
-
-      {/* ── Tab bar avec inset bottom ── */}
-      <GalaxyTabBar
-        active={activeTab}
-        set={setActiveTab}
-        insetBot={insets.bottom}
-      />
-
-      {/* ── Sidebar Modal ── */}
-      <Modal
-        visible={menuOpen}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={() => setMenuOpen(false)}
-      >
-        <DropdownMenu
-          visible={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          onSelect={setFeedKey}
-          activeKey={feedKey}
+      {/* ── HEADER — fixed on top ── */}
+      <View style={[styles.headerWrap, { paddingTop: insets.top }]}>
+        <Header
+          onMenu={() => setMenuOpen(true)}
+          onSearch={() => router.push('/(tabs)/search' as any)}
         />
-      </Modal>
+      </View>
+
+      {/* ── INDEX DOTS — right edge ── */}
+      {films.length > 1 && (
+        <View style={styles.dotsWrap} pointerEvents="none">
+          {films.slice(0, Math.min(films.length, 8)).map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                i === Math.min(activeIndex, 7) && styles.dotActive,
+              ]}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* ── LOADING INITIAL ── */}
+      {loading && films.length === 0 && (
+        <View style={styles.loadingOverlay}>
+          <LinearGradient colors={['#060010', '#0A001E']} style={StyleSheet.absoluteFill as any} />
+          <ActivityIndicator size="large" color={G.primary} />
+          <Text style={styles.loadingTxt}>Chargement du cinéma…</Text>
+        </View>
+      )}
+
+      {/* ── COMMENT SHEET ── */}
+      <CommentSheet
+        film={commentFilm}
+        visible={commentFilm !== null}
+        onClose={() => setCommentFilm(null)}
+      />
     </View>
   );
 }
 
-const sc = StyleSheet.create({
-  root:       { flex: 1, backgroundColor: '#000' },
-  headerSafe: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50 },
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎨 GLOBAL STYLES
+// ─────────────────────────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  root:          { flex: 1, backgroundColor: '#000' },
+  headerWrap:    { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50 },
+  friendsWrap:   { position: 'absolute', left: 0, right: 0, zIndex: 40, overflow: 'hidden' },
+  dotsWrap:      { position: 'absolute', right: 6, top: '50%', transform: [{ translateY: -50 }], gap: 5, alignItems: 'center' },
+  dot:           { width: 3, height: 18, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.2)' },
+  dotActive:     { backgroundColor: G.primary, height: 28, shadowColor: G.primary, shadowOpacity: 0.8, shadowRadius: 4, shadowOffset: { width: 0, height: 0 } },
+  loadingOverlay:{ ...StyleSheet.absoluteFillObject as any, alignItems: 'center', justifyContent: 'center', gap: 16, zIndex: 200 },
+  loadingTxt:    { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
 });

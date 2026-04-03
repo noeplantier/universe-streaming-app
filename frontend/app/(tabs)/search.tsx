@@ -57,7 +57,7 @@ const GENRES   = ['Tous', 'Thriller', 'Drame', 'Sci-Fi', 'Action'];
 const SORT_OPT = ['Popularité', 'Récent', 'Anciens'];
 const DURATIONS= ['Toutes', '< 60 min', '60–100 min', '> 100 min'];
 const YEARS    = ['Toutes', '2024', '2023', '2022'];
-const MAIN_TABS = ['Mini-séries', 'Films', 'Catégories'];
+const MAIN_TABS = ['Catégories','Mini-séries', 'Films' ];
 
 // ═══════════════════════════════════════════════════════════════════
 //  ░░░  GALAXY ANIMATION ENGINE (Portage Intégral)  ░░░
@@ -291,7 +291,7 @@ export default function SearchScreen() {
 
   // ── État filtres ────────────────────────────────────────────────
   const [search,      setSearch]      = useState('');
-  const [activeTab,   setActiveTab]   = useState('Séries');
+  const [activeTab,   setActiveTab]   = useState('Catégories');
   const [genre,       setGenre]       = useState('Tous');
   const [sortBy,      setSortBy]      = useState('Popularité');
   const [duration,    setDuration]    = useState('Toutes');
@@ -313,7 +313,7 @@ export default function SearchScreen() {
     let list = [...ALL_WORKS];
 
     // Tab principal
-    if (activeTab === 'Séries') list = list.filter(w => w.category === 'Série');
+    if (activeTab === 'Mini-séries') list = list.filter(w => w.category === 'Mini-série');
     else if (activeTab === 'Films') list = list.filter(w => w.category === 'Film' || w.category === 'ORIGINAL' || w.category === 'Interdit');
 
     // Recherche texte

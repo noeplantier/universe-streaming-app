@@ -689,7 +689,7 @@ function StepImport({
                 </TouchableOpacity>
               </>
             ) : (
-              <Animated.View style={[si.emptyContent, { transform: [{ scale: pulseAnim }] }]}>
+              <Animated.View style={[si.emptyContent]}>
                 <LinearGradient colors={['rgba(192,96,255,0.18)', 'rgba(108,16,195,0.28)']} style={si.uploadCircle}>
                   <Ionicons name="film" size={40} color={G.primary} />
                 </LinearGradient>
@@ -1030,7 +1030,6 @@ function StepSubtitles({
           </LinearGradient>
           <View>
             <Text style={ss.aiTitle}>Analyse ASR automatique</Text>
-            <Text style={ss.aiSub}>Détection vocale · synchronisation frame-perfect</Text>
           </View>
         </View>
         <TouchableOpacity style={ss.aiBtn} onPress={onAnalyze} disabled={analyzing} activeOpacity={0.8}>
@@ -1469,146 +1468,137 @@ function StepExport({
   const isError  = exportStep.startsWith('❌');
 
   return (
-    <View>
-      <SectionHeader icon="rocket-outline" title="Exporter le film" sub="Rendu final avec toutes les métadonnées" />
-
-      {/* Project summary */}
-      <BlurView intensity={14} tint="dark" style={se.summaryCard}>
-        <Text style={se.summaryTitle}>{title || 'Sans titre'}</Text>
-        <Text style={se.summaryDir}>{director || 'Réalisateur non renseigné'} · {year}</Text>
-        <View style={se.summaryRow}>
-          {genre      && <Badge label={genre}           color={G.primary} />}
-          {runtime    && <Badge label={runtime}         color={G.textSub} />}
-          {language   && <Badge label={language}        color={G.cyan}    />}
-          {subtitleCount > 0 && <Badge label={`${subtitleCount} sous-titres`} color={G.gold} />}
-        </View>
-      </BlurView>
-
-      {/* Format selector */}
-      <Text style={se.sectionHead}>FORMAT D'EXPORT</Text>
-      {EXPORT_FORMATS.map(f => {
-        const on = selectedFormat === f.id;
-        return (
-          <TouchableOpacity key={f.id} onPress={() => setSelectedFormat(f.id)} activeOpacity={0.85}>
-            <BlurView intensity={10} tint="dark" style={[se.fmtCard, on && { borderColor: f.color }]}>
-              <LinearGradient
-                colors={on ? [`${f.color}1A`, `${f.color}06`] : ['transparent', 'transparent']}
-                style={StyleSheet.absoluteFillObject as any}
-              />
-              <View style={[se.fmtIcon, { backgroundColor: `${f.color}15`, borderColor: `${f.color}30` }]}>
-                <Ionicons name={f.icon as any} size={20} color={f.color} />
-              </View>
-              <View style={{ flex: 1, gap: 3 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={se.fmtLabel}>{f.label}</Text>
-                  {f.badge && <Badge label={f.badge} color={f.color} />}
-                </View>
-                <Text style={se.fmtMeta}>{f.codec}  ·  {f.res}  ·  {f.bitrate}</Text>
-                <Text style={[se.fmtMeta, { color: `${f.color}BB` }]}>{f.sizeMb}  ·  .{f.ext}</Text>
-              </View>
-              <View style={[se.fmtRadio, on && { borderColor: f.color }]}>
-                {on && <View style={[se.fmtRadioDot, { backgroundColor: f.color }]} />}
-              </View>
-            </BlurView>
-          </TouchableOpacity>
-        );
-      })}
-
-      {/* Export options */}
-      <Text style={se.sectionHead}>OPTIONS D'EXPORT</Text>
-      <BlurView intensity={10} tint="dark" style={se.optionsCard}>
-        {[
-          { label: 'Intégrer les sous-titres (.SRT)', sub: 'Fichier SRT inclus dans l\'archive', val: embedSrt, set: setEmbedSrt, color: G.cyan },
-          { label: 'Métadonnées XMP', sub: 'Tags Adobe/Apple dans les headers du fichier', val: embedXmp, set: setEmbedXmp, color: G.primary },
-          { label: 'Watermark UNIVERSE', sub: 'Logo en coin inférieur droit (désactivé = propre)', val: watermark, set: setWatermark, color: G.textSub },
-        ].map(({ label, sub, val, set, color }) => (
-          <View key={label} style={se.optRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={se.optLabel}>{label}</Text>
-              <Text style={se.optSub}>{sub}</Text>
-            </View>
-            <Switch
-              value={val} onValueChange={set}
-              trackColor={{ false: 'rgba(255,255,255,0.1)', true: `${color}55` }}
-              thumbColor={val ? color : 'rgba(255,255,255,0.4)'}
-              ios_backgroundColor="rgba(255,255,255,0.1)"
-            />
-          </View>
-        ))}
-      </BlurView>
-
-      {/* Output files list (post-export) */}
-      {exportedFiles.length > 0 && (
-        <>
-          <Text style={se.sectionHead}>FICHIERS GÉNÉRÉS</Text>
-          {exportedFiles.map(f => (
-            <BlurView key={f.name} intensity={10} tint="dark" style={se.fileCard}>
-              <View style={[se.fileIcon, { backgroundColor: `${f.color}15`, borderColor: `${f.color}30` }]}>
-                <Ionicons name={f.icon as any} size={16} color={f.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={se.fileName} numberOfLines={1}>{f.name}</Text>
-                <Text style={se.fileMeta}>{f.type}  ·  {formatBytes(f.bytes)}</Text>
-              </View>
-              <Badge label="OK" color={G.success} />
-            </BlurView>
-          ))}
-        </>
-      )}
-
-      {/* Progress */}
-      {(exporting || exportStep !== '') && (
-        <BlurView intensity={12} tint="dark" style={se.progressWrap}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-            <Text style={se.progressTitle}>Rendu en cours</Text>
-            <Text style={[se.progressPct, isDone && { color: G.success }, isError && { color: G.danger }]}>
-              {Math.round(exportProgress * 100)}%
-            </Text>
-          </View>
-          <View style={se.progressTrack}>
-            <Animated.View style={[se.progressBar, { width: barWidth }]}>
-              <LinearGradient
-                colors={isDone ? [G.success, '#0FA060'] : isError ? ['#8B0000', G.danger] : [G.accent, G.primary, G.cyan]}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                style={StyleSheet.absoluteFillObject as any}
-              />
-            </Animated.View>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
-            {exporting && !isDone && !isError
-              ? <ActivityIndicator size="small" color={fmt.color} />
-              : <Ionicons
-                  name={isDone ? 'checkmark-circle' : isError ? 'alert-circle' : 'time-outline'}
-                  size={16}
-                  color={isDone ? G.success : isError ? G.danger : G.textSub}
+    <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 20 }}>
+        <SectionHeader icon="rocket-outline" title="Exporter le film" sub="Rendu final avec toutes les métadonnées" />
+ 
+  
+        {/* Format selector */}
+        <Text style={se.sectionHead}>FORMAT D'EXPORT</Text>
+        {EXPORT_FORMATS.map(f => {
+          const on = selectedFormat === f.id;
+          return (
+            <TouchableOpacity key={f.id} onPress={() => setSelectedFormat(f.id)} activeOpacity={0.85}>
+              <BlurView intensity={10} tint="dark" style={[se.fmtCard, on && { borderColor: f.color }]}>
+                <LinearGradient
+                  colors={on ? [`${f.color}1A`, `${f.color}06`] : ['transparent', 'transparent']}
+                  style={StyleSheet.absoluteFillObject as any}
                 />
-            }
-            <Text style={[se.progressStep, isDone && { color: G.success }, isError && { color: G.danger }]}>
-              {exportStep}
-            </Text>
-          </View>
-          {savedToLib && (
-            <View style={se.libBadge}>
-              <Ionicons name="images-outline" size={11} color={G.success} />
-              <Text style={se.libBadgeText}>Enregistré · Album « UNIVERSE Studio »</Text>
+                <View style={[se.fmtIcon, { backgroundColor: `${f.color}15`, borderColor: `${f.color}30` }]}>
+                  <Ionicons name={f.icon as any} size={20} color={f.color} />
+                </View>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Text style={se.fmtLabel}>{f.label}</Text>
+                    {f.badge && <Badge label={f.badge} color={f.color} />}
+                  </View>
+                  <Text style={se.fmtMeta}>{f.codec} · {f.res} · {f.bitrate}</Text>
+                  <Text style={[se.fmtMeta, { color: `${f.color}BB` }]}>{f.sizeMb} · .{f.ext}</Text>
+                </View>
+                <View style={[se.fmtRadio, on && { borderColor: f.color }]}>
+                  {on && <View style={[se.fmtRadioDot, { backgroundColor: f.color }]} />}
+                </View>
+              </BlurView>
+            </TouchableOpacity>
+          );
+        })}
+  
+        {/* Export options */}
+        <Text style={se.sectionHead}>OPTIONS D'EXPORT</Text>
+        <BlurView intensity={10} tint="dark" style={se.optionsCard}>
+          {[
+            { label: 'Intégrer les sous-titres (.SRT)', sub: 'Fichier SRT inclus dans l\'archive', val: embedSrt, set: setEmbedSrt, color: G.cyan },
+            { label: 'Métadonnées XMP', sub: 'Tags Adobe/Apple dans les headers du fichier', val: embedXmp, set: setEmbedXmp, color: G.primary },
+            { label: 'Watermark UNIVERSE', sub: 'Logo en coin inférieur droit (désactivé = propre)', val: watermark, set: setWatermark, color: G.textSub },
+          ].map(({ label, sub, val, set, color }) => (
+            <View key={label} style={se.optRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={se.optLabel}>{label}</Text>
+                <Text style={se.optSub}>{sub}</Text>
+              </View>
+              <Switch
+                value={val} onValueChange={set}
+                trackColor={{ false: 'rgba(255,255,255,0.1)', true: `${color}55` }}
+                thumbColor={val ? color : 'rgba(255,255,255,0.4)'}
+                ios_backgroundColor="rgba(255,255,255,0.1)"
+              />
             </View>
-          )}
+          ))}
         </BlurView>
-      )}
-
-      {/* CTA */}
-      <View style={{ gap: 10, marginTop: 8 }}>
-        <CTAButton
-          label={exporting ? `Rendu en cours… ${Math.round(exportProgress * 100)}%` :
-                 isDone    ? 'Partager à nouveau' :
-                 `Exporter`}
-          onPress={onExport}
-          variant="gold"
-          loading={exporting}
-          icon={isDone ? 'share-outline' : 'rocket-outline'}
-        />
+  
+        {/* Output files list */}
+        {exportedFiles.length > 0 && (
+          <>
+            <Text style={se.sectionHead}>FICHIERS GÉNÉRÉS</Text>
+            {exportedFiles.map(f => (
+              <BlurView key={f.name} intensity={10} tint="dark" style={se.fileCard}>
+                <View style={[se.fileIcon, { backgroundColor: `${f.color}15`, borderColor: `${f.color}30` }]}>
+                  <Ionicons name={f.icon as any} size={16} color={f.color} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={se.fileName} numberOfLines={1}>{f.name}</Text>
+                  <Text style={se.fileMeta}>{f.type} · {formatBytes(f.bytes)}</Text>
+                </View>
+                <Badge label="OK" color={G.success} />
+              </BlurView>
+            ))}
+          </>
+        )}
+  
+        {/* Progress */}
+        {(exporting || exportStep !== '') && (
+          <BlurView intensity={12} tint="dark" style={se.progressWrap}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={se.progressTitle}>Rendu en cours</Text>
+              <Text style={[se.progressPct, isDone && { color: G.success }, isError && { color: G.danger }]}>
+                {Math.round(exportProgress * 100)}%
+              </Text>
+            </View>
+            <View style={se.progressTrack}>
+              <Animated.View style={[se.progressBar, { width: barWidth }]}>
+                <LinearGradient
+                  colors={isDone ? [G.success, '#0FA060'] : isError ? ['#8B0000', G.danger] : [G.accent, G.primary, G.cyan]}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  style={StyleSheet.absoluteFillObject as any}
+                />
+              </Animated.View>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              {exporting && !isDone && !isError
+                ? <ActivityIndicator size="small" color={fmt.color} />
+                : <Ionicons
+                    name={isDone ? 'checkmark-circle' : isError ? 'alert-circle' : 'time-outline'}
+                    size={16}
+                    color={isDone ? G.success : isError ? G.danger : G.textSub}
+                  />
+              }
+              <Text style={[se.progressStep, isDone && { color: G.success }, isError && { color: G.danger }]}>
+                {exportStep}
+              </Text>
+            </View>
+            {savedToLib && (
+              <View style={se.libBadge}>
+                <Ionicons name="images-outline" size={11} color={G.success} />
+                <Text style={se.libBadgeText}>Enregistré · Album « UNIVERSE Studio »</Text>
+              </View>
+            )}
+          </BlurView>
+        )}
+  
+        {/* CTA */}
+        <View style={{ gap: 10, marginTop: 8, marginBottom: 20 }}>
+          <CTAButton
+            label={exporting ? `Rendu en cours… ${Math.round(exportProgress * 100)}%` :
+                   isDone    ? 'Partager à nouveau' :
+                   'Exporter'}
+            onPress={onExport}
+            variant="gold"
+            loading={exporting}
+            icon={isDone ? 'share-outline' : 'rocket-outline'}
+          />
+        </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -2174,50 +2164,60 @@ const handleExport = useCallback(async () => {
   embedSrt, embedXmp, watermark,
 ]);
 
-  function goPrev(): void {
-    if (step > 0) {
-      setStep((prevStep) => (prevStep - 1) as WizardStep);
-    } else {
-      router.back();
-    }
+const goPrev = useCallback(() => {
+  if (step > 0) {
+    setStep((prevStep) => (prevStep - 1) as WizardStep);
+  } else {
+    router.back();
   }
-  function goNext(): void {
-    if (step < 4) {
-      setStep((prevStep) => (prevStep + 1) as WizardStep);
-    }
+}, [step, router]);
+
+const goNext = useCallback(() => {
+  if (step < 4) {
+    setStep((prevStep) => (prevStep + 1) as WizardStep);
   }
-  const canGoNext = step === 0 ? !!videoUri : step === 1 ? !!title : true;
+}, [step]);
 
-  return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
-      <GalaxyBackground />
-      <ScanlineOverlay />
+const canGoNext = useMemo(() => {
+  if (step === 0) return !!videoUri;
+  if (step === 1) return !!title;
+  return true;
+}, [step, videoUri, title]);
 
-      <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={0}
-        >
-          {/* ── TOP BAR ── */}
-          <View style={styles.topBar}>
-            <TouchableOpacity onPress={goPrev} style={styles.topBarBack} activeOpacity={0.7}>
-              <Ionicons name={step === 0 ? 'close' : 'chevron-back'} size={22} color="#fff" />
-            </TouchableOpacity>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={styles.topBarTitle}>{mode === 'video' ? 'Studio Cinéma' : 'Critique'}</Text>
-              {mode === 'video' && videoUri && (
-                <Text style={styles.topBarSub} numberOfLines={1}>
-                  {title || videoFileName || 'Sans titre'}
-                </Text>
-              )}
-            </View>
-            <View style={{ width: 38 }} />
+return (
+  <View style={styles.root}>
+    <StatusBar style="light" />
+    <GalaxyBackground />
+    <ScanlineOverlay />
+
+    <SafeAreaView style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        {/* ── TOP BAR ── */}
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={goPrev} style={styles.topBarBack} activeOpacity={0.7}>
+            <Ionicons name={step === 0 ? 'close' : 'chevron-back'} size={22} color="#fff" />
+          </TouchableOpacity>
+          
+          <View style={{ alignItems: 'center', flex: 1 }}>
+            <Text style={styles.topBarTitle}>
+              {mode === 'video' ? 'Studio Cinéma' : 'Critique'}
+            </Text>
+            {mode === 'video' && videoUri && (
+              <Text style={styles.topBarSub} numberOfLines={1}>
+                {title || videoFileName || 'Sans titre'}
+              </Text>
+            )}
           </View>
+          
+          <View style={{ width: 38 }} />
+        </View>
 
-          {/* ── MODE TOGGLE ── */}
-          <View style={styles.modeWrap}>
+        {/* ── MODE TOGGLE ── */}
+        <View style={styles.modeWrap}>
             <View style={styles.modeTrack}>
               <Animated.View style={[styles.modeThumb, { transform: [{ translateX: switchTranslate }] }]}>
                 <LinearGradient colors={['#5A0FA0', '#C060FF']} style={StyleSheet.absoluteFillObject as any}
