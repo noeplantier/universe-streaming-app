@@ -1,3 +1,6 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// app/(tabs)/create.tsx  —  Studio Cinéma · orchestrateur principal
+// ─────────────────────────────────────────────────────────────────────────────
 
 import React, {
   useState, useRef, useCallback, useMemo, memo,
@@ -16,15 +19,15 @@ import * as ImagePicker   from 'expo-image-picker';
 import * as FileSystem    from 'expo-file-system';
 import * as Haptics       from 'expo-haptics';
 
-// Studio components
-import { GalaxyBackground }  from '@/components/studio/GalaxyBackground';
-import { ScanlineOverlay, StepBar, CTAButton }  from '@/components/studio/UIKit';
-import { StepImport }        from '@/components/studio/StepImport';
-import  StepMeta           from '@/components/studio/StepMeta';
-import  StepSubtitles      from '@/components/studio/StepSubtitles';
-import { StepThumbnail } from '@/components/studio/StepThumbnail';
-import { StepExport, runExport } from '@/components/studio/StepExport';
-import  CritiquePanel      from '@/components/studio/CritiquePanel';
+// ── Composants Studio ────────────────────────────────────────────────────────
+import { GalaxyBackground }                    from '@/components/studio/GalaxyBackground';
+import { ScanlineOverlay, StepBar, CTAButton } from '@/components/studio/UIKit';
+import { StepImport }                          from '@/components/studio/StepImport';
+import   StepMeta                              from '@/components/studio/StepMeta';
+import   StepSubtitles                         from '@/components/studio/StepSubtitles';
+import { StepThumbnail }                       from '@/components/studio/StepThumbnail';
+import { StepExport, runExport }               from '@/components/studio/StepExport';
+import   CritiquePanel                         from '@/components/studio/CritiquePanel';
 
 import {
   G, EXPORT_FORMATS, DEFAULT_EDIT_PARAMS,
@@ -34,64 +37,64 @@ import {
 } from '../../components/studio/constants';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Main Screen
+// Écran principal
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function CreateScreen() {
   const router = useRouter();
 
-  // ── Mode / Step ─────────────────────────────────────────────────
+  // ── Mode / Étape ─────────────────────────────────────────────────────────
   const [mode, setMode] = useState<AppMode>('video');
   const [step, setStep] = useState<WizardStep>(0);
 
-  // ── Video ───────────────────────────────────────────────────────
-  const [videoUri,       setVideoUri]       = useState<string | null>(null);
-  const [processedUri,   setProcessedUri]   = useState<string | null>(null);  // after FFmpeg
-  const [videoDuration,  setVideoDuration]  = useState(120);
-  const [videoFileSize,  setVideoFileSize]  = useState(0);
-  const [videoFileName,  setVideoFileName]  = useState('');
-  const [editParams,     setEditParams]     = useState<VideoEditParams>(DEFAULT_EDIT_PARAMS);
+  // ── Vidéo ─────────────────────────────────────────────────────────────────
+  const [videoUri,      setVideoUri]      = useState<string | null>(null);
+  const [processedUri,  setProcessedUri]  = useState<string | null>(null);  // après FFmpeg pré-traitement
+  const [videoDuration, setVideoDuration] = useState(120);
+  const [videoFileSize, setVideoFileSize] = useState(0);
+  const [videoFileName, setVideoFileName] = useState('');
+  const [editParams,    setEditParams]    = useState<VideoEditParams>(DEFAULT_EDIT_PARAMS);
 
-  // ── Metadata ────────────────────────────────────────────────────
-  const [title,        setTitle]        = useState('');
-  const [synopsis,     setSynopsis]     = useState('');
-  const [director,     setDirector]     = useState('');
-  const [year,         setYear]         = useState(String(new Date().getFullYear()));
-  const [genre,        setGenre]        = useState('');
-  const [dirNote,      setDirNote]      = useState('');
-  const [language,     setLanguage]     = useState('Français');
-  const [dop,          setDop]          = useState('');
-  const [composer,     setComposer]     = useState('');
-  const [production,   setProduction]   = useState('');
-  const [cast,         setCast]         = useState<CastMember[]>([]);
-  const [festival,     setFestival]     = useState('');
-  const [colorSpace,   setColorSpace]   = useState('Rec.709');
-  const [aspectRatio,  setAspectRatio]  = useState('16:9');
-  const [isan,         setIsan]         = useState('');
-  const [runtime,      setRuntime]      = useState('');
+  // ── Métadonnées ───────────────────────────────────────────────────────────
+  const [title,       setTitle]       = useState('');
+  const [synopsis,    setSynopsis]    = useState('');
+  const [director,    setDirector]    = useState('');
+  const [year,        setYear]        = useState(String(new Date().getFullYear()));
+  const [genre,       setGenre]       = useState('');
+  const [dirNote,     setDirNote]     = useState('');
+  const [language,    setLanguage]    = useState('Français');
+  const [dop,         setDop]         = useState('');
+  const [composer,    setComposer]    = useState('');
+  const [production,  setProduction]  = useState('');
+  const [cast,        setCast]        = useState<CastMember[]>([]);
+  const [festival,    setFestival]    = useState('');
+  const [colorSpace,  setColorSpace]  = useState('Rec.709');
+  const [aspectRatio, setAspectRatio] = useState('16:9');
+  const [isan,        setIsan]        = useState('');
+  const [runtime,     setRuntime]     = useState('');
 
-  // ── Subtitles ───────────────────────────────────────────────────
-  const [subtitles,  setSubtitles]  = useState<SubtitleTrack[]>([]);
-  const [analyzing,  setAnalyzing]  = useState(false);
+  // ── Sous-titres ───────────────────────────────────────────────────────────
+  const [subtitles, setSubtitles] = useState<SubtitleTrack[]>([]);
+  const [analyzing, setAnalyzing] = useState(false);
 
-  // ── Thumbnail ───────────────────────────────────────────────────
+  // ── Thumbnail ─────────────────────────────────────────────────────────────
   const [frames,        setFrames]        = useState<ThumbnailFrame[]>([]);
   const [selectedFrame, setSelectedFrame] = useState('');
   const [customThumb,   setCustomThumb]   = useState<string | null>(null);
   const [thumbRatio,    setThumbRatio]    = useState('16:9');
 
-  // ── Export state ────────────────────────────────────────────────
-  const [selectedFormat, setSelectedFormat] = useState('1080_h264');
-  const [exporting,      setExporting]      = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
-  const [exportStep,     setExportStep]     = useState('');
-  const [exportedFiles,  setExportedFiles]  = useState<ExportedFile[]>([]);
-  const [savedToLib,     setSavedToLib]     = useState(false);
-  const [embedSrt,       setEmbedSrt]       = useState(true);
-  const [embedXmp,       setEmbedXmp]       = useState(true);
-  const [watermark,      setWatermark]      = useState(false);
+  // ── État export ───────────────────────────────────────────────────────────
+  const [selectedFormat,  setSelectedFormat]  = useState('1080_h264');
+  const [exporting,       setExporting]       = useState(false);
+  const [exportProgress,  setExportProgress]  = useState(0);
+  const [exportStep,      setExportStep]      = useState('');
+  const [exportedFiles,   setExportedFiles]   = useState<ExportedFile[]>([]);
+  const [savedToLib,      setSavedToLib]      = useState(false);
+  const [embedSrt,        setEmbedSrt]        = useState(true);
+  const [embedXmp,        setEmbedXmp]        = useState(true);
+  const [watermark,       setWatermark]       = useState(false);
 
-  // ── Critique ────────────────────────────────────────────────────
+  // ── Critique ─────────────────────────────────────────────────────────────
   const [filmTitle,      setFilmTitle]      = useState('');
   const [critiqueText,   setCritiqueText]   = useState('');
   const [ratings,        setRatings]        = useState<Record<string, number>>({});
@@ -99,13 +102,21 @@ export default function CreateScreen() {
   const [recommendation, setRecommendation] = useState('');
   const [spoiler,        setSpoiler]        = useState(false);
 
-  // ── Mode switch animation ────────────────────────────────────────
-  const modeAnim    = useRef(new Animated.Value(0)).current;
-  const THUMB_W     = useMemo(() => (require('react-native').Dimensions.get('window').width - 52) / 2, []);
+  // ── Animation mode ────────────────────────────────────────────────────────
+  const modeAnim = useRef(new Animated.Value(0)).current;
+  const THUMB_W  = useMemo(
+    () => (require('react-native').Dimensions.get('window').width - 52) / 2,
+    [],
+  );
 
   const switchMode = useCallback((m: AppMode) => {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.spring(modeAnim, { toValue: m === 'video' ? 0 : 1, useNativeDriver: true, tension: 200, friction: 22 }).start();
+    Animated.spring(modeAnim, {
+      toValue:         m === 'video' ? 0 : 1,
+      useNativeDriver: true,
+      tension:         200,
+      friction:        22,
+    }).start();
     setMode(m);
     setStep(0);
   }, [modeAnim]);
@@ -114,35 +125,48 @@ export default function CreateScreen() {
     inputRange: [0, 1], outputRange: [0, THUMB_W],
   });
 
-  // ── Video pick ────────────────────────────────────────────────
+  // ── Sélection vidéo ───────────────────────────────────────────────────────
   const pickVideo = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission requise', 'Autorisez l\'accès à la galerie dans les réglages.');
+      Alert.alert('Permission requise', "Autorisez l'accès à la galerie dans les réglages.");
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      quality: 1, videoMaxDuration: 3600, allowsEditing: false,
+      mediaTypes:       ImagePicker.MediaTypeOptions.Videos,
+      quality:          1,
+      videoMaxDuration: 3600,
+      allowsEditing:    false,
     });
     if (res.canceled || !res.assets[0]) return;
+
     const asset = res.assets[0];
     setVideoUri(asset.uri);
     setProcessedUri(null);
+
     const dur = Math.floor(asset.duration ?? 120);
     setVideoDuration(dur);
     setVideoFileName(asset.fileName ?? asset.uri.split('/').pop() ?? '');
-    setEditParams({ ...DEFAULT_EDIT_PARAMS, trimEnd: dur });
+    setEditParams({ ...DEFAULT_EDIT_PARAMS, trimStart: 0, trimEnd: dur });
 
+    // Réinitialiser l'état export précédent
+    setExportedFiles([]);
+    setSavedToLib(false);
+    setExportProgress(0);
+    setExportStep('');
+
+    // Taille du fichier
     try {
       const info = await FileSystem.getInfoAsync(asset.uri);
       setVideoFileSize((info as any).size ?? 0);
     } catch { setVideoFileSize(0); }
 
+    // Thumbnails
     const newFrames = generateFakeThumbnails(dur);
     setFrames(newFrames);
     if (newFrames.length > 0) setSelectedFrame(newFrames[0].id);
 
+    // Runtime auto
     if (!runtime) {
       const m = Math.floor(dur / 60);
       const s = dur % 60;
@@ -152,8 +176,10 @@ export default function CreateScreen() {
 
   const pickCustomThumb = useCallback(async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 1, allowsEditing: true, aspect: [16, 9],
+      mediaTypes:    ImagePicker.MediaTypeOptions.Images,
+      quality:       1,
+      allowsEditing: true,
+      aspect:        [16, 9],
     });
     if (!res.canceled) setCustomThumb(res.assets[0].uri);
   }, []);
@@ -165,47 +191,72 @@ export default function CreateScreen() {
     setAnalyzing(false);
   }, [videoDuration]);
 
-  // ── Export ────────────────────────────────────────────────────
+  // ── Objet format sélectionné ──────────────────────────────────────────────
+  const selectedFormatObj = useMemo(
+    () => EXPORT_FORMATS.find(f => f.id === selectedFormat) ?? EXPORT_FORMATS[2],
+    [selectedFormat],
+  );
+
+  // ── Pipeline d'export ─────────────────────────────────────────────────────
+  /**
+   * handleExport orchestre l'état local (progress, files, …)
+   * et délègue le vrai travail à runExport (FFmpegKit / MediaRecorder).
+   *
+   * L'URI utilisée est :
+   *   1. processedUri  → si StepImport a déjà fait un pré-traitement FFmpeg
+   *   2. videoUri      → fichier source brut sinon
+   *
+   * Tous les paramètres de montage (trim, metadata, subtitles…) sont transmis
+   * à runExport qui les applique lors de l'encodage final.
+   */
   const handleExport = useCallback(async () => {
     if (exporting || !videoUri) return;
-    const effectiveUri = processedUri ?? videoUri;  // use FFmpeg output if available
-    const fmt = EXPORT_FORMATS.find(f => f.id === selectedFormat) ?? EXPORT_FORMATS[2];
 
+    // URI source : préférer le pré-traitement FFmpeg de StepImport
+    const effectiveUri = processedUri ?? videoUri;
+    const fmt          = selectedFormatObj;
+
+    // Reset UI
     setExporting(true);
     setExportProgress(0);
-    setExportStep('');
+    setExportStep('Initialisation…');
     setExportedFiles([]);
     setSavedToLib(false);
 
     const result = await runExport({
       videoUri:       effectiveUri,
-      editParams,
+      editParams,                          // ← trim start/end + tout le reste
       selectedFormat: fmt,
-      meta: { title, director, year, genre, synopsis, dirNote, runtime, language, dop, composer, production, cast, festival, colorSpace, aspectRatio, isan },
-      subtitles,
-      embedSrt,
-      embedXmp,
-      watermark,
+      meta: {                              // ← toutes les métadonnées saisies
+        title, director, year, genre, synopsis,
+        dirNote, runtime, language, dop, composer,
+        production, cast, festival, colorSpace, aspectRatio, isan,
+      },
+      subtitles,                           // ← pistes de sous-titres
+      embedSrt,                            // ← brûler les sous-titres
+      embedXmp,                            // ← intégrer les métadonnées XMP
+      watermark,                           // ← filigrane
       onProgress: (pct, msg) => {
-        setExportProgress(typeof pct === 'function' ? (prev => pct(prev)) as any : pct);
+        setExportProgress(typeof pct === 'function' ? (pct as any)(exportProgress) : pct);
         setExportStep(msg);
       },
-      onFile:       f => setExportedFiles(prev => [...prev, f]),
-      onSavedToLib: v => setSavedToLib(v),
+      onFile:       f  => setExportedFiles(prev => [...prev, f]),
+      onSavedToLib: v  => setSavedToLib(v),
     });
 
     if (!result.success && result.error) {
-      Alert.alert('Erreur d\'export', result.error);
+      Alert.alert("Erreur d'export", result.error);
     }
+
     setExporting(false);
   }, [
-    exporting, videoUri, processedUri, selectedFormat, editParams,
+    exporting, videoUri, processedUri, selectedFormatObj, editParams,
     title, director, year, genre, synopsis, dirNote, runtime, language,
     dop, composer, production, cast, festival, colorSpace, aspectRatio, isan,
-    subtitles, embedSrt, embedXmp, watermark,
+    subtitles, embedSrt, embedXmp, watermark, exportProgress,
   ]);
 
-  // ── Critique publish ──────────────────────────────────────────
+  // ── Critique ──────────────────────────────────────────────────────────────
   const handlePublish = useCallback(async () => {
     setPublishing(true);
     await new Promise(r => setTimeout(r, 1800));
@@ -213,7 +264,7 @@ export default function CreateScreen() {
     setPublishing(false);
   }, [filmTitle]);
 
-  // ── Navigation ────────────────────────────────────────────────
+  // ── Navigation ────────────────────────────────────────────────────────────
   const goPrev = useCallback(() => {
     if (step > 0) {
       if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -236,11 +287,9 @@ export default function CreateScreen() {
     return true;
   }, [step, videoUri, title]);
 
-  // ── Export format object ──────────────────────────────────────
-  const selectedFormatObj = useMemo(
-    () => EXPORT_FORMATS.find(f => f.id === selectedFormat) ?? EXPORT_FORMATS[2],
-    [selectedFormat],
-  );
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <View style={styles.root}>
@@ -254,11 +303,12 @@ export default function CreateScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
 
-          {/* ── Top bar ── */}
+          {/* ── Barre supérieure ─────────────────────────────────────────── */}
           <View style={styles.topBar}>
             <TouchableOpacity onPress={goPrev} style={styles.topBarBack} activeOpacity={0.7}>
               <Ionicons name={step === 0 ? 'close' : 'chevron-back'} size={22} color="#fff" />
             </TouchableOpacity>
+
             <View style={{ alignItems: 'center', flex: 1 }}>
               <Text style={styles.topBarTitle}>
                 {mode === 'video' ? 'Studio Cinéma' : 'Critique'}
@@ -269,28 +319,49 @@ export default function CreateScreen() {
                 </Text>
               )}
             </View>
-            <View style={{ width: 38 }} />
+
+            {/* Indicateur "vidéo traitée" */}
+            {processedUri ? (
+              <View style={styles.topBarBadge}>
+                <Ionicons name="checkmark-circle" size={12} color="#4ade80" />
+                <Text style={styles.topBarBadgeTxt}>FFmpeg</Text>
+              </View>
+            ) : (
+              <View style={{ width: 38 }} />
+            )}
           </View>
 
-          {/* ── Mode toggle ── */}
+          {/* ── Toggle mode ──────────────────────────────────────────────── */}
           <View style={styles.modeWrap}>
             <View style={styles.modeTrack}>
-              <Animated.View style={[styles.modeThumb, { width: THUMB_W, transform: [{ translateX: switchTranslate }] }]}>
+              <Animated.View
+                style={[
+                  styles.modeThumb,
+                  { width: THUMB_W, transform: [{ translateX: switchTranslate }] },
+                ]}
+              >
                 <LinearGradient
                   colors={['#5A0FA0', '#C060FF']}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
                   style={StyleSheet.absoluteFill}
                 />
               </Animated.View>
+
               {(['video', 'critique'] as AppMode[]).map(m => (
-                <TouchableOpacity key={m} style={styles.modeBtn} onPress={() => switchMode(m)} activeOpacity={0.85}>
+                <TouchableOpacity
+                  key={m}
+                  style={styles.modeBtn}
+                  onPress={() => switchMode(m)}
+                  activeOpacity={0.85}
+                >
                   <Ionicons
                     name={m === 'video' ? 'videocam' : 'star'}
                     size={15}
                     color={mode === m ? '#fff' : 'rgba(255,255,255,0.3)'}
                     style={{ marginRight: 6 }}
                   />
-                  <Text style={[styles.modeBtnTxt, mode === m && { color: '#fff', fontWeight: '800' }]}>
+                  <Text style={[styles.modeBtnTxt, mode === m && styles.modeBtnActive]}>
                     {m === 'video' ? 'Court Métrage' : 'Critique'}
                   </Text>
                 </TouchableOpacity>
@@ -298,10 +369,10 @@ export default function CreateScreen() {
             </View>
           </View>
 
-          {/* ── Step bar ── */}
+          {/* ── StepBar ─────────────────────────────────────────────────── */}
           {mode === 'video' && <StepBar step={step} mode={mode} />}
 
-          {/* ── Content ── */}
+          {/* ── Contenu ─────────────────────────────────────────────────── */}
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={styles.scrollContent}
@@ -315,39 +386,47 @@ export default function CreateScreen() {
                     videoUri={videoUri}
                     onPick={pickVideo}
                     onRemove={() => {
-                      setVideoUri(null); setProcessedUri(null);
-                      setVideoFileName(''); setVideoFileSize(0);
+                      setVideoUri(null);
+                      setProcessedUri(null);
+                      setVideoFileName('');
+                      setVideoFileSize(0);
                       setEditParams(DEFAULT_EDIT_PARAMS);
+                      setExportedFiles([]);
+                      setSavedToLib(false);
+                      setExportProgress(0);
+                      setExportStep('');
                     }}
                     videoDuration={videoDuration}
                     videoFileSize={videoFileSize}
                     videoFileName={videoFileName}
                     editParams={editParams}
                     onEditChange={setEditParams}
-                    onProcessed={uri => { setProcessedUri(uri); }}
+                    onProcessed={uri => setProcessedUri(uri)}
                     selectedFormat={selectedFormatObj}
                   />
                 )}
+
                 {step === 1 && (
                   <StepMeta
-                    title={title} setTitle={setTitle}
-                    synopsis={synopsis} setSynopsis={setSynopsis}
-                    director={director} setDirector={setDirector}
-                    year={year} setYear={setYear}
-                    genre={genre} setGenre={setGenre}
-                    dirNote={dirNote} setDirNote={setDirNote}
-                    language={language} setLanguage={setLanguage}
-                    dop={dop} setDop={setDop}
-                    composer={composer} setComposer={setComposer}
-                    production={production} setProduction={setProduction}
-                    cast={cast} setCast={setCast}
-                    festival={festival} setFestival={setFestival}
-                    colorSpace={colorSpace} setColorSpace={setColorSpace}
+                    title={title}             setTitle={setTitle}
+                    synopsis={synopsis}       setSynopsis={setSynopsis}
+                    director={director}       setDirector={setDirector}
+                    year={year}               setYear={setYear}
+                    genre={genre}             setGenre={setGenre}
+                    dirNote={dirNote}         setDirNote={setDirNote}
+                    language={language}       setLanguage={setLanguage}
+                    dop={dop}                 setDop={setDop}
+                    composer={composer}       setComposer={setComposer}
+                    production={production}   setProduction={setProduction}
+                    cast={cast}               setCast={setCast}
+                    festival={festival}       setFestival={setFestival}
+                    colorSpace={colorSpace}   setColorSpace={setColorSpace}
                     aspectRatio={aspectRatio} setAspectRatio={setAspectRatio}
-                    isan={isan} setIsan={setIsan}
-                    runtime={runtime} setRuntime={setRuntime}
+                    isan={isan}               setIsan={setIsan}
+                    runtime={runtime}         setRuntime={setRuntime}
                   />
                 )}
+
                 {step === 2 && (
                   <StepSubtitles
                     subtitles={subtitles}
@@ -357,6 +436,7 @@ export default function CreateScreen() {
                     videoDuration={videoDuration}
                   />
                 )}
+
                 {step === 3 && (
                   <StepThumbnail
                     frames={frames}
@@ -368,39 +448,49 @@ export default function CreateScreen() {
                     setThumbRatio={setThumbRatio}
                   />
                 )}
+
                 {step === 4 && (
                   <StepExport
+                    // Format
                     selectedFormat={selectedFormat}
                     setSelectedFormat={setSelectedFormat}
+                    // État export
                     exporting={exporting}
                     exportProgress={exportProgress}
                     exportStep={exportStep}
                     exportedFiles={exportedFiles}
                     savedToLib={savedToLib}
-                    embedSrt={embedSrt} setEmbedSrt={setEmbedSrt}
-                    embedXmp={embedXmp} setEmbedXmp={setEmbedXmp}
+                    // Options
+                    embedSrt={embedSrt}   setEmbedSrt={setEmbedSrt}
+                    embedXmp={embedXmp}   setEmbedXmp={setEmbedXmp}
                     watermark={watermark} setWatermark={setWatermark}
-                    subtitles={subtitles}
+                    // Données de montage passées à runExport
                     videoUri={processedUri ?? videoUri}
                     editParams={editParams}
-                    meta={{ title, director, year, genre, synopsis, dirNote, runtime, language, dop, composer, production, cast, festival, colorSpace, aspectRatio, isan }}
+                    subtitles={subtitles}
+                    meta={{
+                      title, director, year, genre, synopsis,
+                      dirNote, runtime, language, dop, composer,
+                      production, cast, festival, colorSpace, aspectRatio, isan,
+                    }}
+                    // Déclencheur
                     onExport={handleExport}
                   />
                 )}
               </>
             ) : (
               <CritiquePanel
-                filmTitle={filmTitle} setFilmTitle={setFilmTitle}
-                critiqueText={critiqueText} setCritiqueText={setCritiqueText}
-                ratings={ratings} setRatings={setRatings}
-                publishing={publishing} onPublish={handlePublish}
+                filmTitle={filmTitle}         setFilmTitle={setFilmTitle}
+                critiqueText={critiqueText}   setCritiqueText={setCritiqueText}
+                ratings={ratings}             setRatings={setRatings}
+                publishing={publishing}       onPublish={handlePublish}
                 recommendation={recommendation} setRecommendation={setRecommendation}
-                spoiler={spoiler} setSpoiler={setSpoiler}
+                spoiler={spoiler}             setSpoiler={setSpoiler}
               />
             )}
           </ScrollView>
 
-          {/* ── Footer navigation ── */}
+          {/* ── Footer navigation ─────────────────────────────────────────── */}
           {mode === 'video' && step < 4 && (
             <BlurView intensity={0} tint="dark" style={styles.footer}>
               <View style={styles.footerInner}>
@@ -424,9 +514,12 @@ export default function CreateScreen() {
                   />
                 </View>
               </View>
+
               {!canGoNext && (
                 <Text style={styles.footerHint}>
-                  {step === 0 ? 'Importez une vidéo pour continuer' : 'Renseignez le titre du film'}
+                  {step === 0
+                    ? 'Importez une vidéo pour continuer'
+                    : 'Renseignez le titre du film'}
                 </Text>
               )}
             </BlurView>
@@ -438,21 +531,69 @@ export default function CreateScreen() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  root:          { flex: 1, backgroundColor: G.bg0 },
-  topBar:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 },
-  topBarBack:    { width: 38, height: 38, borderRadius: 19, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, alignItems: 'center', justifyContent: 'center' },
-  topBarTitle:   { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
-  topBarSub:     { color: G.textSub, fontSize: 11, marginTop: 1 },
-  modeWrap:      { paddingHorizontal: 20, marginTop: 8, marginBottom: 2 },
-  modeTrack:     { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14, padding: 4, borderWidth: 1, borderColor: G.glassBorder, position: 'relative', overflow: 'hidden' },
-  modeThumb:     { position: 'absolute', top: 4, bottom: 4, left: 4, borderRadius: 11, overflow: 'hidden' },
+  root: { flex: 1, backgroundColor: G.bg0 },
+
+  topBar: {
+    flexDirection:    'row',
+    alignItems:       'center',
+    justifyContent:   'space-between',
+    paddingHorizontal: 16,
+    paddingTop:        6,
+    paddingBottom:     4,
+  },
+  topBarBack: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: G.glass,
+    borderWidth: 1, borderColor: G.glassBorder,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  topBarTitle: { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: -0.3 },
+  topBarSub:   { color: G.textSub, fontSize: 11, marginTop: 1 },
+  topBarBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(74,222,128,0.12)',
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 10, borderWidth: 1, borderColor: 'rgba(74,222,128,0.25)',
+  },
+  topBarBadgeTxt: { color: '#4ade80', fontSize: 10, fontWeight: '700' },
+
+  modeWrap:  { paddingHorizontal: 20, marginTop: 8, marginBottom: 2 },
+  modeTrack: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14, padding: 4,
+    borderWidth: 1, borderColor: G.glassBorder,
+    position: 'relative', overflow: 'hidden',
+  },
+  modeThumb: {
+    position: 'absolute', top: 4, bottom: 4, left: 4,
+    borderRadius: 11, overflow: 'hidden',
+  },
   modeBtn:       { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 11 },
   modeBtnTxt:    { color: 'rgba(255,255,255,0.3)', fontSize: 13, fontWeight: '600' },
+  modeBtnActive: { color: '#fff', fontWeight: '800' },
+
   scrollContent: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 120 },
-  footer:        { borderTopWidth: 1, borderTopColor: G.glassBorder, paddingTop: 12, paddingHorizontal: 20, paddingBottom: Platform.OS === 'ios' ? 28 : 14, overflow: 'hidden' },
-  footerInner:   { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 80 },
-  footerBack:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 15 },
+
+  footer: {
+    borderTopWidth: 1, borderTopColor: G.glassBorder,
+    paddingTop: 12, paddingHorizontal: 20,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 14,
+    overflow: 'hidden',
+  },
+  footerInner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  footerBack: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 15,
+  },
   footerBackTxt: { color: 'rgba(255,255,255,0.45)', fontSize: 14, fontWeight: '600' },
-  footerHint:    { textAlign: 'center', color: 'rgba(255,255,255,0.22)', fontSize: 11, marginTop: 8, fontStyle: 'italic' },
+  footerHint: {
+    textAlign: 'center', color: 'rgba(255,255,255,0.22)',
+    fontSize: 11, marginTop: 8, fontStyle: 'italic',
+  },
 });

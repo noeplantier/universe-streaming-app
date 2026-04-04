@@ -4,6 +4,11 @@ import { Tabs, useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { LogBox } from 'react-native';
+
+LogBox.ignoreLogs([
+  'Expo AV has been deprecated and will be removed in SDK 54',
+]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🎨 COLORS & CONSTANTS (Pour matcher le thème)

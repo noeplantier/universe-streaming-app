@@ -1,15 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-//  DropdownMenu.tsx — Sidebar Universe (composant extrait)
-//  ─────────────────────────────────────────────────────────────────
-//  ✦ Slide-in animé depuis la gauche (spring physique)
-//  ✦ Overlay backdrop avec blur natif
-//  ✦ Haptic feedback sur chaque item
-//  ✦ Section profil utilisateur en tête
-//  ✦ Icônes + badges + indicateurs visuels
-//  ✦ Scroll intérieur si items nombreux
-//  ✦ Fermeture par swipe gauche (PanResponder)
-//  ✦ Entièrement mémoïsé — zéro re-render parasite
-// ═══════════════════════════════════════════════════════════════════
 
 import React, {
     memo, useEffect, useRef, useCallback, useMemo,
@@ -51,7 +39,6 @@ import React, {
     activeKey: MenuKey;
   }
   
-  // ─── Palette (en miroir de index.tsx) ────────────────────────────
   
   const P = {
     bg:      '#07000F',
@@ -60,7 +47,7 @@ import React, {
     primary: '#9240D6',
     primL:   '#C060FF',
     primGl:  'rgba(146,64,214,0.38)',
-    t1:      '#F0E8FF',
+    t1:      '#FFFFFF', 
     t2:      'rgba(240,232,255,0.62)',
     t3:      'rgba(240,232,255,0.36)',
     bord:    'rgba(146,64,214,0.30)',
@@ -95,7 +82,7 @@ import React, {
             key={i}
             name={i < count ? 'star' : 'star-outline'}
             size={12}
-            color={i < count ? P.gold : P.t3}
+            color={i < count ? P.gold : P?.t3 || '#888'}
           />
         ))}
       </View>
@@ -388,34 +375,34 @@ import React, {
     avatarWrap:     { position: 'relative' },
     profileAvatar:  { width: 56, height: 56, borderRadius: 28, borderWidth: 2.5, borderColor: P.primL },
     onlineDot:      { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#22C55E', borderWidth: 2, borderColor: 'rgba(8,0,18,0.97)' },
-    profileName:    { color: P.t1, fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
-    profileHandle:  { color: P.t3, fontSize: 12, marginTop: 1 },
+    profileName:    { color: P?.t2 || '#AAA', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
+    profileHandle:  { color: P?.t3 || '#888', fontSize: 12, marginTop: 1 },
   
     statsRow:     { flexDirection: 'row', backgroundColor: 'rgba(146,64,214,0.12)', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: P.bord },
     statBlock:    { flex: 1, alignItems: 'center', gap: 3 },
-    statVal:      { color: P.t1, fontSize: 17, fontWeight: '900' },
-    statLbl:      { color: P.t3, fontSize: 9, fontWeight: '600', textAlign: 'center', letterSpacing: 0.5 },
+    statVal:      { color: P?.t2 || '#AAA', fontSize: 17, fontWeight: '900' },
+    statLbl:      { color: P?.t3 || '#888', fontSize: 9, fontWeight: '600', textAlign: 'center', letterSpacing: 0.5 },
     statDivider:  { width: 1, backgroundColor: P.bord, marginVertical: 4 },
   
     sep:          { height: 1, backgroundColor: 'rgba(146,64,214,0.20)', marginHorizontal: 20, marginBottom: 8 },
-    sectionTitle: { color: P.t3, fontSize: 10, fontWeight: '800', letterSpacing: 2.5, paddingHorizontal: 20, marginBottom: 8 },
+    sectionTitle: { color: P?.t3 || '#888', fontSize: 10, fontWeight: '800', letterSpacing: 2.5, paddingHorizontal: 20, marginBottom: 8 },
   
     // Items
     item:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14, overflow: 'hidden' },
     itemActive: { backgroundColor: 'transparent' },
-    accentBar:  { position: 'absolute', left: 0, top: 4, bottom: 4, width: 3.5, backgroundColor: P.primL, borderRadius: 2 },
+    accentBar:  { position: 'absolute', left: 0, top: 4, bottom: 4, width: 3.5, backgroundColor: P?.primL || '#9240d6', borderRadius: 2 },
     icon:       { fontSize: 20, width: 30, textAlign: 'center' },
-    label:      { flex: 1, color: P.t2, fontSize: 15, fontWeight: '500' },
-    labelActive:{ color: P.t1, fontWeight: '800' },
+    label:      { flex: 1, color: P?.t2 || '#888', fontSize: 15, fontWeight: '500' },
+    labelActive:{ color: P?.t2 || '#fff', fontWeight: '800' },
     rightGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     hotDot:     { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
     hotTxt:     { fontSize: 11 },
-    badge:      { backgroundColor: 'rgba(146,64,214,0.35)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: P.bord },
+    badge:      { backgroundColor: 'rgba(146,64,214,0.35)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: P?.bord || '#333' },
     badgeNew:   { backgroundColor: 'rgba(34,197,94,0.22)', borderColor: 'rgba(34,197,94,0.45)' },
-    badgeTxt:   { color: P.t1, fontSize: 9, fontWeight: '800' },
+    badgeTxt:   { color: P?.t2 || '#fff', fontSize: 9, fontWeight: '800' },
   
-    // Footer
-    footer:      { paddingHorizontal: 20, paddingBottom: 8, paddingTop: 14, position: 'relative' },
-    footerBrand: { color: P.primL, fontSize: 13, fontWeight: '900', letterSpacing: 3 },
-    footerSub:   { color: P.t3, fontSize: 10, marginTop: 2 },
+   // Footer
+   footer:      { paddingHorizontal: 20, paddingBottom: 8, paddingTop: 14, position: 'relative' },
+   footerBrand: { color: P?.primL || '#9240d6', fontSize: 13, fontWeight: '900', letterSpacing: 3 },
+   footerSub:   { color: P?.primL || '#9240d6', fontSize: 10, marginTop: 2 },
   });
