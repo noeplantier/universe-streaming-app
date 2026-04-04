@@ -22,7 +22,7 @@ import { ScanlineOverlay, StepBar, CTAButton }  from '@/components/studio/UIKit'
 import { StepImport }        from '@/components/studio/StepImport';
 import  StepMeta           from '@/components/studio/StepMeta';
 import  StepSubtitles      from '@/components/studio/StepSubtitles';
-import  StepThumbnail      from '@/components/studio/StepThumbnail';
+import { StepThumbnail } from '@/components/studio/StepThumbnail';
 import { StepExport, runExport } from '@/components/studio/StepExport';
 import  CritiquePanel      from '@/components/studio/CritiquePanel';
 
