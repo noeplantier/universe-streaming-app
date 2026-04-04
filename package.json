@@ -9,14 +9,20 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@react-native-community/slider": "^5.2.0",
     "@react-navigation/native": "^7.2.0",
     "@react-navigation/stack": "^7.8.7",
+    "expo-gl": "55.0.11-canary-20260328-2049187",
     "expo-media-library": "^55.0.11-canary-20260328-2049187",
     "expo-sharing": "^55.0.15-canary-20260328-2049187",
     "expo-video": "^55.0.11",
+    "expo-video-thumbnails": "55.0.12-canary-20260328-2049187",
     "ffmpeg-kit-react-native": "^6.0.2",
+    "gl-react": "^5.2.0",
+    "gl-react-expo": "^5.2.1",
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "^4.24.0",
+    "react-native-slider": "^0.11.0",
     "supabase": "^2.84.8"
   },
   "devDependencies": {

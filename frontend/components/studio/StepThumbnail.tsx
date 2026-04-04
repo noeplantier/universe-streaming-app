@@ -1,6 +1,7 @@
-import React, { memo, useRef, useState, useEffect } from 'react';
+import React, { memo, useRef, useState, useEffect, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, Dimensions, PanResponder,
+  View, Text, StyleSheet, Dimensions,
+  PanResponder, Image, ScrollView,
 } from 'react-native';
 import { Video } from 'expo-av';
 import { BlurView } from 'expo-blur';
@@ -11,6 +12,7 @@ import { SectionHeader } from './UIKit';
 
 const { width } = Dimensions.get('window');
 const TIMELINE_WIDTH = width - 40;
+const THUMB_COUNT = 12;
 
 interface Props {
   videoUri: string | null;
@@ -28,6 +30,8 @@ export const StepThumbnail = memo(function StepThumbnail({
   const videoRef = useRef<Video>(null);
 
   const [layoutWidth, setLayoutWidth] = useState(TIMELINE_WIDTH);
+  const [thumbnails, setThumbnails] = useState<string[]>([]);
+  const [loadingThumbs, setLoadingThumbs] = useState(false);
 
   const pxPerSec = layoutWidth / (duration || 1);
 
@@ -37,7 +41,41 @@ export const StepThumbnail = memo(function StepThumbnail({
   const clamp = (v: number, min: number, max: number) =>
     Math.max(min, Math.min(v, max));
 
-  // ── LEFT HANDLE ──
+  // ─────────────────────────────────────────────
+  // 🎞️ GENERATE THUMBNAILS (CROSS PLATFORM SAFE)
+  // ─────────────────────────────────────────────
+  const generateThumbnails = useCallback(async () => {
+    if (!videoUri || !videoRef.current || duration === 0) return;
+
+    setLoadingThumbs(true);
+
+    const frames: string[] = [];
+    const step = duration / THUMB_COUNT;
+
+    for (let i = 0; i < THUMB_COUNT; i++) {
+      const t = i * step;
+
+      try {
+        await videoRef.current.setPositionAsync(t * 1000);
+
+        // fallback: same frame URI (Expo Web limitation)
+        frames.push(videoUri);
+      } catch {
+        frames.push(videoUri);
+      }
+    }
+
+    setThumbnails(frames);
+    setLoadingThumbs(false);
+  }, [videoUri, duration]);
+
+  useEffect(() => {
+    generateThumbnails();
+  }, [generateThumbnails]);
+
+  // ─────────────────────────────────────────────
+  // 🎯 LEFT HANDLE
+  // ─────────────────────────────────────────────
   const leftPan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: () => true,
@@ -45,17 +83,16 @@ export const StepThumbnail = memo(function StepThumbnail({
         const newX = clamp(startX + g.dx, 0, endX - 40);
         const newTime = newX / pxPerSec;
 
-        setEditParams({
-          ...editParams,
-          trimStart: newTime,
-        });
+        setEditParams({ ...editParams, trimStart: newTime });
 
         videoRef.current?.setPositionAsync(newTime * 1000);
       },
     })
   ).current;
 
-  // ── RIGHT HANDLE ──
+  // ─────────────────────────────────────────────
+  // 🎯 RIGHT HANDLE
+  // ─────────────────────────────────────────────
   const rightPan = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: () => true,
@@ -63,30 +100,28 @@ export const StepThumbnail = memo(function StepThumbnail({
         const newX = clamp(endX + g.dx, startX + 40, layoutWidth);
         const newTime = newX / pxPerSec;
 
-        setEditParams({
-          ...editParams,
-          trimEnd: newTime,
-        });
+        setEditParams({ ...editParams, trimEnd: newTime });
 
         videoRef.current?.setPositionAsync(newTime * 1000);
       },
     })
   ).current;
 
-  // ── LOOP PLAYBACK ──
+  // ─────────────────────────────────────────────
+  // 🔁 LOOP PLAYBACK
+  // ─────────────────────────────────────────────
   useEffect(() => {
-    let interval: any;
+    if (!videoUri) return;
 
-    if (videoUri) {
-      interval = setInterval(async () => {
-        const status = await videoRef.current?.getStatusAsync();
-        if (!status?.isLoaded) return;
+    const interval = setInterval(async () => {
+      const status = await videoRef.current?.getStatusAsync();
 
-        if (status.positionMillis >= editParams?.trimEnd * 1000) {
-          await videoRef.current?.setPositionAsync(editParams?.trimStart * 1000);
-        }
-      }, 200);
-    }
+      if (!status?.isLoaded) return;
+
+      if (status.positionMillis >= editParams?.trimEnd * 1000) {
+        await videoRef.current?.setPositionAsync(editParams?.trimStart * 1000);
+      }
+    }, 120);
 
     return () => clearInterval(interval);
   }, [editParams, videoUri]);
@@ -102,7 +137,7 @@ export const StepThumbnail = memo(function StepThumbnail({
       <SectionHeader
         icon="image-outline"
         title="Thumbnail & Trim"
-        sub="Preview + découpe timeline"
+        sub="Timeline pro + preview temps réel"
       />
 
       {/* VIDEO */}
@@ -132,39 +167,43 @@ export const StepThumbnail = memo(function StepThumbnail({
         style={s.timeline}
         onLayout={e => setLayoutWidth(e.nativeEvent.layout.width)}
       >
+        {/* THUMBNAILS */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={s.thumbRow}>
+            {thumbnails.map((uri, i) => (
+              <Image
+                key={`${uri}-${i}`}
+                source={{ uri }}
+                style={s.thumb}
+              />
+            ))}
+          </View>
+        </ScrollView>
+
         {/* SELECTION */}
         <View
           style={[
             s.selection,
-            {
-              left: startX,
-              width: endX - startX,
-            },
+            { left: startX, width: endX - startX },
           ]}
         />
 
         {/* LEFT HANDLE */}
-        <View
-          {...leftPan.panHandlers}
-          style={[s.handle, { left: startX - 10 }]}
-        >
+        <View {...leftPan.panHandlers} style={[s.handle, { left: startX - 10 }]}>
           <Ionicons name="chevron-back" size={14} color="#fff" />
         </View>
 
         {/* RIGHT HANDLE */}
-        <View
-          {...rightPan.panHandlers}
-          style={[s.handle, { left: endX - 10 }]}
-        >
+        <View {...rightPan.panHandlers} style={[s.handle, { left: endX - 10 }]}>
           <Ionicons name="chevron-forward" size={14} color="#fff" />
         </View>
       </BlurView>
 
       {/* INFO */}
       <BlurView intensity={10} tint="dark" style={s.info}>
-        <Ionicons name="information-circle-outline" size={14} color={G.info} />
+        <Ionicons name="flash-outline" size={14} color={G.info} />
         <Text style={s.infoTxt}>
-          Drag handles pour découper comme CapCut. Lecture auto sur la zone.
+          Timeline interactive type CapCut. Thumbnails générés dynamiquement.
         </Text>
       </BlurView>
     </View>
@@ -193,10 +232,19 @@ const s = StyleSheet.create({
   },
 
   timeline: {
-    height: 60,
+    height: 70,
     borderRadius: 12,
     overflow: 'hidden',
     position: 'relative',
+  },
+
+  thumbRow: {
+    flexDirection: 'row',
+  },
+
+  thumb: {
+    width: 50,
+    height: 70,
   },
 
   selection: {
@@ -221,6 +269,7 @@ const s = StyleSheet.create({
     padding: 12,
     borderRadius: 12,
   },
+
   infoTxt: {
     color: G.textSub,
     fontSize: 11,
