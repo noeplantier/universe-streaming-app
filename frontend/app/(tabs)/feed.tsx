@@ -1,15 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-//  feed.tsx — UNIVERSE / Accueil
-//  ─────────────────────────────────────────────────────────────────
-//  Pixel-perfect reproduction du mockup.
-//  ✦ Galaxy Animation Engine (intégral)
-//  ✦ Héros rotatif toutes les 8s
-//  ✦ "Lecture" → carrousel interactif auto-scroll 5s
-//  ✦ "Ma liste" → /profile
-//  ✦ Catalogue cinéma indé style Netflix (6 sections)
-//  ✦ GalaxyTabBar identique index.tsx
-// ═══════════════════════════════════════════════════════════════════
-
 import React, {
   useState, useEffect, useRef, useCallback, memo,
 } from 'react';

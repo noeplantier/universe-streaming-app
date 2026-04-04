@@ -1,11 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════
-//  social.tsx — UNIVERSE  /  Communauté & Débats
-//  ─────────────────────────────────────────────────────────────────
-//  Galaxy Animation Engine intégral.
-//  Tabs filtrés, composition post, commentaires, share.
-//  Performance : Animated FlatList + memo + useCallback.
-// ═══════════════════════════════════════════════════════════════════
-
 import React, {
   useState, useEffect, useRef, useCallback, memo,
 } from 'react';

@@ -1,7 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// app/(tabs)/create.tsx  —  Studio Cinéma · orchestrateur principal
-// ─────────────────────────────────────────────────────────────────────────────
-
 import React, {
   useState, useRef, useCallback, useMemo, memo,
 } from 'react';

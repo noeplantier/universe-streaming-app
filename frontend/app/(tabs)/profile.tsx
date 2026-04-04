@@ -1,18 +1,3 @@
-// app/(tabs)/profile.tsx
-// ═══════════════════════════════════════════════════════════════════════════════
-//  UNIVERSE — Profil Cinéaste  /  Galaxy System
-//  ─────────────────────────────────────────────────────────────────────────────
-//  ✦ FIX : toutes les URLs image.tmdb.org remplacées par picsum.photos (CDN
-//    fiable, seeds fixes = images cohérentes entre sessions)
-//  ✦ ImageWithFallback : skeleton + retry automatique + fallback gradient
-//  ✦ Galaxy background partout — header inclus
-//  ✦ Instagram pixel-perfect grid + header
-//  ✦ Cards avec vrais films / séries / courts métrages
-//  ✦ Shimmer skeleton violet + prefetch optimiste onPressIn
-//  ✦ Studio IA vidéo : génération + export réel (FileSystem · MediaLibrary · Sharing)
-//  ✦ Architecture ultra-scalable & mémo-optimisée
-// ═══════════════════════════════════════════════════════════════════════════════
-
 import React, {
   useState, useEffect, useCallback, useRef, useMemo, memo,
 } from 'react';

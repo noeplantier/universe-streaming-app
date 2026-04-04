@@ -1,11 +1,3 @@
-// app/search.tsx
-// ═══════════════════════════════════════════════════════════════════
-//  UNIVERSE — Recherche  /  Galaxy System
-//  ─────────────────────────────────────────────────────────────────
-//  Moteur Galaxy porté depuis social.tsx (intégral).
-//  Search en temps réel, filtres actifs, tabs fonctionnels.
-// ═══════════════════════════════════════════════════════════════════
-
 import React, {
   useState, useEffect, useRef, useMemo,
   useCallback, memo,
