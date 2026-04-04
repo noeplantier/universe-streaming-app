@@ -14,6 +14,7 @@
     "expo-media-library": "^55.0.11-canary-20260328-2049187",
     "expo-sharing": "^55.0.15-canary-20260328-2049187",
     "expo-video": "^55.0.11",
+    "ffmpeg-kit-react-native": "^6.0.2",
     "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "^4.24.0",
     "supabase": "^2.84.8"
