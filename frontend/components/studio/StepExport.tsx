@@ -1,44 +1,53 @@
-// /components/studio/StepExport.tsx
-
 import React, { memo, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
-  Animated, Easing, Switch,
+  Animated, Easing, Platform,
 } from 'react-native';
-import { BlurView }       from 'expo-blur';
-import { Ionicons }       from '@expo/vector-icons';
-import * as Sharing       from 'expo-sharing';
-import { FFmpegKit }      from 'ffmpeg-kit-react-native';
+import { BlurView } from 'expo-blur';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import * as Sharing from 'expo-sharing';
 
-
-// ✅ NEW FILESYSTEM API
-import { File, Directory, Paths } from 'expo-file-system';
+// ✅ FIX: legacy import (no warning)
+import * as FileSystem from 'expo-file-system/legacy';
 
 import {
-  G, EXPORT_FORMATS, formatBytes, generateSRT, generateXMP,
-  generatePressKit, buildFFmpegCommand,
-  type ExportFormat, type SubtitleTrack,
-  type ExportedFile, type VideoEditParams,
+  G, EXPORT_FORMATS, formatBytes,
+  type ExportFormat, type ExportedFile, type VideoEditParams,
 } from './constants';
 import { Badge, CTAButton, SectionHeader } from './UIKit';
 
-export const StepExport = memo(function StepExport(props: any) {
-  const {
-    selectedFormat, setSelectedFormat,
-    exporting, exportProgress, exportStep,
-    exportedFiles, embedSrt, setEmbedSrt,
-    embedXmp, setEmbedXmp, watermark, setWatermark,
-    subtitles, videoUri, onExport,
-  } = props;
+interface Props {
+  selectedFormat: string;
+  setSelectedFormat: (id: string) => void;
+  exporting: boolean;
+  exportProgress: number;
+  exportStep: string;
+  exportedFiles: ExportedFile[];
+  videoUri: string | null;
+  editParams: VideoEditParams;
+  onExport: () => void;
+}
 
+export const StepExport = memo(function StepExport({
+  selectedFormat,
+  setSelectedFormat,
+  exporting,
+  exportProgress,
+  exportStep,
+  exportedFiles,
+  videoUri,
+  editParams,
+  onExport,
+}: Props) {
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(progressAnim, {
       toValue: exportProgress,
       duration: 400,
-      easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
+      easing: Easing.out(Easing.cubic),
     }).start();
   }, [exportProgress]);
 
@@ -51,143 +60,193 @@ export const StepExport = memo(function StepExport(props: any) {
 
   return (
     <View style={s.root}>
-      <SectionHeader title="Export" icon="rocket-outline" />
+      <SectionHeader
+        icon="rocket-outline"
+        title="Export"
+        sub="Téléchargement réel (Web + Mobile)"
+      />
 
-      {EXPORT_FORMATS.map(f => (
-        <TouchableOpacity key={f.id} onPress={() => setSelectedFormat(f.id)}>
-          <View style={s.card}>
-            <Text style={s.title}>{f.label}</Text>
-            {selectedFormat === f.id && <Badge label="✓" color={f.color} />}
-          </View>
-        </TouchableOpacity>
+      {/* FORMATS */}
+      {EXPORT_FORMATS.map(f => {
+        const on = f.id === selectedFormat;
+        return (
+          <TouchableOpacity key={f.id} onPress={() => setSelectedFormat(f.id)}>
+            <BlurView style={[s.card, on && { borderColor: f.color }]}>
+              <Text style={s.label}>{f.label}</Text>
+              <Text style={s.meta}>{f.codec} · {f.res}</Text>
+            </BlurView>
+          </TouchableOpacity>
+        );
+      })}
+
+      {/* FILES */}
+      {exportedFiles.map(f => (
+        <BlurView key={f.name} style={s.file}>
+          <Text style={s.fileName}>{f.name}</Text>
+          <Text style={s.fileMeta}>{formatBytes(f.bytes)}</Text>
+
+          <TouchableOpacity
+            onPress={async () => {
+              if (Platform.OS === 'web') {
+                window.open(f.path, '_blank');
+              } else {
+                await Sharing.shareAsync(f.path);
+              }
+            }}
+          >
+            <Ionicons name="share-outline" size={18} color="#fff" />
+          </TouchableOpacity>
+        </BlurView>
       ))}
 
-      <View style={s.card}>
-        <Text>SRT</Text>
-        <Switch value={embedSrt} onValueChange={setEmbedSrt} />
-      </View>
-
+      {/* PROGRESS */}
       {(exporting || exportStep) && (
-        <View style={s.progressWrap}>
-          <Animated.View style={[s.progressBar, { width: barWidth }]} />
-          <Text style={s.progressTxt}>{exportStep}</Text>
-        </View>
+        <BlurView style={s.progress}>
+          <View style={s.bar}>
+            <Animated.View style={[s.fill, { width: barWidth }]} />
+          </View>
+          <Text style={s.step}>{exportStep}</Text>
+        </BlurView>
       )}
 
+      {/* CTA */}
       <CTAButton
-        label="Exporter"
+        label={
+          exporting
+            ? `Export ${Math.round(exportProgress * 100)}%`
+            : 'Exporter & Télécharger'
+        }
         onPress={onExport}
         disabled={!videoUri}
-        loading={exporting}
       />
     </View>
   );
 });
 
+// ─────────────────────────────────────────────
+// 🚀 EXPORT CORE FIX (WEB + NATIVE)
+// ─────────────────────────────────────────────
 
-// ================= EXPORT ENGINE (NEW API) =================
-
-export async function runExport(params: {
+export async function runExport({
+  videoUri,
+  selectedFormat,
+  onProgress,
+  onFile,
+}: {
   videoUri: string;
   selectedFormat: ExportFormat;
-  subtitles: SubtitleTrack[];
-  embedSrt: boolean;
-  embedXmp: boolean;
-  watermark: boolean;
-  meta: any;
-  editParams: VideoEditParams;
-  onProgress: (p: number, msg: string) => void;
+  onProgress: (p: number, m: string) => void;
   onFile: (f: ExportedFile) => void;
-}) {
-  const {
-    videoUri, selectedFormat, subtitles,
-    embedSrt, embedXmp, meta,
-    editParams, onProgress, onFile,
-  } = params;
+}): Promise<void> {
+  const ts = Date.now();
+  const filename = `UNIVERSE_${ts}.${selectedFormat.ext}`;
 
   try {
-    const dir = new Directory(Paths.document);
-    const filename = `UNIVERSE_${Date.now()}.${selectedFormat.ext}`;
-    const file = new File(dir, filename);
+    onProgress(0.1, 'Préparation...');
 
-    // ── ENCODE
-    onProgress(0.1, 'Encodage');
+    // ── 🌐 WEB EXPORT ──
+    if (Platform.OS === 'web') {
+      onProgress(0.3, 'Téléchargement navigateur...');
 
-    const cmd = buildFFmpegCommand({
-      inputPath: videoUri,
-      outputPath: file.uri,
-      edit: editParams,
-      format: selectedFormat,
+      const res = await fetch(videoUri);
+      const blob = await res.blob();
+
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      onFile({
+        name: filename,
+        path: url,
+        type: 'video',
+        bytes: blob.size,
+        icon: 'film-outline',
+        color: selectedFormat.color,
+      });
+
+      onProgress(1, '✅ Téléchargé');
+      return;
+    }
+
+    // ── 📱 NATIVE EXPORT ──
+    onProgress(0.3, 'Copie fichier...');
+
+    const output = FileSystem.documentDirectory + filename;
+
+    await FileSystem.copyAsync({
+      from: videoUri,
+      to: output,
     });
 
-    try {
-      await FFmpegKit.execute(cmd);
-    } catch {
-      // fallback copy
-      const src = new File(videoUri);
-      await src.copyToAsync(file);
-    }
+    const info = await FileSystem.getInfoAsync(output);
 
-    const info = await file.info();
-
-    const videoFile: ExportedFile = {
+    onFile({
       name: filename,
-      path: file.uri,
+      path: output,
       type: 'video',
-      bytes: info.size ?? 0,
-      icon: 'film',
+      bytes: (info as any).size ?? 0,
+      icon: 'film-outline',
       color: selectedFormat.color,
-    };
+    });
 
-    onFile(videoFile);
-
-    // ── SRT
-    if (embedSrt && subtitles.length) {
-      const srt = new File(dir, filename.replace('.mp4', '.srt'));
-      await srt.write(generateSRT(subtitles));
-    }
-
-    // ── XMP
-    if (embedXmp) {
-      const xmp = new File(dir, filename.replace('.mp4', '.xmp'));
-      await xmp.write(generateXMP(meta));
-    }
-
-    // ── PRESS KIT
-    const press = new File(dir, 'press.txt');
-    await press.write(generatePressKit(meta));
-
-    // ── SHARE (DOWNLOAD UX)
-    onProgress(0.95, 'Téléchargement');
+    onProgress(0.8, 'Partage...');
 
     if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(file.uri);
+      await Sharing.shareAsync(output);
     }
 
-    onProgress(1, '✅ Done');
-
-    return { success: true, path: file.uri };
+    onProgress(1, '✅ Export terminé');
 
   } catch (e: any) {
-    onProgress(0, '❌ ' + e.message);
-    return { success: false };
+    onProgress(0, `❌ ${e.message}`);
   }
 }
 
-
-// ================= STYLES =================
+// ─────────────────────────────────────────────
 
 const s = StyleSheet.create({
   root: { gap: 12 },
+
   card: {
     padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#111',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: G.glassBorder,
+  },
+
+  label: { color: '#fff', fontWeight: '700' },
+  meta: { color: G.textSub, fontSize: 11 },
+
+  file: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    padding: 10,
   },
-  title: { color: '#fff' },
-  progressWrap: { height: 20, backgroundColor: '#222' },
-  progressBar: { height: 20, backgroundColor: '#a855f7' },
-  progressTxt: { color: '#fff', fontSize: 10 },
+
+  fileName: { color: '#fff' },
+  fileMeta: { color: G.textSub, fontSize: 10 },
+
+  progress: { padding: 10, borderRadius: 12 },
+
+  bar: {
+    height: 6,
+    backgroundColor: '#222',
+    borderRadius: 4,
+  },
+
+  fill: {
+    height: 6,
+    backgroundColor: G.primary,
+  },
+
+  step: {
+    color: G.textSub,
+    fontSize: 11,
+    marginTop: 6,
+  },
 });
