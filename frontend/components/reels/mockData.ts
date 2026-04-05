@@ -78,6 +78,16 @@ export const MOCK_FEED: FeedFilm[] = [
     tags: ['Mystère', 'Court métrage'], director: 'Sophie Martin', year: 2024,
     comment: 'une atmosphère envoûtante…', verified: true,
     },
+    {
 
-  
+    id: '7', title: 'Lumières Fugitives', series: 'Lumières Fugitives', episode: 1,
+    episode_title: 'La rencontre',
+    poster_url: 'https://images.unsplash.com/photo-1491895200222-0fc4a4c35e18?w=800&q=80',
+    video_url:   "https://vjs.zencdn.net/v/oceans.mp4",                                     
+    caption: "parfois, une rencontre\npeut tout changer",
+    duration: '9:20', likes: 2560,
+    liked_by_friends: [FRIENDS_POOL[0], FRIENDS_POOL[2], FRIENDS_POOL[3]],
+    tags: ['Romance', 'Indépendant'], director: 'Karim Belhadj', year: 2024,
+        comment: 'une histoire d\'amour délicate…',
+    },
 ];
