@@ -22,10 +22,10 @@ import React, {
   // Profil mock (dans un vrai projet → vient de AuthContext)
   const MOCK_USER: UserProfile = {
     id:         'u_hugo',
-    username:   'hugoch',
+    username:   'Hugo Chassaing',
     email:      'hugo@universe.film',
     bio:        'Réalisateur indépendant. Passionné de cinéma de genre et de documentaires poétiques.',
-    avatar_url: 'https://i.pravatar.cc/200?u=hugoch',
+    avatar_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',
     role:       'director',
     isPremium:  false,
     followers:  1240,

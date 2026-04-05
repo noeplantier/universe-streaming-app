@@ -28,10 +28,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 // Guest user for bypass auth mode
 const GUEST_USER: User = {
-  id: 'guest',
-  username: 'Invité',
+  id: 'Hugo Chassaing',
+  username: 'Hugo Chassaing',
   email: 'guest@universe.com',
-  avatar_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&q=80',
+  avatar_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',
   bio: 'Bienvenue dans UNIVERSE 🌌',
   role: 'viewer',
   followers_count: 0,

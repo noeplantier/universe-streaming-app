@@ -18,7 +18,7 @@ export default function TabLayout() {
   }, []);
 
   if (isLoading) {
-    return <Loading />;
+    // return <Loading />;
   }
 
   return (

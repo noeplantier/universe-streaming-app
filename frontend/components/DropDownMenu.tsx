@@ -63,13 +63,13 @@ import React, {
   // ─── Constante profil mock ────────────────────────────────────────
   
   const USER_PROFILE = {
-    name:     'Alexandre D.',
-    handle:   '@alex.cinema',
-    avatar:   'https://i.pravatar.cc/100?img=11',
+    name:     'Hugo Chassaing',
+    handle:   '@hugo.chassaing',
+    avatar:   'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',
     films:    247,
     watchlist: 38,
     niveau:   'Cinéphile Confirmé',
-    stars:    4,
+    stars:    5,
   };
   
   // ─── Animated Star Row ────────────────────────────────────────────

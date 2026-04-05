@@ -77,7 +77,7 @@ const hdr = StyleSheet.create({
 const ComposeBar = React.memo(function ComposeBar({ onPress }: { onPress: () => void }) {
   return (
     <TouchableOpacity style={cb.wrap} onPress={onPress} activeOpacity={0.8}>
-      <Image source={{ uri: 'https://i.pravatar.cc/100?u=hugoch' }} style={cb.avi} />
+      <Image source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s' }} style={cb.avi} />
       <View style={cb.box}>
         <Text style={cb.ph}>Partagez votre analyse, votre critique…</Text>
         <Ionicons name="film-outline" size={18} color="rgba(237,232,255,0.28)" />

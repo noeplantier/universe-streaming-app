@@ -81,5 +81,5 @@ export const G = {
   // Moi
   export const ME: Author = {
     name: 'Hugo C.', handle: 'hugoch', role: 'director',
-    avi:  'https://i.pravatar.cc/100?u=hugoch', following: false,
+    avi:  'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s', following: false,
   };

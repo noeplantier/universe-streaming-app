@@ -1,226 +1,460 @@
-import React, { useState } from 'react';
+// ─────────────────────────────────────────────────────────────────────────────
+// app/settings.tsx  —  Paramètres UNIVERSE
+//
+// Orchestrateur fin : toutes les actions modifient directement le context
+// (optimiste, persisté AsyncStorage, appliqué à l'app en temps réel).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import React, {
+  useCallback, useRef, memo,
+} from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch, Alert, Image,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  Alert, Animated, Platform, Easing, Dimensions,
 } from 'react-native';
+import { SafeAreaView }   from 'react-native-safe-area-context';
+import { StatusBar }      from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
-import { useAuth } from '../contexts/AuthContext';
-import EditProfileModal from '../components/EditProfileModal';
+import { BlurView }       from 'expo-blur';
+import { Ionicons }       from '@expo/vector-icons';
+import { useRouter }      from 'expo-router';
+import * as Haptics       from 'expo-haptics';
 
-function SettingsItem({ icon, title, subtitle, onPress, danger, rightElement }: {
-  icon: string; title: string; subtitle?: string;
-  onPress?: () => void; danger?: boolean; rightElement?: React.ReactNode;
-}) {
+// Context
+import { SettingsProvider, useSettings } from '@/components/settings/SettingsContext';
+
+// Components
+import ProfileCard   from '@/components/settings/ProfileCard';
+import PremiumBanner from '@/components/settings/PremiumBanner';
+import {
+  SectionHeader, SettingsGroup,
+  SettingsRow, SettingsToggle, SettingsPicker,
+} from '@/components/settings/SettingsGroup';
+
+// Galaxy background (même que social)
+import GalaxyBackground from '@/components/social/GalaxyBackground';
+
+// Types
+import {
+  G,
+  LANGUAGE_LABELS, QUALITY_LABELS, SUBTITLE_SIZE_LABELS, FEED_SORT_LABELS,
+  type AppLanguage, type VideoQuality, type SubtitleSize, type FeedSort,
+} from '@/components/settings/types';
+
+const { width: W, height: H } = Dimensions.get('window');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Options des pickers (memoïsées à module-level)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LANG_OPTIONS: { value: AppLanguage; label: string }[] = [
+  { value: 'fr', label: 'Français' },
+  { value: 'en', label: 'English'  },
+  { value: 'es', label: 'Español'  },
+  { value: 'de', label: 'Deutsch'  },
+];
+
+const QUALITY_OPTIONS: { value: VideoQuality; label: string; description?: string }[] = [
+  { value: 'auto',  label: 'Automatique', description: 'Adapte selon votre réseau' },
+  { value: '4k',    label: '4K Ultra HD',  description: 'Meilleure qualité · +données mobiles' },
+  { value: '1080p', label: '1080p HD',     description: 'Recommandé pour la plupart des écrans' },
+  { value: '720p',  label: '720p',         description: 'Bon équilibre qualité/données' },
+  { value: '480p',  label: '480p',         description: 'Économise les données mobiles' },
+];
+
+const SUB_LANG_OPTIONS: { value: AppLanguage; label: string }[] = LANG_OPTIONS;
+
+const SUB_SIZE_OPTIONS: { value: SubtitleSize; label: string }[] = [
+  { value: 'small',  label: 'Petit'  },
+  { value: 'medium', label: 'Moyen'  },
+  { value: 'large',  label: 'Grand'  },
+];
+
+const FEED_SORT_OPTIONS: { value: FeedSort; label: string; description?: string }[] = [
+  { value: 'recommended', label: 'Recommandé',  description: 'Personnalisé selon vos goûts' },
+  { value: 'recent',      label: 'Plus récent', description: 'Chronologique inverse' },
+  { value: 'trending',    label: 'Tendances',   description: 'Ce qui buzz cette semaine' },
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Header
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SettingsHeader = memo(function SettingsHeader() {
+  const router   = useRouter();
+  const { settings, resetSettings } = useSettings();
+
+  const handleReset = useCallback(() => {
+    Alert.alert(
+      'Réinitialiser',
+      'Tous vos paramètres seront remis à zéro. Continuer ?',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réinitialiser',
+          style: 'destructive',
+          onPress: () => {
+            if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            resetSettings();
+          },
+        },
+      ],
+    );
+  }, [resetSettings]);
+
   return (
-    <TouchableOpacity testID={`settings-${title.toLowerCase().replace(/\s/g, '-')}`} onPress={onPress} style={styles.settingsItem} activeOpacity={onPress ? 0.7 : 1}>
-      <View style={[styles.settingsItemIcon, { backgroundColor: danger ? 'rgba(255,59,48,0.15)' : 'rgba(140,46,186,0.15)' }]}>
-        <Ionicons name={icon as any} size={18} color={danger ? COLORS.error : COLORS.primary} />
+    <View style={hdr.row}>
+      <TouchableOpacity onPress={() => router.back()} style={hdr.backBtn} activeOpacity={0.7}>
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+        <Ionicons name="chevron-back" size={22} color="rgba(237,232,255,0.7)" />
+      </TouchableOpacity>
+
+      <View style={hdr.center}>
+        <Text style={hdr.title}>Paramètres</Text>
+        <Text style={hdr.sub}>UNIVERSE · Cinéma Indé</Text>
       </View>
-      <View style={styles.settingsItemInfo}>
-        <Text style={[styles.settingsItemTitle, danger && { color: COLORS.error }]}>{title}</Text>
-        {subtitle && <Text style={styles.settingsItemSub}>{subtitle}</Text>}
-      </View>
-      {rightElement || (onPress && !danger && <Ionicons name="chevron-forward" size={16} color={COLORS.textTertiary} />)}
-    </TouchableOpacity>
+
+      <TouchableOpacity onPress={handleReset} style={hdr.resetBtn} activeOpacity={0.7}>
+        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
+        <Ionicons name="refresh-outline" size={18} color="rgba(237,232,255,0.4)" />
+      </TouchableOpacity>
+    </View>
   );
-}
+});
 
-function SectionHeader({ title }: { title: string }) {
-  return <Text style={styles.sectionHeader}>{title}</Text>;
-}
+const hdr = StyleSheet.create({
+  row:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14 },
+  backBtn:  { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: G.glassBorder },
+  resetBtn: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: G.glassBorder },
+  center:   { alignItems: 'center', flex: 1 },
+  title:    { color: G.sW, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  sub:      { color: 'rgba(237,232,255,0.30)', fontSize: 10, fontWeight: '600', letterSpacing: 1.5, marginTop: 2 },
+});
 
-export default function SettingsScreen() {
+// ─────────────────────────────────────────────────────────────────────────────
+// Corps (consomme le context)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SettingsBody() {
   const router = useRouter();
-  const { user, logout, updateUser } = useAuth();
-  const [notifications, setNotifications] = useState(true);
-  const [autoPlay, setAutoPlay] = useState(true);
-  const [language, setLanguage] = useState<'fr' | 'en'>('fr');
-  const [showEditProfile, setShowEditProfile] = useState(false);
+  const { settings, setSetting, logout } = useSettings();
 
-  async function handleSaveProfile(data: { username: string; bio: string }) {
-    // In production, this would call the API to update the profile
-    // For now, we just update the local state
-    if (updateUser) {
-      updateUser({ ...user!, ...data });
-    }
-  }
-
-  async function handleLogout() {
+  // ── Déconnexion ───────────────────────────────────────────────────────────
+  const handleLogout = useCallback(() => {
     Alert.alert(
       'Déconnexion',
       'Êtes-vous sûr de vouloir vous déconnecter ?',
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Déconnecter', style: 'destructive', onPress: async () => {
-          await logout();
-          router.replace('/(auth)/welcome');
-        }},
-      ]
+        {
+          text: 'Déconnecter',
+          style: 'destructive',
+          onPress: () => {
+            if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+            logout();
+            router.replace('/(auth)/welcome');
+          },
+        },
+      ],
     );
-  }
+  }, [logout, router]);
+
+  // ── Suppression de compte ─────────────────────────────────────────────────
+  const handleDeleteAccount = useCallback(() => {
+    Alert.alert(
+      'Supprimer le compte',
+      'Cette action est irréversible. Toutes vos données seront perdues.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        { text: 'Supprimer', style: 'destructive', onPress: () => {} },
+      ],
+    );
+  }, []);
 
   return (
-    <View style={styles.container}>
-      <SafeAreaView edges={['top']}>
-        <View style={styles.header}>
-          <TouchableOpacity testID="settings-back-btn" onPress={() => router.back()} style={styles.backBtn}>
-            <Ionicons name="chevron-back" size={24} color={COLORS.textSecondary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Paramètres</Text>
-          <View style={{ width: 40 }} />
-        </View>
-      </SafeAreaView>
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={sc.listContent}
+    >
+      {/* ── Profil héro ── */}
+      <ProfileCard />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        {/* Profile Card */}
-        {user && (
-          <View style={styles.profileCard}>
-            <LinearGradient colors={['#240056', '#8C2EBA']} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
-            <Image source={{ uri: user.avatar_url }} style={styles.profileAvatar} />
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>{user.username}</Text>
-              <Text style={styles.profileEmail}>{user.email}</Text>
-              <View style={styles.profileRoleBadge}>
-                <Text style={styles.profileRoleText}>{user.role === 'director' ? '🎬 Réalisateur' : user.role === 'critic' ? '✍️ Critique' : '👁️ Spectateur'}</Text>
-              </View>
-            </View>
-          </View>
-        )}
+      {/* ── Premium ── */}
+      <PremiumBanner />
 
-        {/* Subscription */}
-        <View style={styles.premiumCard}>
-          <LinearGradient colors={['#1A052E', '#240056']} style={StyleSheet.absoluteFillObject} />
-          <View style={styles.premiumContent}>
-            <View>
-              <Text style={styles.premiumTitle}>✨ UNIVERSE Premium</Text>
-              <Text style={styles.premiumSub}>Sans pub · HD · Contenu exclusif</Text>
-            </View>
-            <TouchableOpacity testID="settings-premium-btn" onPress={() => router.push('/premium')} activeOpacity={0.85}>
-              <LinearGradient colors={GRADIENTS.primary} style={styles.premiumBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                <Text style={styles.premiumBtnText}>3,99€/mois</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Account */}
-        <SectionHeader title="Compte" />
-        <View style={styles.settingsGroup}>
-          <SettingsItem icon="person-outline" title="Modifier le profil" onPress={() => setShowEditProfile(true)} />
-          <SettingsItem icon="lock-closed-outline" title="Changer le mot de passe" onPress={() => {}} />
-          <SettingsItem icon="card-outline" title="Abonnement & Facturation" onPress={() => {}} />
-        </View>
-
-        {/* Preferences */}
-        <SectionHeader title="Préférences" />
-        <View style={styles.settingsGroup}>
-          <SettingsItem
-            icon="language-outline"
-            title="Langue"
-            subtitle={language === 'fr' ? 'Français' : 'English'}
-            onPress={() => setLanguage(l => l === 'fr' ? 'en' : 'fr')}
-          />
-          <SettingsItem
-            icon="notifications-outline"
-            title="Notifications"
-            rightElement={
-              <Switch
-                testID="settings-notifications-switch"
-                value={notifications}
-                onValueChange={setNotifications}
-                trackColor={{ false: COLORS.surface, true: COLORS.primary }}
-                thumbColor="#fff"
-              />
-            }
-          />
-          <SettingsItem
-            icon="play-circle-outline"
-            title="Lecture auto"
-            subtitle="Passer automatiquement à l'épisode suivant"
-            rightElement={
-              <Switch
-                testID="settings-autoplay-switch"
-                value={autoPlay}
-                onValueChange={setAutoPlay}
-                trackColor={{ false: COLORS.surface, true: COLORS.primary }}
-                thumbColor="#fff"
-              />
-            }
-          />
-          <SettingsItem icon="film-outline" title="Qualité vidéo" subtitle="Automatique (recommandé)" onPress={() => {}} />
-          <SettingsItem icon="closed-captioning-outline" title="Sous-titres" subtitle="Français par défaut" onPress={() => {}} />
-        </View>
-
-        {/* Community */}
-        <SectionHeader title="Communauté" />
-        <View style={styles.settingsGroup}>
-          <SettingsItem icon="people-outline" title="Gérer les abonnements" onPress={() => {}} />
-          <SettingsItem icon="bookmark-outline" title="Ma Watchlist" onPress={() => router.push('/watchlist')} />
-          <SettingsItem icon="trophy-outline" title="Mes badges" subtitle="Voir vos accomplissements" onPress={() => {}} />
-        </View>
-
-        {/* About */}
-        <SectionHeader title="À propos" />
-        <View style={styles.settingsGroup}>
-          <SettingsItem icon="document-text-outline" title="Conditions d'utilisation" onPress={() => {}} />
-          <SettingsItem icon="shield-checkmark-outline" title="Politique de confidentialité" onPress={() => {}} />
-          <SettingsItem icon="help-circle-outline" title="Centre d'aide" onPress={() => {}} />
-          <SettingsItem icon="information-circle-outline" title="Version" subtitle="UNIVERSE v1.0.0" />
-        </View>
-
-        {/* Logout */}
-        <View style={[styles.settingsGroup, { marginTop: 8 }]}>
-          <SettingsItem icon="log-out-outline" title="Se déconnecter" onPress={handleLogout} danger />
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>UNIVERSE · Cinéma Indépendant</Text>
-          <Text style={styles.footerSubText}>Fait avec 💜 pour les artistes</Text>
-        </View>
-      </ScrollView>
-
-      {/* Edit Profile Modal */}
-      {user && (
-        <EditProfileModal
-          visible={showEditProfile}
-          onClose={() => setShowEditProfile(false)}
-          user={user}
-          onSave={handleSaveProfile}
+      {/* ═══════════════════════════════════════════════════════════════════
+          LECTURE
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Lecture" icon="play-circle-outline" />
+      <SettingsGroup>
+        <SettingsToggle
+          icon="play-circle-outline"
+          title="Lecture automatique"
+          subtitle="Lance la vidéo sans appuyer sur Play"
+          value={settings.autoPlay}
+          onChange={v => setSetting('autoPlay', v)}
         />
-      )}
-    </View>
+        <SettingsToggle
+          icon="arrow-forward-circle-outline"
+          title="Épisode suivant automatique"
+          subtitle="Passe à l'épisode suivant en fin de lecture"
+          value={settings.autoNextEpisode}
+          onChange={v => setSetting('autoNextEpisode', v)}
+        />
+        <SettingsPicker<VideoQuality>
+          icon="videocam-outline"
+          title="Qualité vidéo"
+          value={settings.videoQuality}
+          options={QUALITY_OPTIONS}
+          onChange={v => setSetting('videoQuality', v)}
+        />
+        <SettingsToggle
+          icon="cellular-outline"
+          title="Économiseur de données"
+          subtitle="Réduit la qualité sur réseau mobile"
+          value={settings.dataSaver}
+          onChange={v => setSetting('dataSaver', v)}
+          last
+        />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          SOUS-TITRES
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Sous-titres" icon="closed-captioning-outline" />
+      <SettingsGroup>
+        <SettingsToggle
+          icon="closed-captioning-outline"
+          title="Sous-titres activés"
+          value={settings.subtitlesEnabled}
+          onChange={v => setSetting('subtitlesEnabled', v)}
+        />
+        <SettingsPicker<AppLanguage>
+          icon="language-outline"
+          title="Langue des sous-titres"
+          value={settings.subtitleLanguage}
+          options={SUB_LANG_OPTIONS}
+          onChange={v => setSetting('subtitleLanguage', v)}
+        />
+        <SettingsPicker<SubtitleSize>
+          icon="text-outline"
+          title="Taille des sous-titres"
+          value={settings.subtitleSize}
+          options={SUB_SIZE_OPTIONS}
+          onChange={v => setSetting('subtitleSize', v)}
+          last
+        />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          NOTIFICATIONS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Notifications" icon="notifications-outline" />
+      <SettingsGroup>
+        <SettingsToggle
+          icon="film-outline"
+          title="Nouveaux épisodes"
+          subtitle="Alertes quand une série se met à jour"
+          value={settings.notifNewEpisode}
+          onChange={v => setSetting('notifNewEpisode', v)}
+        />
+        <SettingsToggle
+          icon="people-outline"
+          title="Activité sociale"
+          subtitle="Likes, commentaires, abonnements"
+          value={settings.notifSocial}
+          onChange={v => setSetting('notifSocial', v)}
+        />
+        <SettingsToggle
+          icon="trophy-outline"
+          title="Festivals & Sorties"
+          subtitle="Infos festivals, avant-premières"
+          value={settings.notifFestival}
+          onChange={v => setSetting('notifFestival', v)}
+        />
+        <SettingsToggle
+          icon="mail-outline"
+          title="Newsletter mensuelle"
+          value={settings.notifNewsletter}
+          onChange={v => setSetting('notifNewsletter', v)}
+          last
+        />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          VIE PRIVÉE
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Vie privée" icon="shield-checkmark-outline" />
+      <SettingsGroup>
+        <SettingsToggle
+          icon="eye-off-outline"
+          title="Profil privé"
+          subtitle="Seuls vos abonnés vous voient"
+          value={settings.privateProfile}
+          onChange={v => setSetting('privateProfile', v)}
+        />
+        <SettingsToggle
+          icon="bookmark-outline"
+          title="Watchlist publique"
+          subtitle="Visible par votre communauté"
+          value={settings.publicWatchlist}
+          onChange={v => setSetting('publicWatchlist', v)}
+        />
+        <SettingsToggle
+          icon="bar-chart-outline"
+          title="Analytics & Amélioration"
+          subtitle="Aide à améliorer l'app anonymement"
+          value={settings.analyticsOpt}
+          onChange={v => setSetting('analyticsOpt', v)}
+          last
+        />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          COMMUNAUTÉ & FEED
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Communauté" icon="people-outline" />
+      <SettingsGroup>
+        <SettingsPicker<FeedSort>
+          icon="funnel-outline"
+          title="Tri du feed"
+          value={settings.feedSort}
+          options={FEED_SORT_OPTIONS}
+          onChange={v => setSetting('feedSort', v)}
+        />
+        <SettingsRow
+          icon="people-outline"
+          title="Gérer les abonnements"
+          onPress={() => {}}
+        />
+        <SettingsRow
+          icon="bookmark-outline"
+          title="Ma Watchlist"
+          onPress={() => router.push('/watchlist')}
+        />
+        <SettingsRow
+          icon="trophy-outline"
+          title="Mes badges"
+          subtitle="Voir vos accomplissements"
+          onPress={() => {}}
+          badge="Nouveau"
+          last
+        />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          APP
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Application" icon="phone-portrait-outline" />
+      <SettingsGroup>
+        <SettingsPicker<AppLanguage>
+          icon="language-outline"
+          title="Langue de l'app"
+          value={settings.language}
+          options={LANG_OPTIONS}
+          onChange={v => setSetting('language', v)}
+        />
+        <SettingsToggle
+          icon="phone-portrait-outline"
+          title="Retour haptique"
+          subtitle="Vibrations lors des interactions"
+          value={settings.haptics}
+          onChange={v => setSetting('haptics', v)}
+          last
+        />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          COMPTE
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Compte" icon="person-outline" />
+      <SettingsGroup>
+        <SettingsRow icon="lock-closed-outline"     title="Changer le mot de passe" onPress={() => {}} />
+        <SettingsRow icon="card-outline"             title="Abonnement & Facturation" onPress={() => {}} />
+        <SettingsRow icon="download-outline"         title="Exporter mes données"     onPress={() => {}} last />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          À PROPOS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="À propos" icon="information-circle-outline" />
+      <SettingsGroup>
+        <SettingsRow icon="document-text-outline"     title="Conditions d'utilisation" onPress={() => {}} />
+        <SettingsRow icon="shield-checkmark-outline"  title="Politique de confidentialité" onPress={() => {}} />
+        <SettingsRow icon="help-circle-outline"       title="Centre d'aide"            onPress={() => {}} />
+        <SettingsRow icon="star-outline"              title="Évaluer l'app"            onPress={() => {}} />
+        <SettingsRow
+          icon="information-circle-outline"
+          title="Version"
+          subtitle="UNIVERSE v2.0.0 · Build 420"
+          last
+        />
+      </SettingsGroup>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          ACTIONS DESTRUCTIVES
+      ══════════════════════════════════════════════════════════════════════ */}
+      <View style={{ marginTop: 8 }}>
+        <SettingsGroup>
+          <SettingsRow
+            icon="log-out-outline"
+            title="Se déconnecter"
+            onPress={handleLogout}
+            danger
+          />
+          <SettingsRow
+            icon="trash-outline"
+            title="Supprimer mon compte"
+            onPress={handleDeleteAccount}
+            danger
+            last
+          />
+        </SettingsGroup>
+      </View>
+
+      {/* ═══════════════════════════════════════════════════════════════════
+          FOOTER
+      ══════════════════════════════════════════════════════════════════════ */}
+      <View style={sc.footer}>
+        <Text style={sc.footerTitle}>UNIVERSE</Text>
+        <Text style={sc.footerSub}>Cinéma Indépendant · Fait avec 💜</Text>
+        <View style={sc.footerDots}>
+          {[0, 1, 2].map(i => (
+            <View key={i} style={[sc.dot, i === 1 && sc.dotActive]} />
+          ))}
+        </View>
+      </View>
+    </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.screenEdge, paddingVertical: 12 },
-  backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: COLORS.textPrimary },
-  profileCard: { flexDirection: 'row', alignItems: 'center', gap: 14, marginHorizontal: SPACING.screenEdge, borderRadius: RADIUS.lg, padding: 16, overflow: 'hidden', marginBottom: 12 },
-  profileAvatar: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: 'rgba(255,255,255,0.3)' },
-  profileInfo: { flex: 1 },
-  profileName: { fontSize: 16, fontWeight: '700', color: '#fff' },
-  profileEmail: { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
-  profileRoleBadge: { backgroundColor: 'rgba(255,255,255,0.15)', alignSelf: 'flex-start', borderRadius: RADIUS.full, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6 },
-  profileRoleText: { color: '#fff', fontSize: 11 },
-  premiumCard: { flexDirection: 'row', marginHorizontal: SPACING.screenEdge, borderRadius: RADIUS.lg, overflow: 'hidden', padding: 16, marginBottom: 20, borderWidth: 1, borderColor: COLORS.border },
-  premiumContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flex: 1 },
-  premiumTitle: { fontSize: 14, fontWeight: '700', color: '#fff' },
-  premiumSub: { fontSize: 11, color: COLORS.textSecondary, marginTop: 3 },
-  premiumBtn: { borderRadius: RADIUS.full, paddingHorizontal: 16, paddingVertical: 8 },
-  premiumBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  sectionHeader: { fontSize: 12, fontWeight: '700', color: COLORS.textTertiary, paddingHorizontal: SPACING.screenEdge, paddingTop: 20, paddingBottom: 8, textTransform: 'uppercase', letterSpacing: 1 },
-  settingsGroup: { backgroundColor: COLORS.surface, marginHorizontal: SPACING.screenEdge, borderRadius: RADIUS.lg, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.borderLight },
-  settingsItem: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight },
-  settingsItemIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  settingsItemInfo: { flex: 1 },
-  settingsItemTitle: { fontSize: 15, color: COLORS.textPrimary, fontWeight: '500' },
-  settingsItemSub: { fontSize: 12, color: COLORS.textTertiary, marginTop: 2 },
-  footer: { alignItems: 'center', paddingTop: 32, paddingBottom: 16, gap: 6 },
-  footerText: { color: COLORS.textTertiary, fontSize: 13, fontWeight: '600', letterSpacing: 2 },
-  footerSubText: { color: COLORS.textTertiary, fontSize: 11 },
+// ─────────────────────────────────────────────────────────────────────────────
+// Écran principal — enveloppe dans SettingsProvider
+// ─────────────────────────────────────────────────────────────────────────────
+
+export default function SettingsScreen() {
+  return (
+    <SettingsProvider>
+      <View style={sc.root}>
+        <StatusBar style="light" />
+        <GalaxyBackground />
+
+        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+          <SettingsHeader />
+          <SettingsBody />
+        </SafeAreaView>
+      </View>
+    </SettingsProvider>
+  );
+}
+
+const sc = StyleSheet.create({
+  root:        { flex: 1, backgroundColor: G.bg0 },
+  listContent: { paddingBottom: 120, paddingTop: 4 },
+  footer:      { alignItems: 'center', paddingTop: 36, paddingBottom: 12, gap: 6 },
+  footerTitle: { color: G.primary, fontSize: 14, fontWeight: '900', letterSpacing: 3 },
+  footerSub:   { color: G.textTert, fontSize: 11, letterSpacing: 0.5 },
+  footerDots:  { flexDirection: 'row', gap: 6, marginTop: 8 },
+  dot:         { width: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.12)' },
+  dotActive:   { backgroundColor: G.primary, width: 14 },
 });

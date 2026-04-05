@@ -119,7 +119,7 @@ import React, {
   
                   {/* ── Avatar + Role ── */}
                   <View style={s.authorRow}>
-                    <Image source={{ uri: ME.avi }} style={s.avi} />
+                    <Image source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s' }} style={s.avi} />
                     <View>
                       <View style={s.nameRow}>
                         <Text style={s.name}>{ME.name}</Text>

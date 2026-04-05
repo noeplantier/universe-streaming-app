@@ -272,6 +272,7 @@ const OTHER_FAVS = [
   { id: 'of2', title: 'Mad Max: Fury Road',      poster_url: poster('mad-max-fury-road-2015'), genre: 'Action',  duration_type: 'film', rating: 5 },
   { id: 'of3', title: '2001: A Space Odyssey',   poster_url: poster('2001-kubrick-space'),      genre: 'Sci-Fi',  duration_type: 'film', rating: 5 },
   { id: 'of4', title: 'The Grand Budapest Hotel',poster_url: poster('grand-budapest-wes'),      genre: 'Comédie', duration_type: 'film', rating: 5 },
+  { id: 'of5', title: 'Roma',                   poster_url: poster('roma-alfonso-cuaron'),     genre: 'Drame',   duration_type: 'film', rating: 5 },
 ];
 
 const CRITIQUE_REVIEWS = [
@@ -300,11 +301,7 @@ const CRITIQUE_REVIEWS = [
     content: 'Past Lives touche à quelque chose d\'universel et d\'intime simultanément. Un premier film éblouissant.',
     film: { id: 'cr5', title: 'Past Lives',           poster_url: poster('past-lives-celine-song'),   genre: 'Romance',   duration_type: 'film' },
   },
-  {
-    id: 'cr6', film_id: 'cr6', rating: 4, likes_count: 97,  created_at: '2024-05-02',
-    content: 'Robot Dreams choisit le silence pour parler de l\'amitié perdue. L\'animation devient poésie pure.',
-    film: { id: 'cr6', title: 'Robot Dreams',         poster_url: poster('robot-dreams-animation-2023'), genre: 'Animation', duration_type: 'film' },
-  },
+
 ];
 
 const SEEN_WORKS = [
@@ -1013,7 +1010,7 @@ export default function ProfileScreen() {
 
   const topFilm   = useMemo(() => (allFavs[0]          ?? TOP_FILM)  as Film,   [allFavs]);
   const top2to3   = useMemo(() => (allFavs.slice(1, 3).length ? allFavs.slice(1, 3) : TOP_2_3) as Film[], [allFavs]);
-  const otherFavs = useMemo(() => (allFavs.slice(3, 13).length ? allFavs.slice(3, 13) : OTHER_FAVS) as Film[], [allFavs]);
+  const otherFavs = useMemo(() => (allFavs.slice(3, 7).length ? allFavs.slice(3, 7) : OTHER_FAVS.slice(0, 4)) as Film[], [allFavs]);
 
   const formatStat = useCallback((n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;

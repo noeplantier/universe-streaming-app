@@ -105,7 +105,7 @@ export const INITIAL_POSTS: PostData[] = [
 
 // ─── Stories ──────────────────────────────────────────────────────
 export const INITIAL_STORIES: Story[] = [
-  { id: 's0', user: 'Moi',       avi: 'https://i.pravatar.cc/100?u=hugoch',              seen: true,  isMe: true },
+  { id: 's0', user: 'Moi',       avi: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',              seen: true,  isMe: true },
   { id: 's1', user: 'cinenolan', avi: 'https://i.pravatar.cc/150?u=a042581f4e29026024d', seen: false },
   { id: 's2', user: 'sarah_cuts',avi: 'https://i.pravatar.cc/150?u=a042581f4e29026704d', seen: false },
   { id: 's3', user: 'marcdop',   avi: 'https://i.pravatar.cc/150?u=a04258114e29026302d', seen: true  },

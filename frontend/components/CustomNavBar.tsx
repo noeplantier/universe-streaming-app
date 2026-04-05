@@ -82,7 +82,7 @@ function CustomNavBar() {
         <NavItem
           icon={
             <Image
-              source={{ uri: 'https://i.pravatar.cc/100?u=me' }}
+              source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',}}
               style={styles.profile}
             />
           }
@@ -111,9 +111,8 @@ const styles = StyleSheet.create({
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: 'rgba(255,255,255,0.15)',
-      zIndex: 999, // Ajout du zIndex pour forcer le positionnement au-dessus
+      zIndex: 999, 
   
-      // perf: shadow léger mais efficace
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 8 },
       shadowOpacity: 0.4,
