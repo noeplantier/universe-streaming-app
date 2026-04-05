@@ -5,7 +5,6 @@ import {
   StyleSheet,
   Animated,
   Easing,
-  Image,
   Dimensions,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,15 +13,17 @@ import Starfield from '../components/StarField';
 const { width } = Dimensions.get('window');
 
 export default function Loading() {
-  const logoScale = useRef(new Animated.Value(0.8)).current;
+  const logoScale = useRef(new Animated.Value(1)).current;
   const logoOpacity = useRef(new Animated.Value(0)).current;
   const progress = useRef(new Animated.Value(0)).current;
+  const glowOpacity = useRef(new Animated.Value(0.2)).current;
 
   useEffect(() => {
+    // 🚀 intro animation
     Animated.parallel([
       Animated.timing(logoScale, {
         toValue: 1,
-        duration: 1200,
+        duration: 10000,
         easing: Easing.out(Easing.exp),
         useNativeDriver: true,
       }),
@@ -33,9 +34,44 @@ export default function Loading() {
       }),
     ]).start();
 
+    // 🌊 breathing loop (Apple feel)
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(logoScale, {
+          toValue: 1.05,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(logoScale, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // ✨ glow pulse
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowOpacity, {
+          toValue: 0.35,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowOpacity, {
+          toValue: 0.15,
+          duration: 1800,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    // 📊 progress
     Animated.timing(progress, {
-      toValue: width * 0.7,
-      duration: 2400,
+      toValue: width * 0.5,
+      duration: 2600,
       easing: Easing.inOut(Easing.ease),
       useNativeDriver: false,
     }).start();
@@ -43,36 +79,40 @@ export default function Loading() {
 
   return (
     <LinearGradient
-      colors={['#03030A', '#07071A', '#120A2A']}
+      colors={['#02020A', '#050514', '#0D0825']}
       style={styles.container}
     >
-      {/* 🌌 STARFIELD */}
-      <Starfield />
+      {/* 🌌 MULTI LAYER STARFIELD */}
+      <Starfield density={40} speed={0.02} opacity={0.3} />
+      <Starfield density={30} speed={0.04} opacity={0.6} />
+      <Starfield density={20} speed={0.08} opacity={1} />
 
- 
-      {/* 🪐 Logo */}
+
+      {/* 🪐 LOGO */}
       <Animated.Image
         source={require('../assets/images/logouniverse.png')}
         style={[
           styles.logo,
           {
-            opacity: logoOpacity,
+            
             transform: [{ scale: logoScale }],
           },
         ]}
         resizeMode="contain"
       />
 
-      {/* 🚀 Progress bar */}
-      <View style={styles.progressContainer}>
-        <Animated.View
-          style={[
-            styles.progressBar,
-            {
-              width: progress,
-            },
-          ]}
-        />
+      {/* 🚀 PROGRESS (attaché au logo) */}
+      <View style={styles.progressWrapper}>
+        <View style={styles.progressContainer}>
+          <Animated.View
+            style={[
+              styles.progressBar,
+              {
+                width: progress,
+              },
+            ]}
+          />
+        </View>
       </View>
     </LinearGradient>
   );
@@ -87,30 +127,33 @@ const styles = StyleSheet.create({
 
   glow: {
     position: 'absolute',
-    width: 300,
-    height: 300,
+    width: 260,
+    height: 260,
     borderRadius: 200,
     backgroundColor: '#A855F7',
-    opacity: 0.2,
   },
 
   logo: {
     width: 500,
     height: 500,
+    zIndex: 2,
+  },
+
+  progressWrapper: {
+    marginTop: 30, 
+    alignItems: 'center',
   },
 
   progressContainer: {
-    position: 'absolute',
-    bottom: 120,
-    width: width * 0.7,
-    height: 4,
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    width: width * 0.5,
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 10,
     overflow: 'hidden',
   },
 
   progressBar: {
-    height: 4,
+    height: 3,
     backgroundColor: '#A855F7',
     borderRadius: 10,
   },

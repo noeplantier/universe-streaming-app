@@ -101,24 +101,25 @@ export default memo(CustomNavBar);
 // 🎨 STYLES
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    bottom: 12,
-    left: 10,
-    right: 10,
-    height: 70,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-
-    // perf: shadow léger mais efficace
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 20,
-  },
+    container: {
+      position: 'absolute',
+      bottom: 12,
+      left: 10,
+      right: 10,
+      height: 70,
+      borderRadius: 20,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.15)',
+      zIndex: 999, // Ajout du zIndex pour forcer le positionnement au-dessus
+  
+      // perf: shadow léger mais efficace
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.4,
+      shadowRadius: 12,
+      elevation: 20,
+    },
 
   blur: {
     flex: 1,
