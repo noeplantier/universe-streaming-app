@@ -3,11 +3,11 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).parent.parent.parent
-load_dotenv(ROOT_DIR / '.env')
+# Charge les variables du fichier .env
+load_dotenv()
 
-# Supabase
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
     raise ValueError("SUPABASE_URL et SUPABASE_KEY sont requis dans .env")

@@ -9,13 +9,13 @@ import { SafeAreaView, useSafeAreaInsets }     from 'react-native-safe-area-cont
 import { useWindowDimensions }                 from 'react-native';
 import { useRouter, useFocusEffect }           from 'expo-router';
 import * as Haptics                            from 'expo-haptics';
-import { Video } from 'expo-av';
+import { useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 
 
 // Composants reels
 import FeedItem      from '@/components/reels/FeedItem';
 import TopHeader     from '@/components/reels/TopHeader';
-import GalaxyTabBar  from '@/components/reels/GalaxyTabBar';
 
 // Data & types
 import { MOCK_FEED }   from '@/components/reels/mockData';
@@ -40,6 +40,34 @@ export default function ReelsScreen() {
   const [activeTab,     setActiveTab]     = useState('reels');
 
   const scrollY = useRef(new Animated.Value(0)).current;
+
+
+    // ── TEST SUPABASE ────────────────────────────────────────────────────────
+    useEffect(() => {
+      // ── TEST SUPABASE FRONTEND ──────────────────────────────────────────────
+      async function testSupabase() {
+        console.log('⏳ Test Supabase depuis le frontend (Feed)...');
+        try {
+          // Remplacez 'films' par 'films' ou 'profiles' selon votre schéma
+          const { data, error } = await supabase.from('films').select('*').limit(1);
+          if (error) {
+            console.error('❌ Erreur Supabase front:', error.message);
+          } else {
+            console.log('✅ Succès Supabase front ! Données:', data);
+          }
+        } catch (err) {
+          console.error('❌ Exception Supabase front:', err);
+        }
+      }
+
+      testSupabase(); // Appel du test
+      const loadData = async () => {
+        // Simule un chargement de données
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        setFeedFilms(MOCK_FEED); // Charge les données mock après le délai
+      };
+    }, []);
+
 
   // ── Pause globale quand on quitte l'onglet ────────────────────────────────
   useFocusEffect(

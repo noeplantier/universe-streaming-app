@@ -7,6 +7,7 @@ from config.settings import APP_TITLE, APP_VERSION, CORS_ORIGINS, SUPABASE_URL, 
 from supabase_client import supabase
 from routes import auth, users, data
 
+
 # Configuration logging
 logging.basicConfig(
     level=logging.INFO,
