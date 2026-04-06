@@ -1,3 +1,4 @@
+// app/search.tsx
 import React, {
   useState, useEffect, useRef, useMemo,
   useCallback, memo,
@@ -5,23 +6,27 @@ import React, {
 import {
   View, Text, StyleSheet, Image, ScrollView,
   TouchableOpacity, TextInput, Dimensions, Platform,
-  Animated, Easing, Modal, FlatList, Pressable,
+  Animated, Easing, Modal, ActivityIndicator, Pressable,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
+import { BlurView }       from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { Ionicons }       from '@expo/vector-icons';
+import { StatusBar }      from 'expo-status-bar';
+import { useRouter }      from 'expo-router';
+
+import {
+  fetchWorks, fetchTrending,
+  type Work, type SortOption, type DurationBand,
+} from '@/lib/supabase';
 
 const { width: W, height: H } = Dimensions.get('window');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🌌 PALETTE GALAXY (identique social.tsx)
+// 🌌 PALETTE
 // ─────────────────────────────────────────────────────────────────────────────
 const G = {
   bg0: '#060010', bg1: '#0A001E', bg2: '#070014',
-  neb0: 'rgba(108,16,195,0.32)', neb1: 'rgba(172,24,160,0.20)',
-  sW: '#F3EDFF', sB: '#B2CCFF', sG: '#FFE270', sP: '#CF98FF', sCy: '#86EEFF',
+  sW: '#F3EDFF', sB: '#B2CCFF', sG: '#FFE270', sP: '#CF98FF',
   glass: 'rgba(255,255,255,0.056)',
   glassBorder: 'rgba(255,255,255,0.09)',
   primary: '#C060FF',
@@ -31,30 +36,15 @@ const G = {
   textSub: '#BCB8C2',
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🍿 DONNÉES COMPLÈTES
-// ─────────────────────────────────────────────────────────────────────────────
-const ALL_WORKS = [
-  { id: '1',  title: 'Interdit',           category: 'Interdit', genre: 'Thriller',  year: 2023, likes: 345, image: 'https://picsum.photos/seed/p1/400/600', isOriginal: false, adjective: 'Provocateur', duration: 95  },
-  { id: '2',  title: 'La Mariée Captive',  category: 'ORIGINAL', genre: 'Drame',     year: 2024, likes: 212, comments: 45, image: 'https://picsum.photos/seed/p2/400/600', isOriginal: true, adjective: 'Captivant', duration: 110 },
-  { id: '3',  title: 'Neon Abyss',         category: 'Mini-série',    genre: 'Sci-Fi',    year: 2023, likes: 371, image: 'https://picsum.photos/seed/p3/400/600', isOriginal: false, adjective: 'Visuel', duration: 45   },
-  { id: '4',  title: 'Wasteland',          category: 'Film',     genre: 'Action',    year: 2022, likes: 128, image: 'https://picsum.photos/seed/p4/400/600', isOriginal: true, adjective: 'Brut', duration: 120  },
-  { id: '5',  title: 'Nocturne',           category: 'Film',     genre: 'Drame',     year: 2024, likes: 490, image: 'https://picsum.photos/seed/p5/400/600', isOriginal: false, adjective: 'Sombre', duration: 98   },
-  { id: '6',  title: 'Équinoxe',           category: 'Mini-série',    genre: 'Thriller',  year: 2023, likes: 670, image: 'https://picsum.photos/seed/p6/400/600', isOriginal: true, adjective: 'Haletant', duration: 52  },
-  { id: '7',  title: 'Solar',              category: 'ORIGINAL', genre: 'Sci-Fi',    year: 2022, likes: 233, image: 'https://picsum.photos/seed/p7/400/600', isOriginal: true, adjective: 'Épique', duration: 130  },
-  { id: '8',  title: 'Crimson Coast',      category: 'Film',     genre: 'Action',    year: 2024, likes: 815, image: 'https://picsum.photos/seed/p8/400/600', isOriginal: false, adjective: 'Intense', duration: 105 },
-];
-
-const GENRES   = ['Tous', 'Thriller', 'Drame', 'Sci-Fi', 'Action'];
-const SORT_OPT = ['Popularité', 'Récent', 'Anciens'];
-const DURATIONS= ['Toutes', '< 60 min', '60–100 min', '> 100 min'];
-const YEARS    = ['Toutes', '2024', '2023', '2022'];
-const MAIN_TABS = ['Catégories','Mini-séries', 'Films' ];
+const GENRES    = ['Tous', 'Thriller', 'Drame', 'Sci-Fi', 'Action'];
+const SORT_OPT: SortOption[]   = ['Popularité', 'Récent', 'Anciens'];
+const DURATIONS: DurationBand[] = ['Toutes', '< 60 min', '60–100 min', '> 100 min'];
+const YEARS     = ['Toutes', '2024', '2023', '2022'];
+const MAIN_TABS = ['Catégories', 'Mini-séries', 'Films'];
 
 // ═══════════════════════════════════════════════════════════════════
-//  ░░░  GALAXY ANIMATION ENGINE (Portage Intégral)  ░░░
+//  GALAXY ANIMATION ENGINE
 // ═══════════════════════════════════════════════════════════════════
-
 const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -140,16 +130,10 @@ const GalaxyBackground = memo(() => {
 });
 GalaxyBackground.displayName = 'GalaxyBackground';
 
-// ═══════════════════════════════════════════════════════════════════
-//  ░░░  COMPOSANTS  ░══════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════
-
 // ─── Dropdown Filtre ───────────────────────────────────────────────
 interface DropdownProps {
-  visible: boolean;
-  onClose: () => void;
-  options: string[];
-  selected: string;
+  visible: boolean; onClose: () => void;
+  options: string[]; selected: string;
   onSelect: (v: string) => void;
   anchor: { x: number; y: number };
 }
@@ -179,17 +163,8 @@ const dd = StyleSheet.create({
 });
 
 // ─── Chip Filtre ───────────────────────────────────────────────────
-interface ChipProps {
-  label: string;
-  value: string;
-  onPress: (ev: any) => void;
-  active?: boolean;
-}
-const FilterChip = memo(({ label, value, onPress, active }: ChipProps) => (
-  <TouchableOpacity
-    style={[fc.chip, active && fc.chipOn]}
-    onPress={onPress}
-  >
+const FilterChip = memo(({ label, value, onPress, active }: { label: string; value: string; onPress: (ev: any) => void; active?: boolean }) => (
+  <TouchableOpacity style={[fc.chip, active && fc.chipOn]} onPress={onPress}>
     <Text style={[fc.txt, active && fc.txtOn]}>{label}: {value}</Text>
     <Ionicons name="chevron-down" size={13} color={active ? G.primary : G.textSub} style={{ marginLeft: 3 }} />
   </TouchableOpacity>
@@ -204,7 +179,8 @@ const fc = StyleSheet.create({
 });
 
 // ─── Carte Film ────────────────────────────────────────────────────
-type Work = typeof ALL_WORKS[0];
+const CARD_W = (W - 45) / 2;
+
 const MovieCard = memo(({ item }: { item: Work }) => {
   const router = useRouter();
   return (
@@ -213,9 +189,9 @@ const MovieCard = memo(({ item }: { item: Work }) => {
       activeOpacity={0.85}
       onPress={() => router.push(`/film/${item.id}`)}
     >
-      <Image source={{ uri: item.image }} style={mc.image} />
+      <Image source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id}/400/600` }} style={mc.image} />
       <LinearGradient colors={['transparent', 'rgba(0,0,0,0.85)']} style={mc.overlay} />
-      <View style={[mc.badge, { backgroundColor: item.isOriginal ? G.purpleBadge : G.pinkBadge }]}>
+      <View style={[mc.badge, { backgroundColor: item.is_original ? G.purpleBadge : G.pinkBadge }]}>
         <Text style={mc.badgeText}>{item.category.toUpperCase()}</Text>
       </View>
       <View style={mc.content}>
@@ -243,7 +219,6 @@ const MovieCard = memo(({ item }: { item: Work }) => {
 });
 MovieCard.displayName = 'MovieCard';
 
-const CARD_W = (W - 45) / 2;
 const mc = StyleSheet.create({
   container: { width: CARD_W, height: 250, borderRadius: 18, overflow: 'hidden', marginBottom: 15 },
   image:     { width: '100%', height: '100%', resizeMode: 'cover' },
@@ -258,6 +233,21 @@ const mc = StyleSheet.create({
   statTxt:   { color: 'white', fontSize: 11, fontWeight: '500' },
 });
 
+// ─── Skeleton Card ─────────────────────────────────────────────────
+const SkeletonCard = memo(() => {
+  const op = useRef(new Animated.Value(0.3)).current;
+  useEffect(() => {
+    Animated.loop(Animated.sequence([
+      Animated.timing(op, { toValue: 0.7, duration: 900, useNativeDriver: true }),
+      Animated.timing(op, { toValue: 0.3, duration: 900, useNativeDriver: true }),
+    ])).start();
+  }, []); // eslint-disable-line
+  return (
+    <Animated.View style={[mc.container, { backgroundColor: G.glass, opacity: op }]} />
+  );
+});
+SkeletonCard.displayName = 'SkeletonCard';
+
 // ─── Résultat vide ─────────────────────────────────────────────────
 const EmptyState = memo(() => (
   <View style={es.wrap}>
@@ -267,30 +257,81 @@ const EmptyState = memo(() => (
   </View>
 ));
 EmptyState.displayName = 'EmptyState';
-
 const es = StyleSheet.create({
   wrap: { alignItems: 'center', paddingVertical: 60 },
   txt:  { color: 'rgba(255,255,255,0.4)', fontSize: 16, fontWeight: '600', marginTop: 14 },
   sub:  { color: 'rgba(255,255,255,0.2)', fontSize: 13, marginTop: 6 },
 });
 
-// ═══════════════════════════════════════════════════════════════════
-//  ░░░  ÉCRAN PRINCIPAL  ░░░
-// ═══════════════════════════════════════════════════════════════════
+// ─── Error State ───────────────────────────────────────────────────
+const ErrorState = memo(({ onRetry }: { onRetry: () => void }) => (
+  <View style={es.wrap}>
+    <Ionicons name="cloud-offline-outline" size={48} color="rgba(255,255,255,0.15)" />
+    <Text style={es.txt}>Erreur de chargement</Text>
+    <TouchableOpacity onPress={onRetry} style={{ marginTop: 14, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: G.primary }}>
+      <Text style={{ color: G.primary, fontWeight: '700' }}>Réessayer</Text>
+    </TouchableOpacity>
+  </View>
+));
+ErrorState.displayName = 'ErrorState';
 
+// ═══════════════════════════════════════════════════════════════════
+//  ÉCRAN PRINCIPAL
+// ═══════════════════════════════════════════════════════════════════
 export default function SearchScreen() {
   const router = useRouter();
 
-  // ── État filtres ────────────────────────────────────────────────
-  const [search,      setSearch]      = useState('');
-  const [activeTab,   setActiveTab]   = useState('Catégories');
-  const [genre,       setGenre]       = useState('Tous');
-  const [sortBy,      setSortBy]      = useState('Popularité');
-  const [duration,    setDuration]    = useState('Toutes');
-  const [year,        setYear]        = useState('Toutes');
+  // ── Filtres ────────────────────────────────────────────────────
+  const [search,    setSearch]    = useState('');
+  const [activeTab, setActiveTab] = useState('Catégories');
+  const [genre,     setGenre]     = useState('Tous');
+  const [sortBy,    setSortBy]    = useState<SortOption>('Popularité');
+  const [duration,  setDuration]  = useState<DurationBand>('Toutes');
+  const [year,      setYear]      = useState('Toutes');
+
+  // ── Data ───────────────────────────────────────────────────────
+  const [works,     setWorks]     = useState<Work[]>([]);
+  const [trending,  setTrending]  = useState<Work[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState(false);
+
+  // ── Debounce search ───────────────────────────────────────────
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debounceTimer = useRef<ReturnType<typeof setTimeout>>();
+  useEffect(() => {
+    clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(debounceTimer.current);
+  }, [search]);
+
+  // ── Fetch résultats filtrés ────────────────────────────────────
+  const loadWorks = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const data = await fetchWorks({
+        tab: activeTab, search: debouncedSearch,
+        genre, sortBy, duration, year,
+      });
+      setWorks(data);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, debouncedSearch, genre, sortBy, duration, year]);
+
+  useEffect(() => { loadWorks(); }, [loadWorks]);
+
+  // ── Trending (une seule fois au mount) ────────────────────────
+  useEffect(() => {
+    fetchTrending(4)
+      .then(setTrending)
+      .catch(() => {});
+  }, []);
 
   // ── Dropdowns ──────────────────────────────────────────────────
-  const [openDrop, setOpenDrop]  = useState<string | null>(null);
+  const [openDrop,   setOpenDrop]   = useState<string | null>(null);
   const [dropAnchor, setDropAnchor] = useState({ x: 0, y: 0 });
 
   const openDropdown = useCallback((key: string, ev: any) => {
@@ -300,49 +341,6 @@ export default function SearchScreen() {
     });
   }, []);
 
-  // ── Filtrage & tri ─────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    let list = [...ALL_WORKS];
-
-    // Tab principal
-    if (activeTab === 'Mini-séries') list = list.filter(w => w.category === 'Mini-série');
-    else if (activeTab === 'Films') list = list.filter(w => w.category === 'Film' || w.category === 'ORIGINAL' || w.category === 'Interdit');
-
-    // Recherche texte
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter(w =>
-        w.title.toLowerCase().includes(q) ||
-        w.genre.toLowerCase().includes(q) ||
-        w.adjective.toLowerCase().includes(q)
-      );
-    }
-
-    // Genre
-    if (genre !== 'Tous') list = list.filter(w => w.genre === genre);
-
-    // Durée
-    if (duration === '< 60 min')    list = list.filter(w => w.duration < 60);
-    else if (duration === '60–100 min') list = list.filter(w => w.duration >= 60 && w.duration <= 100);
-    else if (duration === '> 100 min')  list = list.filter(w => w.duration > 100);
-
-    // Année
-    if (year !== 'Toutes') list = list.filter(w => String(w.year) === year);
-
-    // Tri
-    if (sortBy === 'Popularité') list.sort((a, b) => b.likes - a.likes);
-    else if (sortBy === 'Récent')  list.sort((a, b) => b.year - a.year);
-    else if (sortBy === 'Anciens') list.sort((a, b) => a.year - b.year);
-
-    return list;
-  }, [search, activeTab, genre, sortBy, duration, year]);
-
-  // ── Trending = top 4 toutes catégories ────────────────────────
-  const trending = useMemo(() =>
-    [...ALL_WORKS].sort((a, b) => b.likes - a.likes).slice(0, 4),
-    []
-  );
-
   const activeFilterCount = [
     genre !== 'Tous', sortBy !== 'Popularité', duration !== 'Toutes', year !== 'Toutes',
   ].filter(Boolean).length;
@@ -351,15 +349,39 @@ export default function SearchScreen() {
     setGenre('Tous'); setSortBy('Popularité'); setDuration('Toutes'); setYear('Toutes');
   }, []);
 
+  const totalLikes = useMemo(
+    () => trending.reduce((acc, w) => acc + w.likes, 0),
+    [trending],
+  );
+
+  // ── Rendu grid ─────────────────────────────────────────────────
+  const renderGrid = (items: Work[]) => {
+    if (loading) return (
+      <View style={s.grid}>
+        {[0,1,2,3].map(i => <SkeletonCard key={i} />)}
+      </View>
+    );
+    if (error)  return <ErrorState onRetry={loadWorks} />;
+    if (!items.length) return <EmptyState />;
+    return (
+      <View style={s.grid}>
+        {items.map(item => <MovieCard key={item.id} item={item} />)}
+      </View>
+    );
+  };
+
+  const showResults   = debouncedSearch.trim() || activeTab !== 'Catégories';
+  const showTrending  = !debouncedSearch.trim() && activeTab === 'Catégories';
+
   return (
     <View style={s.container}>
       <StatusBar style="light" />
       <GalaxyBackground />
 
-      {/* ── Dropdowns modaux ── */}
+      {/* ── Dropdowns ── */}
       <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={setSortBy}   anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={setDuration} anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}   anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
       <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollPadding}>
@@ -392,31 +414,31 @@ export default function SearchScreen() {
           )}
         </View>
 
-          {/* ── TABS PRINCIPAUX ── */}
-          <View style={s.tabRow}>
-            {MAIN_TABS.map((tab) => {
-              const active = activeTab === tab || (activeTab === '' && tab === 'Catégories');
-              return (
-                <TouchableOpacity
-            key={tab}
-            style={[s.mainTab, active && s.activeTab]}
-            onPress={() => setActiveTab(tab)}
-                >
-            <Text style={[s.mainTabText, active && { color: 'white' }]}>{tab}</Text>
-            {tab === 'Catégories' && (
-              <Ionicons name="chevron-forward" size={14} color={active ? 'white' : G.textSub} style={{ marginLeft: 4 }} />
-            )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+        {/* ── TABS ── */}
+        <View style={s.tabRow}>
+          {MAIN_TABS.map(tab => {
+            const active = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={[s.mainTab, active && s.activeTab]}
+                onPress={() => setActiveTab(tab)}
+              >
+                <Text style={[s.mainTabText, active && { color: 'white' }]}>{tab}</Text>
+                {tab === 'Catégories' && (
+                  <Ionicons name="chevron-forward" size={14} color={active ? 'white' : G.textSub} style={{ marginLeft: 4 }} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {/* ── FILTRES AVANCÉS ── */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.filterRow}>
-          <FilterChip label="Genre"      value={genre}    active={genre !== 'Tous'}       onPress={(e) => openDropdown('genre', e)} />
-          <FilterChip label="Tri"        value={sortBy}   active={sortBy !== 'Popularité'} onPress={(e) => openDropdown('sort', e)}  />
-          <FilterChip label="Durée"      value={duration} active={duration !== 'Toutes'}  onPress={(e) => openDropdown('duration', e)} />
-          <FilterChip label="Année"      value={year}     active={year !== 'Toutes'}      onPress={(e) => openDropdown('year', e)}  />
+          <FilterChip label="Genre"  value={genre}    active={genre !== 'Tous'}        onPress={e => openDropdown('genre', e)} />
+          <FilterChip label="Tri"    value={sortBy}   active={sortBy !== 'Popularité'} onPress={e => openDropdown('sort', e)} />
+          <FilterChip label="Durée"  value={duration} active={duration !== 'Toutes'}   onPress={e => openDropdown('duration', e)} />
+          <FilterChip label="Année"  value={year}     active={year !== 'Toutes'}       onPress={e => openDropdown('year', e)} />
           {activeFilterCount > 0 && (
             <TouchableOpacity style={s.resetBtn} onPress={resetFilters}>
               <Ionicons name="refresh" size={14} color={G.primary} />
@@ -425,36 +447,33 @@ export default function SearchScreen() {
           )}
         </ScrollView>
 
-        {/* ── TRENDING (si pas de recherche active & tab Catégories) ── */}
-        {!search.trim() && activeTab === 'Catégories' && (
+        {/* ── TRENDING ── */}
+        {showTrending && (
           <>
             <View style={s.gridHeader}>
               <Text style={s.sectionTitle}>Les plus tendances</Text>
               <Ionicons name="chevron-forward" size={20} color={G.textSub} />
             </View>
-            <View style={s.grid}>
-              {trending.map(item => <MovieCard key={item.id} item={item} />)}
-            </View>
+            {trending.length === 0 && loading
+              ? <View style={s.grid}>{[0,1,2,3].map(i => <SkeletonCard key={i} />)}</View>
+              : <View style={s.grid}>{trending.map(item => <MovieCard key={item.id} item={item} />)}</View>
+            }
           </>
         )}
 
         {/* ── RÉSULTATS FILTRÉS ── */}
-        {(search.trim() || activeTab !== 'Catégories') && (
+        {showResults && (
           <>
             <View style={s.gridHeader}>
               <Text style={s.sectionTitle}>
-                {search.trim() ? `Résultats "${search}"` : activeTab}
+                {debouncedSearch.trim() ? `"${debouncedSearch}"` : activeTab}
               </Text>
-              <Text style={s.resultCount}>{filtered.length} œuvres</Text>
+              {!loading && !error && (
+                <Text style={s.resultCount}>{works.length} œuvres</Text>
+              )}
+              {loading && <ActivityIndicator size="small" color={G.primary} />}
             </View>
-
-            {filtered.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <View style={s.grid}>
-                {filtered.map(item => <MovieCard key={item.id} item={item} />)}
-              </View>
-            )}
+            {renderGrid(works)}
           </>
         )}
 
@@ -467,16 +486,13 @@ export default function SearchScreen() {
               </View>
               <View>
                 <Text style={s.bannerTitle}>Populaires cette semaine</Text>
-                <Text style={s.bannerSub}>{ALL_WORKS.reduce((a, w) => a + w.likes, 0).toLocaleString()} appréciations</Text>
+                <Text style={s.bannerSub}>{totalLikes.toLocaleString()} appréciations</Text>
               </View>
             </View>
             <View style={s.avatarStack}>
-              {['1', '2', '3'].map((u, i) => (
-                <Image
-                  key={u}
-                  source={{ uri: `https://i.pravatar.cc/100?u=${u}` }}
-                  style={[s.avatar, i > 0 && { marginLeft: -10 }]}
-                />
+              {['1','2','3'].map((u, i) => (
+                <Image key={u} source={{ uri: `https://i.pravatar.cc/100?u=${u}` }}
+                  style={[s.avatar, i > 0 && { marginLeft: -10 }]} />
               ))}
               <View style={[s.avatar, { marginLeft: -10, backgroundColor: G.glass, justifyContent: 'center', alignItems: 'center' }]}>
                 <Text style={{ color: 'white', fontSize: 8, fontWeight: '700' }}>+5k</Text>
@@ -491,33 +507,33 @@ export default function SearchScreen() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  🎨 STYLES
+//  STYLES
 // ═══════════════════════════════════════════════════════════════════
 const s = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: G.bg0 },
-  scrollPadding:    { paddingBottom: 120 },
-  header:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginTop: Platform.OS === 'ios' ? 54 : 20, marginBottom: 18 },
-  headerTitle:      { color: 'white', fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
-  notifBtn:         { width: 40, height: 40, borderRadius: 20, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'center', alignItems: 'center' },
-  searchContainer:  { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 20, paddingHorizontal: 15, height: 50, borderRadius: 15, marginBottom: 20, borderWidth: 1, borderColor: G.glassBorder },
-  input:            { flex: 1, color: 'white', fontSize: 15 },
-  tabRow:           { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 20 },
-  mainTab:          { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', paddingHorizontal: 18, paddingVertical: 11, borderRadius: 20, borderWidth: 1, borderColor: G.glassBorder },
-  activeTab:        { backgroundColor: '#5A2A94', borderColor: G.primary },
-  mainTabText:      { color: G.textSub, fontWeight: '600', fontSize: 14 },
-  filterRow:        { paddingLeft: 20, marginBottom: 22 },
-  resetBtn:         { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, marginRight: 10, borderRadius: 20, borderWidth: 1, borderColor: G.primary, backgroundColor: 'rgba(192,96,255,0.08)' },
-  resetTxt:         { color: G.primary, fontSize: 12, fontWeight: '600' },
-  gridHeader:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 14 },
-  sectionTitle:     { color: 'white', fontSize: 20, fontWeight: '800' },
-  resultCount:      { color: G.textSub, fontSize: 13 },
-  grid:             { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 15, justifyContent: 'space-between' },
-  popularBanner:    { marginHorizontal: 20, marginTop: 10, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder },
-  bannerBlur:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
-  bannerLeft:       { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  bannerIconCircle: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,226,112,0.15)', justifyContent: 'center', alignItems: 'center' },
-  bannerTitle:      { color: 'white', fontSize: 15, fontWeight: '700' },
-  bannerSub:        { color: G.textSub, fontSize: 12, marginTop: 2 },
-  avatarStack:      { flexDirection: 'row' },
-  avatar:           { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: 'white', overflow: 'hidden' },
+  container:       { flex: 1, backgroundColor: G.bg0 },
+  scrollPadding:   { paddingBottom: 120 },
+  header:          { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginTop: Platform.OS === 'ios' ? 54 : 20, marginBottom: 18 },
+  headerTitle:     { color: 'white', fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
+  notifBtn:        { width: 40, height: 40, borderRadius: 20, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'center', alignItems: 'center' },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', marginHorizontal: 20, paddingHorizontal: 15, height: 50, borderRadius: 15, marginBottom: 20, borderWidth: 1, borderColor: G.glassBorder },
+  input:           { flex: 1, color: 'white', fontSize: 15 },
+  tabRow:          { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 20 },
+  mainTab:         { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', paddingHorizontal: 18, paddingVertical: 11, borderRadius: 20, borderWidth: 1, borderColor: G.glassBorder },
+  activeTab:       { backgroundColor: '#5A2A94', borderColor: G.primary },
+  mainTabText:     { color: G.textSub, fontWeight: '600', fontSize: 14 },
+  filterRow:       { paddingLeft: 20, marginBottom: 22 },
+  resetBtn:        { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, marginRight: 10, borderRadius: 20, borderWidth: 1, borderColor: G.primary, backgroundColor: 'rgba(192,96,255,0.08)' },
+  resetTxt:        { color: G.primary, fontSize: 12, fontWeight: '600' },
+  gridHeader:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 14 },
+  sectionTitle:    { color: 'white', fontSize: 20, fontWeight: '800' },
+  resultCount:     { color: G.textSub, fontSize: 13 },
+  grid:            { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 15, justifyContent: 'space-between' },
+  popularBanner:   { marginHorizontal: 20, marginTop: 10, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: G.glassBorder },
+  bannerBlur:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
+  bannerLeft:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  bannerIconCircle:{ width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,226,112,0.15)', justifyContent: 'center', alignItems: 'center' },
+  bannerTitle:     { color: 'white', fontSize: 15, fontWeight: '700' },
+  bannerSub:       { color: G.textSub, fontSize: 12, marginTop: 2 },
+  avatarStack:     { flexDirection: 'row' },
+  avatar:          { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, borderColor: 'white', overflow: 'hidden' },
 });
