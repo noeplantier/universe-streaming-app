@@ -128,7 +128,7 @@ const WebVideoPlayer = memo(function WebVideoPlayer({
   // React.createElement pour éviter les erreurs TypeScript sur <video> dans RN
   return React.createElement('video', {
     ref,
-    src,          
+    src,           // ← toujours une URL valide (jamais "")
     autoPlay: true,
     loop:     true,
     playsInline: true,

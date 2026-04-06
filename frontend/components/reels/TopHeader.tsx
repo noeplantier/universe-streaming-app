@@ -57,7 +57,7 @@ const TopHeader = memo(function TopHeader({ feedKey, onMenuPress, scrollY }: Top
       >
         <Text style={s.amiesLabel}>Amies</Text>
         <View style={s.avatarPile}>
-          {FP.slice(0, 2).map((f, i) => (
+          {(FP || []).slice(0, 2).map((f, i) => (
             <Image
               key={f.id}
               source={{ uri: f.avatar }}

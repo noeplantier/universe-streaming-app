@@ -49,7 +49,7 @@ export default function ReelsScreen() {
   // ── Chargement Supabase + fallback MOCK ──────────────────────────────────
   useEffect(() => {
     async function loadFeed() {
-      if (!supabase) return;          // pas configuré → MOCK déjà chargé
+      if (!supabase) return;          
       try {
         const { data, error } = await supabase
           .from('films')
@@ -159,8 +159,7 @@ export default function ReelsScreen() {
         scrollEventThrottle={16}
 
         // ── Perf ────────────────────────────────────────────────────────
-        // windowSize=5 : items -2/-1/0/+1/+2 restent montés
-        // → transitions de scroll sans flash du poster
+       
         windowSize={5}
         maxToRenderPerBatch={2}
         updateCellsBatchingPeriod={50}

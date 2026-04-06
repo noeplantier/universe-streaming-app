@@ -486,30 +486,31 @@ export default function CreateScreen() {
             )}
           </ScrollView>
 
-          {/* ── Footer navigation ─────────────────────────────────────────── */}
-          {mode === 'video' && step < 4 && (
-            <BlurView intensity={0} tint="dark" style={styles.footer}>
+            {/* ── Footer navigation ─────────────────────────────────────────── */}
+            {mode === 'video' && step < 4 && (
+            <BlurView intensity={0} tint="dark" style={[styles.footer, { marginBottom: 80 }]}>
               <View style={styles.footerInner}>
-                {step > 0 && (
-                  <TouchableOpacity onPress={goPrev} style={styles.footerBack} activeOpacity={0.8}>
-                    <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.5)" />
-                    <Text style={styles.footerBackTxt}>Retour</Text>
-                  </TouchableOpacity>
-                )}
-                <View style={{ flex: 1 }}>
-                  <CTAButton
-                    label={
-                      step === 0 ? 'Métadonnées →' :
-                      step === 1 ? 'Sous-titres →' :
-                      step === 2 ? 'Thumbnail →'   :
-                      'Exporter →'
-                    }
-                    onPress={goNext}
-                    disabled={!canGoNext}
-                    icon={canGoNext ? undefined : 'lock-closed-outline'}
-                  />
-                </View>
+              {step > 0 && (
+                <TouchableOpacity onPress={goPrev} style={styles.footerBack} activeOpacity={0.8}>
+                <Ionicons name="chevron-back" size={20} color="rgba(255,255,255,0.5)" />
+                <Text style={styles.footerBackTxt}>Retour</Text>
+                </TouchableOpacity>
+              )}
+              <View style={{ flex: 1 }}>
+                <CTAButton
+                label={
+                  step === 0 ? 'Métadonnées →' :
+                  step === 1 ? 'Sous-titres →' :
+                  step === 2 ? 'Thumbnail →'   :
+                  'Exporter →'
+                }
+                onPress={goNext}
+                disabled={!canGoNext}
+                icon={canGoNext ? undefined : 'lock-closed-outline'}
+                />
               </View>
+              </View>
+
 
               {!canGoNext && (
                 <Text style={styles.footerHint}>
