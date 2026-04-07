@@ -1242,9 +1242,9 @@ export default function ProfileScreen() {
               </View>
             </View>
             <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around' }}>
-              <StatColumn value={`${(user.reviews_count ?? 6) + (user.films_seen_count ?? 12)}`} label="publications" />
-              <StatColumn value={formatStat(user.followers_count ?? 2840)} label="abonnés" onPress={() => router.push('/followers')} />
-              <StatColumn value={formatStat(user.following_count ?? 318)} label="abonnements" onPress={() => router.push('/following')} />
+              <StatColumn value={`${(user.reviews_count ?? 6) + (user.films_seen_count ?? 12)}`} label=" films" />
+              <StatColumn value={formatStat(user.followers_count ?? 2840)} label=" critiques" onPress={() => router.push('/ critiques')} />
+              <StatColumn value={formatStat(user.following_count ?? 318)} label="festivals" onPress={() => router.push('/festivals')} />
             </View>
           </View>
 
@@ -1259,20 +1259,7 @@ export default function ProfileScreen() {
               </BlurView>
             </View>
             <Text style={pg.bioText}>{user.bio ?? 'Cinéaste indépendant · Court métrages · Cannes, Sundance, Berlin 🎞️'}</Text>
-            <View style={pg.cinephileRow}>
-              <View style={pg.cinephileStat}>
-                <Ionicons name="film" size={10} color={G.gold} />
-                <Text style={pg.cinephileStatText}>{seenFilms.length + 12} films</Text>
-              </View>
-              <View style={pg.cinephileStat}>
-                <Ionicons name="pencil" size={10} color={G.primary} />
-                <Text style={pg.cinephileStatText}>{reviews.length} critiques</Text>
-              </View>
-              <View style={pg.cinephileStat}>
-                <Ionicons name="trophy" size={10} color={G.cyan} />
-                <Text style={pg.cinephileStatText}>6 festivals</Text>
-              </View>
-            </View>
+
           </View>
 
           {/* Action buttons */}
@@ -1291,27 +1278,7 @@ export default function ProfileScreen() {
           <View style={pg.headerGlow} />
         </SafeAreaView>
 
-        {/* Highlights */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={pg.highlightsScroll}>
-          {[
-            { emoji: '🏆', label: 'Top 10',    color: G.gold },
-            { emoji: '✍️', label: 'Critiques', color: 'rgba(255,220,120,0.9)' },
-            { emoji: '👁',  label: 'Films vus', color: G.cyan },
-            { emoji: '🎬', label: 'Réalisés',   color: G.primary },
-            { emoji: '⭐', label: 'Favoris',    color: '#FF6B9D' },
-            { emoji: '🎪', label: 'Festivals',  color: G.success },
-          ].map(item => (
-            <TouchableOpacity key={item.label} style={pg.highlightChip} activeOpacity={0.8}>
-              <LinearGradient
-                colors={['rgba(30,0,70,0.85)', 'rgba(60,0,130,0.7)']}
-                style={[pg.highlightCircle, { borderColor: `${item.color}45` }]}
-              >
-                <Text style={{ fontSize: 22 }}>{item.emoji}</Text>
-              </LinearGradient>
-              <Text style={pg.highlightLabel}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+    
 
         {/* Grid tab bar */}
         <View style={pg.gridTabBar}>
