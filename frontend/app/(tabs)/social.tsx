@@ -131,7 +131,7 @@ const GENRES_LIST = [
 ] as const;
 
 const MIN_BODY = 80;
-const MOCK_UID = 'mock-user-id'; // remplacer par auth.uid() reel
+const MOCK_UID = '00000000-0000-0000-0000-000000000000'; 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NORMALIZED POST  — structure interne sans objet brut potentiel
@@ -162,7 +162,7 @@ interface NormalizedPost {
  * Apres normalisation, AUCUNE valeur n'est un objet — tout est primitif.
  */
 function normalizePost(raw: PostData): NormalizedPost {
-  const r = raw as Record<string, unknown>;
+  const r = raw as unknown as Record<string, unknown>;
 
   // film peut etre objet ou string
   const filmObj =
@@ -214,15 +214,25 @@ async function validateImageUrl(url: string): Promise<boolean> {
 
 async function uploadImageToSupabase(localUri: string): Promise<string | null> {
   try {
-    const ext      = localUri.split('.').pop() ?? 'jpg';
+    // 1. Correction de l'extension pour les URIs "blob:"
+    const isBlob = localUri.startsWith('blob:');
+    const ext = isBlob ? 'jpg' : (localUri.split('.').pop() ?? 'jpg');
     const filename = `post_${Date.now()}.${ext}`;
-    const blob     = await (await fetch(localUri)).blob();
+    
+    // 2. Utilisation d'ArrayBuffer
+    const response = await fetch(localUri);
+    const arrayBuffer = await response.arrayBuffer();
+    
     const { data, error } = await supabase.storage
       .from('community-images')
-      .upload(`posts/${filename}`, blob, { contentType: `image/${ext}`, upsert: false });
+      .upload(`posts/${filename}`, arrayBuffer, { contentType: `image/${ext}`, upsert: false });
+      
     if (error) throw error;
     return supabase.storage.from('community-images').getPublicUrl(data.path).data.publicUrl;
-  } catch (e) { console.error('[upload]', e); return null; }
+  } catch (e) { 
+    console.error('[upload]', e); 
+    return null; 
+  }
 }
 
 async function dbToggleLike(postId: string, userId: string, wasLiked: boolean) {
@@ -393,9 +403,7 @@ function ComposeModal({ visible, onClose, onPublished }: {
       if (!form.tone)                         return 'Choisissez un ton.';
       if (form.body.trim().length < MIN_BODY) return `Minimum ${MIN_BODY} caracteres (actuel : ${form.body.trim().length}).`;
     }
-    if (s === 'media') {
-      if (!form.imageUrl || !form.imageValid) return 'Une image valide est obligatoire.';
-    }
+  
     return null;
   }, [form]);
 
@@ -435,21 +443,7 @@ function ComposeModal({ visible, onClose, onPublished }: {
     setImgLoad(false);
   }, [patch, clrErr, setErr]);
 
-  // URL manuelle
-  const validateManual = useCallback(async () => {
-    if (!manualUrl.trim()) return;
-    setImgLoad(true); clrErr('media'); patch('imageValid', false);
-    const valid = await validateImageUrl(manualUrl.trim());
-    if (!valid) { setErr('media', 'URL invalide ou image inaccessible.'); setImgLoad(false); return; }
-    patch('imageUri', manualUrl.trim()); patch('imageUrl', manualUrl.trim()); patch('imageValid', true);
-    setImgLoad(false);
-  }, [manualUrl, patch, clrErr, setErr]);
-
-  const resetImg = useCallback(() => {
-    patch('imageUri', ''); patch('imageUrl', ''); patch('imageValid', false);
-    setManualUrl(''); clrErr('media');
-  }, [patch, clrErr]);
-
+  
   // Publication
   const publish = useCallback(async () => {
     if (!form.imageValid) { Alert.alert('Image manquante', 'Une image valide est obligatoire.'); return; }
@@ -649,9 +643,7 @@ function ComposeModal({ visible, onClose, onPublished }: {
                             <Text style={{ color: 'white', fontSize: 13, marginTop: 6 }}>Validation...</Text>
                           </View>
                         )}
-                        <TouchableOpacity style={cm.removeImg} onPress={resetImg}>
-                          <Ionicons name="close-circle" size={26} color="white" />
-                        </TouchableOpacity>
+                
                       </View>
                     ) : (
                       <TouchableOpacity style={cm.pickBtn} onPress={pickImage} disabled={imgLoading}>
@@ -662,30 +654,7 @@ function ComposeModal({ visible, onClose, onPublished }: {
                       </TouchableOpacity>
                     )}
 
-                    {!form.imageValid && (
-                      <View style={{ marginTop: 16 }}>
-                        <Text style={{ color: C.textTert, fontSize: 12, textAlign: 'center', marginBottom: 10 }}>
-                          ou collez une URL publique
-                        </Text>
-                        <View style={{ flexDirection: 'row', gap: 8 }}>
-                          <TextInput
-                            style={[cm.input, { flex: 1 }]}
-                            placeholder="https://exemple.com/image.jpg"
-                            placeholderTextColor={C.textTert}
-                            value={manualUrl} onChangeText={setManualUrl}
-                            autoCapitalize="none" keyboardType="url"
-                          />
-                          <TouchableOpacity
-                            style={[cm.urlBtn, imgLoading && { opacity: 0.5 }]}
-                            onPress={validateManual} disabled={imgLoading}>
-                            {imgLoading
-                              ? <ActivityIndicator size="small" color="white" />
-                              : <Text style={{ color: 'white', fontWeight: '700', fontSize: 13 }}>Valider</Text>
-                            }
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    )}
+                    
 
                     {errors.media ? <Text style={cm.errTxt}>{errors.media}</Text> : null}
                   </View>
