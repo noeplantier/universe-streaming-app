@@ -3,66 +3,6 @@
 //
 // SCHÉMA SUPABASE  (SQL à coller dans Dashboard → SQL Editor)
 // ─────────────────────────────────────────────────────────────────────────────
-//
-//  CREATE TABLE community_posts (
-//    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-//    user_id       uuid REFERENCES auth.users NOT NULL,
-//    work_id       integer REFERENCES works(id),
-//    work_title    text NOT NULL,
-//    work_year     text,
-//    work_director text,
-//    work_genre    text,
-//    rating        numeric(2,1) CHECK (rating >= 0.5 AND rating <= 5),
-//    body          text NOT NULL CHECK (char_length(body) >= 80),
-//    image_url     text NOT NULL,
-//    image_valid   boolean DEFAULT false,
-//    tags          text[],
-//    tone          text CHECK (tone IN ('analyse','coup de coeur','deception','reflexion')),
-//    likes_count   integer DEFAULT 0,
-//    shares_count  integer DEFAULT 0,
-//    created_at    timestamptz DEFAULT now()
-//  );
-//  CREATE TABLE post_likes (
-//    post_id    uuid REFERENCES community_posts(id) ON DELETE CASCADE,
-//    user_id    uuid REFERENCES auth.users NOT NULL,
-//    created_at timestamptz DEFAULT now(),
-//    PRIMARY KEY (post_id, user_id)
-//  );
-//  CREATE TABLE post_shares (
-//    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-//    post_id    uuid REFERENCES community_posts(id) ON DELETE CASCADE,
-//    user_id    uuid REFERENCES auth.users NOT NULL,
-//    platform   text,
-//    created_at timestamptz DEFAULT now()
-//  );
-//  CREATE TABLE post_saves (
-//    post_id    uuid REFERENCES community_posts(id) ON DELETE CASCADE,
-//    user_id    uuid REFERENCES auth.users NOT NULL,
-//    created_at timestamptz DEFAULT now(),
-//    PRIMARY KEY (post_id, user_id)
-//  );
-//  CREATE OR REPLACE VIEW community_posts_enriched AS
-//    SELECT p.*,
-//      (SELECT count(*) FROM post_likes  WHERE post_id = p.id)::int AS likes_count,
-//      (SELECT count(*) FROM post_shares WHERE post_id = p.id)::int AS shares_count,
-//      (SELECT count(*) FROM post_saves  WHERE post_id = p.id)::int AS saves_count
-//    FROM community_posts p;
-//  ALTER TABLE community_posts ENABLE ROW LEVEL SECURITY;
-//  ALTER TABLE post_likes  ENABLE ROW LEVEL SECURITY;
-//  ALTER TABLE post_shares ENABLE ROW LEVEL SECURITY;
-//  ALTER TABLE post_saves  ENABLE ROW LEVEL SECURITY;
-//  CREATE POLICY "read_all"  ON community_posts FOR SELECT USING (true);
-//  CREATE POLICY "own_write" ON community_posts FOR INSERT WITH CHECK (auth.uid() = user_id);
-//  CREATE POLICY "own_del"   ON community_posts FOR DELETE  USING (auth.uid() = user_id);
-//  CREATE POLICY "read_all"  ON post_likes      FOR SELECT USING (true);
-//  CREATE POLICY "own_write" ON post_likes      FOR INSERT WITH CHECK (auth.uid() = user_id);
-//  CREATE POLICY "own_del"   ON post_likes      FOR DELETE  USING (auth.uid() = user_id);
-//  CREATE POLICY "read_all"  ON post_shares     FOR SELECT USING (true);
-//  CREATE POLICY "own_write" ON post_shares     FOR INSERT WITH CHECK (auth.uid() = user_id);
-//  CREATE POLICY "read_all"  ON post_saves      FOR SELECT USING (true);
-//  CREATE POLICY "own_write" ON post_saves      FOR INSERT WITH CHECK (auth.uid() = user_id);
-//  CREATE POLICY "own_del"   ON post_saves      FOR DELETE  USING (auth.uid() = user_id);
-// ─────────────────────────────────────────────────────────────────────────────
 
 import React, {
   useState, useCallback, useRef, useMemo,
@@ -858,9 +798,7 @@ const ComposeBar = memo(function ComposeBar({ onPress }: { onPress: () => void }
         </View>
       </View>
       <View style={{ borderRadius: 20, overflow: 'hidden' }}>
-        <LinearGradient colors={[C.violet, '#7C3AED']} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} style={cbar.cta}>
-          <Ionicons name="create" size={18} color="white" />
-        </LinearGradient>
+          <Ionicons name="create" size={25} color="white" />
       </View>
     </TouchableOpacity>
   );
@@ -1042,9 +980,7 @@ const SocialHeader = memo(function SocialHeader({ onCompose }: { onCompose: () =
           <Ionicons name="notifications-outline" size={20} color="white" />
           <View style={hdr.dot} />
         </TouchableOpacity>
-        <TouchableOpacity style={[hdr.btn, hdr.composeBtn]} onPress={onCompose} activeOpacity={0.85}>
-          <Ionicons name="create-outline" size={20} color="white" />
-        </TouchableOpacity>
+    
       </View>
     </View>
   );
@@ -1109,7 +1045,6 @@ function FeedBody() {
   const ListHeader = useMemo(() => (
     <>
       <SocialHeader onCompose={() => setComposeOpen(true)} />
-      <StoryRail />
       <View style={{ height: 14 }} />
       <ComposeBar onPress={() => setComposeOpen(true)} />
       <View style={{ height: 6 }} />

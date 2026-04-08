@@ -154,25 +154,27 @@ const SearchOverlay = memo(({
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
-      {/* Dropdowns inside overlay */}
-      <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}    anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
+    {/* Dropdowns inside overlay */}
+    <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
+    <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}    anchor={dropAnchor} />
+    <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
+    <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
 
-      <Animated.View style={[so.root, { transform: [{ translateY: slideY }] }]}>
-        <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={so.inner}>
+    <Animated.View style={[so.root, { transform: [{ translateY: slideY }] }]}>
+      <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+      {/* Ajout de la notion de top (ex: top provenant de useSafeAreaInsets ou valeur par défaut) */}
+      <View style={[so.inner, { paddingTop: typeof top !== 'undefined' ? top + 10 : 50 }]}>
+   
 
-          {/* Header row */}
-          <View style={so.header}>
-            <View style={so.inputRow}>
-              <Ionicons name="search" size={18} color={T.textSec} style={{ marginRight: 10 }} />
-              <TextInput
-                ref={inputRef}
-                style={so.input}
-                placeholder="Titre, genre, ambiance…"
-                placeholderTextColor={T.textTert}
+        {/* Header row */}
+        <View style={so.header}>
+          <View style={so.inputRow}>
+            <Ionicons name="search" size={18} color={T.textSec} style={{ marginRight: 10 }} />
+            <TextInput
+              ref={inputRef}
+              style={so.input}
+              placeholder="Titre, genre, ambiance…"
+              placeholderTextColor={T.textTert}
                 value={search}
                 onChangeText={setSearch}
                 returnKeyType="search"
@@ -710,7 +712,7 @@ export default function SearchScreen() {
       <Animated.View style={[ms.stickyHeader, { opacity: headerOpac }]} pointerEvents="none">
         <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={ms.stickyInner}>
-          <Text style={ms.stickyTitle}>Découvrir</Text>
+          <Text style={ms.stickyTitle}>UNIVERSE</Text>
         </View>
       </Animated.View>
 
@@ -856,12 +858,12 @@ const ms = StyleSheet.create({
   scroll:      { paddingBottom: 120 },
 
   // sticky header
-  stickyHeader:{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50, height: Platform.OS === 'ios' ? 90 : 60, overflow: 'hidden' },
+  stickyHeader:{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50, height: Platform.OS === 'ios' ? 90 : 60 },
   stickyInner: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 20, paddingBottom: 10, marginTop: Platform.OS === 'ios' ? 44 : 0 },
-  stickyTitle: { color: T.textPrim, fontSize: 17, fontWeight: '700' },
+  stickyTitle: { color: T.textPrim, fontSize: 35, fontWeight: '700' },
 
   // search icon
-  topRight:     { position: 'absolute', top: Platform.OS === 'ios' ? 54 : 20, right: 20, zIndex: 100 },
+  topRight:     { position: 'absolute', top: Platform.OS === 'ios' ? 44 : 10, right: 20, zIndex: 100 },
   searchIconBtn:{ width: 40, height: 40, borderRadius: 20, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: T.surfBorder },
 
   // tab wrapper

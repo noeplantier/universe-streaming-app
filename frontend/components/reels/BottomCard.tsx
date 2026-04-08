@@ -82,10 +82,7 @@ const BottomCard = memo(function BottomCard({
 
           {/* Barre de progression */}
           <View style={s.progressTrack}>
-            <View style={[s.progressFill, { width: `${clampedPct}%` as any }]}>
-              <View style={s.progressGlow} />
-            </View>
-            <View style={[s.progressThumb, { left: `${Math.min(clampedPct, 98)}%` as any }]} />
+            <View style={[s.progressFill, { width: `${clampedPct}%` }]} />
           </View>
           <View style={s.timesRow}>
             <Text style={s.timeText}>{elMin}:{elSec}</Text>

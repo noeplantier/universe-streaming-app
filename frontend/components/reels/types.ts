@@ -22,7 +22,7 @@ export interface Friend {
     surface: '#130025',
     glass:   'rgba(255,255,255,0.06)',
     primary: '#9240D6',
-    primL:   '#C060FF',
+    primL:   '#fff',
     primGl:  'rgba(146,64,214,0.38)',
     t1:      '#FFFFFF', 
     t2:      'rgba(240,232,255,0.62)',

@@ -95,7 +95,7 @@ async function uploadReelToSupabase(
          contentType: `video/${ext}`, 
          upsert: false 
         });
-        
+
     if (storageError) throw storageError;
 
     onProgress(70, 'Finalisation…');
@@ -739,26 +739,32 @@ export default function CreateScreen() {
   }, [step, router]);
 
   // ── Upload + navigation vers reels ───────────────────────────────────────
-  const handleUpload = useCallback(async () => {
-    if (!videoUri || uploading) return;
-    setUploading(true);
-    setUploadProgress(0);
-    setUploadMsg('Initialisation…');
+const handleUpload = useCallback(async () => {
+  if (!videoUri || uploading) return;
 
-    const result = await uploadReelToSupabase(
-      videoUri, meta,
-      (pct, msg) => { setUploadProgress(pct); setUploadMsg(msg); },
-    );
+  setUploading(true);
+  setUploadProgress(0);
 
-    setUploading(false);
-    if (result) {
-      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Navigation vers la page reels avec le nouvel ID
-      router.replace({ pathname: '/(tabs)/reels', params: { newReelId: result.id } });
-    } else {
-      Alert.alert('Erreur', 'L\'upload a échoué. Vérifiez votre connexion et réessayez.');
-    }
-  }, [videoUri, meta, uploading, router]);
+  const result = await uploadReelToSupabase(
+    videoUri,
+    meta,
+    (pct, msg) => {
+      setUploadProgress(pct);
+      setUploadMsg(msg);
+    },
+  );
+
+  setUploading(false);
+
+  if (result) {
+    router.replace({
+      pathname: '/(tabs)/reels',
+      params: { newReelId: result.id },
+    });
+  } else {
+    Alert.alert('Erreur', 'Upload échoué');
+  }
+}, [videoUri, meta, uploading]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // Render

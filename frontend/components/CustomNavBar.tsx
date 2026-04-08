@@ -60,7 +60,7 @@ function CustomNavBar() {
 
         <NavItem
           icon={<MaterialCommunityIcons name="play-box-multiple" size={24} color="white" />}
-          label="Reels"
+          label="Véloces"
           onPress={() => navigate('/')}
         />
 

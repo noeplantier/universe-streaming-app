@@ -1226,7 +1226,6 @@ export default function ProfileScreen() {
           {/* Avatar + Stats */}
           <View style={pg.avatarStatsRow}>
             <View>
-              <LinearGradient colors={['#D300C5', '#FF7A00', '#FFDC80']} style={pg.avatarRing} start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }}>
                 <View style={pg.avatarInner}>
                   <ImageWithFallback
                     uri={user.avatar_url ?? `https://i.pravatar.cc/150?u=${user.id}`}
@@ -1234,12 +1233,7 @@ export default function ProfileScreen() {
                     fallbackColors={[G.bg1, G.bg0]}
                   />
                 </View>
-              </LinearGradient>
-              <View style={pg.avatarAddBtn}>
-                <LinearGradient colors={[G.accent, G.primary]} style={pg.avatarAddGrad}>
-                  <Ionicons name="add" size={13} color="#fff" />
-                </LinearGradient>
-              </View>
+          
             </View>
             <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around' }}>
               <StatColumn value={`${(user.reviews_count ?? 6) + (user.films_seen_count ?? 12)}`} label=" films" />
@@ -1258,23 +1252,7 @@ export default function ProfileScreen() {
                 </Text>
               </BlurView>
             </View>
-            <Text style={pg.bioText}>{user.bio ?? 'Cinéaste indépendant · Court métrages · Cannes, Sundance, Berlin 🎞️'}</Text>
-
           </View>
-
-          {/* Action buttons */}
-          <View style={pg.actionRow}>
-            <TouchableOpacity testID="profile-edit-btn" style={pg.actionBtn} onPress={() => router.push('/edit-profile')} activeOpacity={0.8}>
-              <Text style={pg.actionBtnText}>Modifier</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pg.actionBtn} activeOpacity={0.8}>
-              <Text style={pg.actionBtnText}>Partager le profil</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pg.actionBtnSquare} onPress={() => router.push('/discover-people')} activeOpacity={0.8}>
-              <Ionicons name="person-add-outline" size={15} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
           <View style={pg.headerGlow} />
         </SafeAreaView>
 
@@ -1320,7 +1298,7 @@ const pg = StyleSheet.create({
   avatar:           { width: 82, height: 82, borderRadius: 41 },
   avatarAddBtn:     { position: 'absolute', bottom: 0, right: 0, width: 27, height: 27, borderRadius: 14, backgroundColor: G.bg0, alignItems: 'center', justifyContent: 'center' },
   avatarAddGrad:    { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  bioSection:       { paddingHorizontal: 16, marginTop: 11, gap: 4 },
+  bioSection:       { paddingHorizontal: 16, marginTop: 11, marginBottom: 20, gap: 4 },
   displayName:      { color: '#fff', fontSize: 14, fontWeight: '800' },
   rolePill:         { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 3, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(192,96,255,0.32)' },
   rolePillText:     { color: 'rgba(255,255,255,0.88)', fontSize: 10, fontWeight: '700' },
