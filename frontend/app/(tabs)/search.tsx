@@ -516,9 +516,14 @@ const HeroBanner = memo(({ item }: { item: Work | null }) => {
               <Ionicons name="play" size={16} color={T.bg} />
               <Text style={hb.playTxt}>Regarder</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={hb.infoBtn}>
+            <TouchableOpacity 
+            style={hb.infoBtn}
+            onPress={() => router.push(`/film/${item.id}`)}
+            >
               <Ionicons name="information-circle-outline" size={16} color="white" />
-              <Text style={hb.infoTxt}>Infos</Text>
+              <Text 
+              style={hb.infoTxt}>Infos</Text>
+              
             </TouchableOpacity>
           </View>
         </View>

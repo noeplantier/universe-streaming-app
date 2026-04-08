@@ -25,8 +25,11 @@ import { useAuth } from '../../contexts/AuthContext';
 // 📐 DIMENSIONS
 // ─────────────────────────────────────────────────────────────────────────────
 const { width: W, height: H } = Dimensions.get('window');
-const CELL_SIZE   = (W - 2) / 3;
-const GRID_GUTTER = 1;
+
+// Toutes les cards font la même taille portrait
+const CARD_W            = (W - 2) / 3;          // ~124 px sur 390 px
+const CARD_H            = CARD_W * 1.48;         // ratio 2:3 affiche
+const CARD_GAP          = 1;
 const HEADER_SCROLL_DISTANCE = 80;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,14 +49,12 @@ const G = {
   success: '#1ED760',
   danger: '#FF4D6A',
   textSub: '#BCB8C2',
+  amber: '#FFA040',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🖼️ IMAGE WITH FALLBACK
-//  Résout le ERR_NAME_NOT_RESOLVED : skeleton pendant le chargement,
-//  fallback gradient si l'URL échoue, retry automatique une fois.
 // ─────────────────────────────────────────────────────────────────────────────
-
 interface ImageWithFallbackProps {
   uri: string;
   style?: any;
@@ -71,10 +72,7 @@ const ImageWithFallback = memo(function ImageWithFallback({
   const [retried, setRetried] = useState(false);
   const shimTx = useRef(new Animated.Value(-W)).current;
 
-  useEffect(() => {
-    setState('loading');
-    setRetried(false);
-  }, [uri]);
+  useEffect(() => { setState('loading'); setRetried(false); }, [uri]);
 
   useEffect(() => {
     if (state !== 'loading') return;
@@ -86,24 +84,13 @@ const ImageWithFallback = memo(function ImageWithFallback({
   }, [state, shimTx]);
 
   const handleError = useCallback(() => {
-    if (!retried) {
-      // Retry une fois après 400 ms
-      setRetried(true);
-      setTimeout(() => setState('loading'), 400);
-    } else {
-      setState('error');
-    }
+    if (!retried) { setRetried(true); setTimeout(() => setState('loading'), 400); }
+    else setState('error');
   }, [retried]);
 
   return (
     <View style={[{ overflow: 'hidden' }, style]}>
-      {/* Fallback gradient (visible si erreur ou pendant chargement) */}
-      <LinearGradient
-        colors={fallbackColors}
-        style={StyleSheet.absoluteFillObject}
-      />
-
-      {/* Image réelle */}
+      <LinearGradient colors={fallbackColors} style={StyleSheet.absoluteFillObject} />
       {state !== 'error' && (
         <Image
           source={{ uri }}
@@ -113,8 +100,6 @@ const ImageWithFallback = memo(function ImageWithFallback({
           onError={handleError}
         />
       )}
-
-      {/* Shimmer skeleton */}
       {state === 'loading' && (
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: '#10001F', overflow: 'hidden' }]}>
           <Animated.View style={{
@@ -124,8 +109,6 @@ const ImageWithFallback = memo(function ImageWithFallback({
           }} />
         </View>
       )}
-
-      {/* Icône si erreur définitive */}
       {state === 'error' && (
         <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center' }]}>
           <Ionicons name="film-outline" size={20} color="rgba(192,96,255,0.35)" />
@@ -137,15 +120,10 @@ const ImageWithFallback = memo(function ImageWithFallback({
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🎬 POSTER CDN HELPER
-//  picsum.photos/seed/{seed}/500/750 → portrait 2:3 cohérent et persistant
-//  Aucune API key, aucun domaine bloqué, HTTPS, CDN mondial.
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Génère une URL picsum stable à partir d'un seed string */
 const poster = (seed: string) =>
   `https://picsum.photos/seed/${encodeURIComponent(seed)}/500/750`;
 
-/** Génère une URL picsum stable format paysage */
 const still = (seed: string) =>
   `https://picsum.photos/seed/${encodeURIComponent(seed)}/800/450`;
 
@@ -242,81 +220,65 @@ const GalaxyBackground = memo(() => {
 GalaxyBackground.displayName = 'GalaxyBackground';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎬 CINEMA DATA — URLs picsum.photos stables (seed = titre slugifié)
+// 🎬 CINEMA DATA
 // ─────────────────────────────────────────────────────────────────────────────
-
-const TOP_FILM = {
-  id: 'tf1', title: 'Mulholland Drive',
-  poster_url: poster('mulholland-drive-lynch'),
-  genre: 'Néo-Noir', duration_type: 'film', rating: 5,
-  director: 'David Lynch', year: 2001,
-};
-
-const TOP_2_3 = [
-  {
-    id: 'tf2', title: 'La Haine',
-    poster_url: poster('la-haine-kassovitz-1995'),
-    genre: 'Drame', duration_type: 'film', rating: 5,
-    director: 'M. Kassovitz', year: 1995,
-  },
-  {
-    id: 'tf3', title: 'Parasite',
-    poster_url: poster('parasite-bong-joon-ho'),
-    genre: 'Thriller', duration_type: 'film', rating: 5,
-    director: 'Bong Joon-ho', year: 2019,
-  },
-];
-
-const OTHER_FAVS = [
-  { id: 'of1', title: 'Moonlight',              poster_url: poster('moonlight-2016-barry'),    genre: 'Drame',   duration_type: 'film', rating: 5 },
-  { id: 'of2', title: 'Mad Max: Fury Road',      poster_url: poster('mad-max-fury-road-2015'), genre: 'Action',  duration_type: 'film', rating: 5 },
-  { id: 'of3', title: '2001: A Space Odyssey',   poster_url: poster('2001-kubrick-space'),      genre: 'Sci-Fi',  duration_type: 'film', rating: 5 },
-  { id: 'of4', title: 'The Grand Budapest Hotel',poster_url: poster('grand-budapest-wes'),      genre: 'Comédie', duration_type: 'film', rating: 5 },
-  { id: 'of5', title: 'Roma',                   poster_url: poster('roma-alfonso-cuaron'),     genre: 'Drame',   duration_type: 'film', rating: 5 },
+const ALL_FAVS = [
+  { id: 'fav1', title: 'Mulholland Drive',      poster_url: poster('mulholland-drive-lynch'),      genre: 'Néo-Noir',  duration_type: 'film', rating: 5, director: 'David Lynch',    year: 2001 },
+  { id: 'fav2', title: 'La Haine',              poster_url: poster('la-haine-kassovitz-1995'),     genre: 'Drame',     duration_type: 'film', rating: 5, director: 'M. Kassovitz', year: 1995 },
+  { id: 'fav3', title: 'Parasite',              poster_url: poster('parasite-bong-joon-ho'),       genre: 'Thriller',  duration_type: 'film', rating: 5, director: 'Bong Joon-ho', year: 2019 },
+  { id: 'fav4', title: 'Moonlight',             poster_url: poster('moonlight-2016-barry'),        genre: 'Drame',     duration_type: 'film', rating: 5, director: 'B. Jenkins',   year: 2016 },
+  { id: 'fav5', title: 'Mad Max: Fury Road',    poster_url: poster('mad-max-fury-road-2015'),      genre: 'Action',    duration_type: 'film', rating: 5, director: 'G. Miller',    year: 2015 },
+  { id: 'fav6', title: '2001: A Space Odyssey', poster_url: poster('2001-kubrick-space'),          genre: 'Sci-Fi',    duration_type: 'film', rating: 5, director: 'S. Kubrick',   year: 1968 },
+  { id: 'fav7', title: 'Grand Budapest Hotel',  poster_url: poster('grand-budapest-wes'),          genre: 'Comédie',   duration_type: 'film', rating: 5, director: 'Wes Anderson', year: 2014 },
+  { id: 'fav8', title: 'Roma',                  poster_url: poster('roma-alfonso-cuaron'),         genre: 'Drame',     duration_type: 'film', rating: 5, director: 'A. Cuarón',    year: 2018 },
 ];
 
 const CRITIQUE_REVIEWS = [
   {
     id: 'cr1', film_id: 'cr1', rating: 5, likes_count: 342, created_at: '2024-11-12',
-    content: 'Une œuvre visuelle d\'une densité rare. Villeneuve signe ici un manifeste sur la mémoire et l\'identité, porté par une photographie de Deakins qui frôle le sublime pictural.',
-    film: { id: 'cr1', title: 'Dune: Part Two',       poster_url: poster('dune-part-two-villeneuve'),   genre: 'Épique',    duration_type: 'film' },
+    content: 'Une œuvre visuelle d\'une densité rare. Villeneuve signe un manifeste sur la mémoire et l\'identité, porté par une photographie de Deakins qui frôle le sublime pictural.',
+    film: { id: 'cr1', title: 'Dune: Part Two',       poster_url: poster('dune-part-two-villeneuve'),  genre: 'Épique',        duration_type: 'film' },
   },
   {
     id: 'cr2', film_id: 'cr2', rating: 5, likes_count: 218, created_at: '2024-10-01',
     content: 'Anatomy of a Fall déconstruit le récit judiciaire pour révéler l\'opacité fondamentale des relations humaines. Hüller est phénoménale.',
-    film: { id: 'cr2', title: 'Anatomy of a Fall',    poster_url: poster('anatomy-of-a-fall-triet'),   genre: 'Thriller',  duration_type: 'film' },
+    film: { id: 'cr2', title: 'Anatomy of a Fall',    poster_url: poster('anatomy-of-a-fall-triet'),  genre: 'Thriller',      duration_type: 'film' },
   },
   {
     id: 'cr3', film_id: 'cr3', rating: 5, likes_count: 189, created_at: '2024-08-20',
     content: 'The Zone of Interest opère à froid — l\'horreur par son absence, dans le bourdonnement d\'une maison ordinaire.',
-    film: { id: 'cr3', title: 'The Zone of Interest', poster_url: poster('zone-of-interest-glazer'),   genre: 'Guerre',    duration_type: 'film' },
+    film: { id: 'cr3', title: 'The Zone of Interest', poster_url: poster('zone-of-interest-glazer'),  genre: 'Guerre',        duration_type: 'film' },
   },
   {
     id: 'cr4', film_id: 'cr4', rating: 4, likes_count: 156, created_at: '2024-07-15',
     content: 'Aftersun accumule les fragments d\'une relation père-fille avec une pudeur déchirante.',
-    film: { id: 'cr4', title: 'Aftersun',             poster_url: poster('aftersun-charlotte-wells'), genre: 'Drame',     duration_type: 'film' },
+    film: { id: 'cr4', title: 'Aftersun',             poster_url: poster('aftersun-charlotte-wells'), genre: 'Drame',         duration_type: 'film' },
   },
   {
     id: 'cr5', film_id: 'cr5', rating: 5, likes_count: 204, created_at: '2024-06-10',
     content: 'Past Lives touche à quelque chose d\'universel et d\'intime simultanément. Un premier film éblouissant.',
-    film: { id: 'cr5', title: 'Past Lives',           poster_url: poster('past-lives-celine-song'),   genre: 'Romance',   duration_type: 'film' },
+    film: { id: 'cr5', title: 'Past Lives',           poster_url: poster('past-lives-celine-song'),   genre: 'Romance',       duration_type: 'film' },
   },
-
+  {
+    id: 'cr6', film_id: 'cr6', rating: 4, likes_count: 132, created_at: '2024-05-02',
+    content: 'Poor Things déborde d\'une énergie visuelle folle. Lanthimos à son sommet baroque.',
+    film: { id: 'cr6', title: 'Poor Things',          poster_url: poster('poor-things-lanthimos'),    genre: 'Fantasy',       duration_type: 'film' },
+  },
 ];
 
 const SEEN_WORKS = [
-  { id: 'sw1',  title: 'The Bear',            poster_url: poster('the-bear-fx-series'),        genre: 'Drame',        duration_type: 'série', rating: 5 },
-  { id: 'sw2',  title: 'Shogun',              poster_url: poster('shogun-fx-2024-series'),      genre: 'Historique',   duration_type: 'série', rating: 5 },
-  { id: 'sw3',  title: 'Pachinko',            poster_url: poster('pachinko-apple-series'),      genre: 'Épique',       duration_type: 'série', rating: 5 },
-  { id: 'sw4',  title: 'Dune (2021)',         poster_url: poster('dune-2021-villeneuve'),       genre: 'Épique',       duration_type: 'film',  rating: 4 },
-  { id: 'sw5',  title: 'All of Us Strangers', poster_url: poster('all-of-us-strangers-haigh'), genre: 'Drame',        duration_type: 'film',  rating: 5 },
-  { id: 'sw6',  title: 'Priscilla',           poster_url: poster('priscilla-coppola-2023'),    genre: 'Biopic',       duration_type: 'film',  rating: 4 },
-  { id: 'sw7',  title: 'Fallen Leaves',       poster_url: poster('fallen-leaves-kaurismaki'),  genre: 'Comédie',      duration_type: 'film',  rating: 5 },
-  { id: 'sw8',  title: 'The Substance',       poster_url: poster('the-substance-fargeat'),     genre: 'Horreur',      duration_type: 'film',  rating: 4 },
-  { id: 'sw9',  title: 'I Saw the TV Glow',   poster_url: poster('i-saw-the-tv-glow-schofield'), genre: 'Expérimental', duration_type: 'film',  rating: 4 },
-  { id: 'sw10', title: 'Tótem',               poster_url: poster('totem-lila-aviles-2023'),    genre: 'Drame',        duration_type: 'film',  rating: 5 },
-  { id: 'sw11', title: 'Poor Things',         poster_url: poster('poor-things-lanthimos'),     genre: 'Fantasy',      duration_type: 'film',  rating: 4 },
-  { id: 'sw12', title: 'Dream Scenario',      poster_url: poster('dream-scenario-cage-2023'),  genre: 'Comédie',      duration_type: 'film',  rating: 4 },
+  { id: 'sw1',  title: 'The Bear',            poster_url: poster('the-bear-fx-series'),         genre: 'Drame',        duration_type: 'série',  rating: 5, episodes: 18,  status: 'Terminé' },
+  { id: 'sw2',  title: 'Shogun',              poster_url: poster('shogun-fx-2024-series'),       genre: 'Historique',   duration_type: 'série',  rating: 5, episodes: 10,  status: 'Terminé' },
+  { id: 'sw3',  title: 'Pachinko',            poster_url: poster('pachinko-apple-series'),       genre: 'Épique',       duration_type: 'série',  rating: 5, episodes: 16,  status: 'Terminé' },
+  { id: 'sw4',  title: 'Dune (2021)',         poster_url: poster('dune-2021-villeneuve'),        genre: 'Épique',       duration_type: 'film',   rating: 4, episodes: null, status: 'Vu' },
+  { id: 'sw5',  title: 'All of Us Strangers', poster_url: poster('all-of-us-strangers-haigh'),  genre: 'Drame',        duration_type: 'film',   rating: 5, episodes: null, status: 'Vu' },
+  { id: 'sw6',  title: 'Priscilla',           poster_url: poster('priscilla-coppola-2023'),     genre: 'Biopic',       duration_type: 'film',   rating: 4, episodes: null, status: 'Vu' },
+  { id: 'sw7',  title: 'Fallen Leaves',       poster_url: poster('fallen-leaves-kaurismaki'),   genre: 'Comédie',      duration_type: 'film',   rating: 5, episodes: null, status: 'Vu' },
+  { id: 'sw8',  title: 'The Substance',       poster_url: poster('the-substance-fargeat'),      genre: 'Horreur',      duration_type: 'film',   rating: 4, episodes: null, status: 'Vu' },
+  { id: 'sw9',  title: 'I Saw the TV Glow',   poster_url: poster('i-saw-the-tv-glow-schofield'), genre: 'Expérimental', duration_type: 'film',  rating: 4, episodes: null, status: 'Vu' },
+  { id: 'sw10', title: 'Tótem',               poster_url: poster('totem-lila-aviles-2023'),     genre: 'Drame',        duration_type: 'film',   rating: 5, episodes: null, status: 'Vu' },
+  { id: 'sw11', title: 'Dream Scenario',      poster_url: poster('dream-scenario-cage-2023'),   genre: 'Comédie',      duration_type: 'film',   rating: 4, episodes: null, status: 'Vu' },
+  { id: 'sw12', title: 'Oppenheimer',         poster_url: poster('oppenheimer-nolan-2023'),     genre: 'Biopic',       duration_type: 'film',   rating: 4, episodes: null, status: 'Vu' },
 ];
 
 const OWN_REELS = [
@@ -332,7 +294,7 @@ const OWN_REELS = [
 // 📐 TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 type GridTab = 0 | 1 | 2;
-interface Film   { id: string; title: string; poster_url: string; genre: string; duration_type: string; rating: number; director?: string; year?: number; }
+interface Film   { id: string; title: string; poster_url: string; genre: string; duration_type: string; rating: number; director?: string; year?: number; episodes?: number | null; status?: string; }
 interface Review { id: string; film_id: string; content: string; rating: number; likes_count: number; created_at: string; film?: { id: string; title: string; poster_url: string; genre: string; duration_type: string }; }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -364,215 +326,303 @@ const scc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🃏 GRID CELLS — tous utilisent ImageWithFallback
+// 🏆 SECTION HEADER  — titre + compteur + "Voir tout"
+// ─────────────────────────────────────────────────────────────────────────────
+const SectionHeader = memo(({
+  icon, label, count, accentColor = G.primary, onViewAll,
+}: { icon: any; label: string; count?: number; accentColor?: string; onViewAll?: () => void }) => (
+  <View style={sh.row}>
+    <View style={[sh.iconWrap, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}30` }]}>
+      <Ionicons name={icon} size={13} color={accentColor} />
+    </View>
+    <Text style={sh.label}>{label}</Text>
+    {count != null && (
+      <View style={[sh.badge, { backgroundColor: `${accentColor}18`, borderColor: `${accentColor}30` }]}>
+        <Text style={[sh.badgeTxt, { color: accentColor }]}>{count}</Text>
+      </View>
+    )}
+    <View style={sh.line} />
+    {onViewAll && (
+      <TouchableOpacity onPress={onViewAll} style={sh.viewAll} activeOpacity={0.7}>
+        <Text style={[sh.viewAllTxt, { color: accentColor }]}>Tout voir</Text>
+        <Ionicons name="chevron-forward" size={11} color={accentColor} />
+      </TouchableOpacity>
+    )}
+  </View>
+));
+SectionHeader.displayName = 'SectionHeader';
+const sh = StyleSheet.create({
+  row:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 20, paddingBottom: 10, gap: 8 },
+  iconWrap:   { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
+  label:      { color: '#fff', fontSize: 13, fontWeight: '800', letterSpacing: 0.1 },
+  badge:      { borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1 },
+  badgeTxt:   { fontSize: 10, fontWeight: '800' },
+  line:       { flex: 1, height: 0.5, backgroundColor: 'rgba(255,255,255,0.08)' },
+  viewAll:    { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  viewAllTxt: { fontSize: 11, fontWeight: '700' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🃏 CARD UNIFORME — portrait CARD_W × CARD_H
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** #1 — Film préféré absolu avec ring pulsant */
-const TopFilmCell = memo(({ film, onPress, onPressIn }: { film: Film | null; onPress: () => void; onPressIn?: () => void }) => {
-  const pulseOp  = useRef(new Animated.Value(0.4)).current;
-  const pulseScl = useRef(new Animated.Value(0.96)).current;
+/** Carte favoris avec numéro de rang (style MyDramaList) */
+const FavCard = memo(({ film, rank, onPress }: { film: Film; rank: number; onPress: () => void }) => {
+  const rankColor = rank === 1 ? G.gold : rank === 2 ? '#E0E0E0' : rank === 3 ? G.amber : 'rgba(255,255,255,0.45)';
+  const pulseOp  = useRef(new Animated.Value(0.5)).current;
+  const pulseScl = useRef(new Animated.Value(0.97)).current;
+
   useEffect(() => {
+    if (rank > 1) return;
     Animated.loop(Animated.parallel([
       Animated.sequence([
-        Animated.timing(pulseOp,  { toValue: 1,    duration: 1800, useNativeDriver: true }),
-        Animated.timing(pulseOp,  { toValue: 0.4,  duration: 1800, useNativeDriver: true }),
+        Animated.timing(pulseOp,  { toValue: 1,    duration: 1900, useNativeDriver: true }),
+        Animated.timing(pulseOp,  { toValue: 0.5,  duration: 1900, useNativeDriver: true }),
       ]),
       Animated.sequence([
-        Animated.timing(pulseScl, { toValue: 1,    duration: 1800, useNativeDriver: true }),
-        Animated.timing(pulseScl, { toValue: 0.96, duration: 1800, useNativeDriver: true }),
+        Animated.timing(pulseScl, { toValue: 1,    duration: 1900, useNativeDriver: true }),
+        Animated.timing(pulseScl, { toValue: 0.97, duration: 1900, useNativeDriver: true }),
       ]),
     ])).start();
   }, []); // eslint-disable-line
 
   return (
-    <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE * 1.3 }]} onPress={onPress} onPressIn={onPressIn} activeOpacity={0.88}>
+    <TouchableOpacity
+      style={[cd.card, { width: CARD_W, height: CARD_H }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      <ImageWithFallback
+        uri={film.poster_url}
+        style={StyleSheet.absoluteFillObject}
+        fallbackColors={['#1A0035', '#060010']}
+      />
+
+      {/* Glow ring #1 uniquement */}
+      {rank === 1 && (
+        <Animated.View style={[
+          StyleSheet.absoluteFillObject,
+          { borderRadius: 0, borderWidth: 1.5, borderColor: G.gold, opacity: pulseOp, transform: [{ scale: pulseScl }] },
+        ]} />
+      )}
+
+      {/* Rank badge MyDramaList style — coin bas-gauche */}
+      <View style={[cd.rankWrap, { backgroundColor: rank <= 3 ? 'rgba(0,0,0,0.82)' : 'rgba(0,0,0,0.62)' }]}>
+        <Text style={[cd.rankNum, { color: rankColor, fontSize: rank <= 3 ? 13 : 11 }]}>
+          {String(rank).padStart(2, '0')}
+        </Text>
+      </View>
+
+      {/* Genre pill */}
+      <View style={cd.genrePill}>
+        <Text style={cd.genreTxt} numberOfLines={1}>{film.genre}</Text>
+      </View>
+
+      <LinearGradient
+        colors={['transparent', 'rgba(6,0,16,0.55)', 'rgba(6,0,16,0.96)']}
+        style={cd.overlay}
+      >
+        <StarRating rating={film.rating} size={9} />
+        <Text style={cd.title} numberOfLines={2}>{film.title}</Text>
+        {film.director && (
+          <Text style={cd.meta} numberOfLines={1}>{film.director}{film.year ? ` · ${film.year}` : ''}</Text>
+        )}
+      </LinearGradient>
+    </TouchableOpacity>
+  );
+});
+FavCard.displayName = 'FavCard';
+
+/** Carte critique — même taille portrait, contenu overlay adapté */
+const CritiqueCard = memo(({ review, onPress }: { review: Review; onPress: () => void }) => {
+  const film = review.film;
+  return (
+    <TouchableOpacity
+      style={[cd.card, { width: CARD_W, height: CARD_H }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
       {film && (
         <ImageWithFallback
           uri={film.poster_url}
           style={StyleSheet.absoluteFillObject}
-          fallbackColors={['#1A0035', '#060010']}
-        />
-      )}
-      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(192,96,255,0.07)' }]} />
-      <Animated.View style={[cells.glowRing, { opacity: pulseOp, transform: [{ scale: pulseScl }] }]} />
-      <View style={cells.sparkle}><Text style={{ fontSize: 16 }}>✨</Text></View>
-      <LinearGradient colors={['transparent', 'rgba(6,0,16,0.92)']} style={cells.overlay}>
-        <Text style={cells.overlayLabel}>Ton film préf</Text>
-        {film && <StarRating rating={film.rating} size={9} />}
-        {film?.director && <Text style={cells.metaText} numberOfLines={1}>{film.director} · {film.year}</Text>}
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-});
-TopFilmCell.displayName = 'TopFilmCell';
-
-/** #2 — Top 2 & 3 */
-const Top2FilmsCell = memo(({ films, onPress }: { films: Film[]; onPress: () => void }) => {
-  const [f1, f2] = films;
-  return (
-    <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE * 1.3 }]} onPress={onPress} activeOpacity={0.88}>
-      <View style={{ flex: 1 }}>
-        <View style={[cells.splitHalf, { borderBottomWidth: GRID_GUTTER, borderColor: G.bg0 }]}>
-          {f1 && <ImageWithFallback uri={f1.poster_url} style={StyleSheet.absoluteFillObject} fallbackColors={['#120025', '#06000E']} />}
-          <BlurView intensity={28} tint="dark" style={cells.rankTag}><Text style={cells.rankNum}>02</Text></BlurView>
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(255,226,112,0.04)' }]} />
-        </View>
-        <View style={cells.splitHalf}>
-          {f2 && <ImageWithFallback uri={f2.poster_url} style={StyleSheet.absoluteFillObject} fallbackColors={['#120025', '#06000E']} />}
-          <BlurView intensity={28} tint="dark" style={cells.rankTag}><Text style={cells.rankNum}>03</Text></BlurView>
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(192,96,255,0.04)' }]} />
-        </View>
-      </View>
-      <View style={cells.sparkle}><Text style={{ fontSize: 16 }}>⭐</Text></View>
-      <LinearGradient colors={['transparent', 'rgba(6,0,16,0.88)']} style={[cells.overlay, { paddingBottom: 6 }]}>
-        <Text style={cells.overlayLabel}>Tes 2 film préf</Text>
-        <Text style={cells.overlaySub}>après le 1</Text>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
-});
-Top2FilmsCell.displayName = 'Top2FilmsCell';
-
-/** #3 — Autres favoris (micro-grid 2×2) */
-const OtherFavsCell = memo(({ films, onPress }: { films: Film[]; onPress: () => void }) => (
-  <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE * 1.3 }]} onPress={onPress} activeOpacity={0.88}>
-    <View style={cells.microGrid}>
-      {[0, 1, 2, 3].map(i => (
-        <View key={i} style={[cells.microCell,
-          i % 2 === 0 ? { marginRight: 0.5 } : { marginLeft: 0.5 },
-          i < 2 ? { marginBottom: 0.5 } : { marginTop: 0.5 },
-        ]}>
-          {films[i] && (
-            <ImageWithFallback
-              uri={films[i].poster_url}
-              style={StyleSheet.absoluteFillObject}
-              fallbackColors={['#1A0030', '#06000E']}
-            />
-          )}
-        </View>
-      ))}
-    </View>
-    <View style={cells.sparkle}><Text style={{ fontSize: 16 }}>✦</Text></View>
-    <LinearGradient colors={['transparent', 'rgba(6,0,16,0.88)']} style={[cells.overlay, { paddingBottom: 6 }]}>
-      <Text style={cells.overlayLabel}>Tes autres fav</Text>
-      <Text style={cells.overlaySub}>après ton top</Text>
-    </LinearGradient>
-  </TouchableOpacity>
-));
-OtherFavsCell.displayName = 'OtherFavsCell';
-
-/** Critique cell */
-const CritiqueCell = memo(({ review, index, onPress }: { review: Review; index: number; onPress: () => void }) => {
-  const isWide = index === 0;
-  const cellW  = isWide ? CELL_SIZE * 2 + GRID_GUTTER : CELL_SIZE;
-  return (
-    <TouchableOpacity style={[cells.cell, { width: cellW, height: CELL_SIZE }]} onPress={onPress} activeOpacity={0.88}>
-      {review.film && (
-        <ImageWithFallback
-          uri={review.film.poster_url}
-          style={StyleSheet.absoluteFillObject}
           fallbackColors={['#1C0A02', '#08000E']}
         />
       )}
-      <LinearGradient colors={['rgba(160,90,20,0.22)', 'rgba(80,40,5,0.52)']} style={StyleSheet.absoluteFillObject} />
-      {[0.28, 0.55, 0.78].map(t => (
-        <View key={t} style={{ position: 'absolute', left: 0, right: 0, top: `${t * 100}%`, height: 0.5, backgroundColor: 'rgba(255,220,120,0.08)' }} />
-      ))}
-      <LinearGradient colors={['transparent', 'rgba(6,0,16,0.94)']} style={cells.overlay}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ionicons name="pencil" size={9} color="rgba(255,220,120,0.95)" />
-          <Text style={cells.critiqueLabel}>Critique</Text>
-          {isWide && review.film && <Text style={[cells.metaText, { marginLeft: 4 }]} numberOfLines={1}>— {review.film.title}</Text>}
-        </View>
-        {isWide && <Text style={cells.critiqueSnippet} numberOfLines={2}>{review.content}</Text>}
+
+      {/* Teinture ambrée légère */}
+      <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(140,70,0,0.14)' }]} />
+
+      {/* Badge "Critique" en haut */}
+      <View style={cd.critiqueBadge}>
+        <Ionicons name="pencil" size={8} color={G.gold} />
+        <Text style={cd.critiqueBadgeTxt}>Critique</Text>
+      </View>
+
+      {/* Likes */}
+      <View style={cd.likesBadge}>
+        <Ionicons name="heart" size={8} color={G.danger} />
+        <Text style={cd.likesTxt}>{review.likes_count >= 1000 ? `${(review.likes_count / 1000).toFixed(1)}k` : review.likes_count}</Text>
+      </View>
+
+      <LinearGradient
+        colors={['transparent', 'rgba(6,0,16,0.35)', 'rgba(6,0,16,0.97)']}
+        style={cd.overlay}
+      >
         <StarRating rating={review.rating} size={9} />
+        <Text style={cd.title} numberOfLines={2}>{film?.title ?? '—'}</Text>
+        {/* Snippet de la critique */}
+        <Text style={cd.critiqueSnippet} numberOfLines={3}>{review.content}</Text>
+        <Text style={cd.meta}>{new Date(review.created_at).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })}</Text>
       </LinearGradient>
     </TouchableOpacity>
   );
 });
-CritiqueCell.displayName = 'CritiqueCell';
+CritiqueCard.displayName = 'CritiqueCard';
 
-/** Films / Séries visionnés */
-const SeenCell = memo(({ film, onPress, onPressIn }: { film: Film; onPress: () => void; onPressIn?: () => void }) => {
-  const isShow = film.duration_type === 'série';
+/** Carte film/série vu — même taille portrait */
+const SeenCard = memo(({ film, onPress }: { film: Film; onPress: () => void }) => {
+  const isSerie = film.duration_type === 'série';
+  const statusColor = film.rating >= 5 ? G.success : film.rating >= 4 ? G.cyan : G.textSub;
+
   return (
-    <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE }]} onPress={onPress} onPressIn={onPressIn} activeOpacity={0.88}>
+    <TouchableOpacity
+      style={[cd.card, { width: CARD_W, height: CARD_H }]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
       <ImageWithFallback
         uri={film.poster_url}
         style={StyleSheet.absoluteFillObject}
         fallbackColors={['#080018', '#060010']}
       />
-      <View style={[cells.eyeBadge, { backgroundColor: isShow ? `${G.cyan}CC` : `${G.success}CC` }]}>
-        <Ionicons name={isShow ? 'tv' : 'eye'} size={8} color="#fff" />
+
+      {/* Type badge */}
+      <View style={[cd.typeBadge, { backgroundColor: isSerie ? `${G.cyan}CC` : `${G.success}BB` }]}>
+        <Ionicons name={isSerie ? 'tv' : 'film'} size={7} color="#fff" />
+        <Text style={cd.typeTxt}>{isSerie ? 'Série' : 'Film'}</Text>
       </View>
-      <View style={cells.typeTag}>
-        <Text style={cells.typeTagText}>{isShow ? 'Série' : 'Film'}</Text>
-      </View>
-      <LinearGradient colors={['transparent', 'rgba(6,0,16,0.72)']} style={cells.overlayThin}>
-        <Text style={cells.seenTitle} numberOfLines={1}>{film.title}</Text>
+
+      {/* Episodes count for series */}
+      {isSerie && film.episodes != null && (
+        <View style={cd.epBadge}>
+          <Text style={cd.epTxt}>{film.episodes} ep.</Text>
+        </View>
+      )}
+
+      <LinearGradient
+        colors={['transparent', 'rgba(6,0,16,0.4)', 'rgba(6,0,16,0.97)']}
+        style={cd.overlay}
+      >
+        {/* Score MyDramaList style */}
+        <View style={cd.scoreRow}>
+          <View style={[cd.scorePill, { borderColor: `${statusColor}50`, backgroundColor: `${statusColor}18` }]}>
+            <Ionicons name="star" size={8} color={statusColor} />
+            <Text style={[cd.scoreVal, { color: statusColor }]}>{film.rating}.0</Text>
+          </View>
+          <Text style={[cd.statusTxt, { color: statusColor }]}>{film.status ?? 'Vu'}</Text>
+        </View>
+        <Text style={cd.title} numberOfLines={2}>{film.title}</Text>
+        <Text style={cd.meta}>{film.genre}</Text>
       </LinearGradient>
     </TouchableOpacity>
   );
 });
-SeenCell.displayName = 'SeenCell';
+SeenCard.displayName = 'SeenCard';
 
-/** Court métrage (tab Reels) */
-const ReelCell = memo(({ reel, onPress }: { reel: typeof OWN_REELS[0]; onPress: () => void }) => (
-  <TouchableOpacity style={[cells.cell, { width: CELL_SIZE, height: CELL_SIZE * 1.4 }]} onPress={onPress} activeOpacity={0.88}>
+/** Carte court métrage (onglet Reels) */
+const ReelCard = memo(({ reel, onPress }: { reel: typeof OWN_REELS[0]; onPress: () => void }) => (
+  <TouchableOpacity
+    style={[cd.card, { width: CARD_W, height: CARD_H }]}
+    onPress={onPress}
+    activeOpacity={0.88}
+  >
     <ImageWithFallback uri={reel.poster_url} style={StyleSheet.absoluteFillObject} fallbackColors={['#06001A', '#060010']} />
-    <LinearGradient colors={['rgba(6,0,16,0.12)', 'rgba(6,0,16,0.92)']} style={StyleSheet.absoluteFillObject} />
-    <View style={cells.playBtn}>
+    <LinearGradient colors={['rgba(6,0,16,0.1)', 'rgba(6,0,16,0.92)']} style={StyleSheet.absoluteFillObject} />
+
+    {/* Play button */}
+    <View style={cd.playBtn}>
       <Ionicons name="play" size={16} color="#fff" />
     </View>
-    <BlurView intensity={22} tint="dark" style={cells.festivalBadge}>
-      <Text style={cells.festivalText}>{reel.festival}</Text>
+
+    {/* Festival badge */}
+    <BlurView intensity={22} tint="dark" style={cd.festivalBadge}>
+      <Text style={cd.festivalTxt}>{reel.festival}</Text>
     </BlurView>
-    <LinearGradient colors={['transparent', 'rgba(6,0,16,0.96)']} style={cells.overlay}>
-      <Text style={cells.overlayLabel} numberOfLines={1}>{reel.title}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+
+    <LinearGradient
+      colors={['transparent', 'rgba(6,0,16,0.97)']}
+      style={cd.overlay}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Ionicons name="time-outline" size={8} color={G.textSub} />
-          <Text style={cells.metaText}>{reel.duration}</Text>
+          <Text style={cd.meta}>{reel.duration}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <Ionicons name="eye-outline" size={8} color={G.textSub} />
-          <Text style={cells.metaText}>{reel.views}</Text>
+          <Text style={cd.meta}>{reel.views}</Text>
         </View>
       </View>
+      <Text style={cd.title} numberOfLines={2}>{reel.title}</Text>
     </LinearGradient>
   </TouchableOpacity>
 ));
-ReelCell.displayName = 'ReelCell';
+ReelCard.displayName = 'ReelCard';
 
-const cells = StyleSheet.create({
-  cell:           { overflow: 'hidden', backgroundColor: '#08001A', position: 'relative' },
-  overlay:        { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 7, paddingTop: 22, paddingBottom: 6, gap: 3 },
-  overlayThin:    { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 5, paddingTop: 10, paddingBottom: 4 },
-  overlayLabel:   { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.1, textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
-  overlaySub:     { color: 'rgba(255,255,255,0.58)', fontSize: 9, fontWeight: '500' },
-  metaText:       { color: 'rgba(255,255,255,0.38)', fontSize: 8, fontStyle: 'italic' },
-  sparkle:        { position: 'absolute', top: 5, left: 5 },
-  glowRing:       { position: 'absolute', top: 3, left: 3, right: 3, bottom: 3, borderRadius: 5, borderWidth: 1.5, borderColor: G.primary },
-  splitHalf:      { flex: 1, overflow: 'hidden', position: 'relative' },
-  rankTag:        { position: 'absolute', top: 4, right: 4, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 5, overflow: 'hidden' },
-  rankNum:        { color: G.gold, fontSize: 9, fontWeight: '900' },
-  microGrid:      { flex: 1, flexDirection: 'row', flexWrap: 'wrap' },
-  microCell:      { width: '50%', height: '50%', overflow: 'hidden', position: 'relative', backgroundColor: '#1A0030' },
-  critiqueLabel:  { color: 'rgba(255,220,120,0.97)', fontSize: 10, fontWeight: '800', letterSpacing: 0.4, textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
-  critiqueSnippet:{ color: 'rgba(255,255,255,0.62)', fontSize: 9, lineHeight: 13, fontStyle: 'italic' },
-  eyeBadge:       { position: 'absolute', top: 5, right: 5, width: 17, height: 17, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
-  typeTag:        { position: 'absolute', top: 5, left: 5, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
-  typeTagText:    { color: 'rgba(255,255,255,0.72)', fontSize: 7, fontWeight: '700', letterSpacing: 0.3 },
-  seenTitle:      { color: '#fff', fontSize: 8, fontWeight: '600', textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 2 },
-  playBtn:        { position: 'absolute', top: '50%', left: '50%', marginTop: -17, marginLeft: -17, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.6)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.55)', alignItems: 'center', justifyContent: 'center' },
-  festivalBadge:  { position: 'absolute', top: 7, left: 7, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 5, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,226,112,0.28)' },
-  festivalText:   { color: G.gold, fontSize: 7, fontWeight: '800', letterSpacing: 0.3 },
+// Styles partagés pour toutes les cards
+const cd = StyleSheet.create({
+  card:            { overflow: 'hidden', backgroundColor: '#08001A', position: 'relative' },
+  overlay:         { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 7, paddingTop: 28, paddingBottom: 7, gap: 3 },
+  title:           { color: '#fff', fontSize: 10, fontWeight: '800', lineHeight: 13, textShadowColor: 'rgba(0,0,0,0.95)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 3 },
+  meta:            { color: 'rgba(255,255,255,0.4)', fontSize: 8, fontStyle: 'italic' },
+  // Rank
+  rankWrap:        { position: 'absolute', bottom: 0, left: 0, paddingHorizontal: 7, paddingVertical: 4, borderTopRightRadius: 8 },
+  rankNum:         { fontWeight: '900', letterSpacing: -0.5 },
+  // Genre
+  genrePill:       { position: 'absolute', top: 5, right: 5, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  genreTxt:        { color: 'rgba(255,255,255,0.75)', fontSize: 7, fontWeight: '700', letterSpacing: 0.2 },
+  // Critique
+  critiqueBadge:   { position: 'absolute', top: 5, left: 5, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(0,0,0,0.72)', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 3, borderWidth: 0.5, borderColor: 'rgba(255,220,120,0.35)' },
+  critiqueBadgeTxt:{ color: G.gold, fontSize: 7, fontWeight: '800', letterSpacing: 0.3 },
+  critiqueSnippet: { color: 'rgba(255,255,255,0.52)', fontSize: 8, lineHeight: 11, fontStyle: 'italic' },
+  likesBadge:      { position: 'absolute', top: 5, right: 5, flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2.5 },
+  likesTxt:        { color: 'rgba(255,255,255,0.7)', fontSize: 7.5, fontWeight: '700' },
+  // Seen
+  typeBadge:       { position: 'absolute', top: 5, left: 5, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2.5 },
+  typeTxt:         { color: '#fff', fontSize: 7, fontWeight: '800', letterSpacing: 0.2 },
+  epBadge:         { position: 'absolute', top: 5, right: 5, backgroundColor: 'rgba(0,0,0,0.68)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  epTxt:           { color: G.textSub, fontSize: 7, fontWeight: '700' },
+  scoreRow:        { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  scorePill:       { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 6, paddingHorizontal: 5, paddingVertical: 2, borderWidth: 0.5 },
+  scoreVal:        { fontSize: 9, fontWeight: '800' },
+  statusTxt:       { fontSize: 8, fontWeight: '700' },
+  // Reels
+  playBtn:         { position: 'absolute', top: '50%', left: '50%', marginTop: -17, marginLeft: -17, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.6)', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.55)', alignItems: 'center', justifyContent: 'center' },
+  festivalBadge:   { position: 'absolute', top: 7, left: 7, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 5, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,226,112,0.28)' },
+  festivalTxt:     { color: G.gold, fontSize: 7, fontWeight: '800', letterSpacing: 0.3 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🤖 VIDEO GENERATION MODAL — AI Reels Studio + Export Réel
+// 📜 HORIZONTAL SCROLL ROW  — conteneur générique
 // ─────────────────────────────────────────────────────────────────────────────
+const HScrollRow = memo(({ children }: { children: React.ReactNode }) => (
+  <ScrollView
+    horizontal
+    showsHorizontalScrollIndicator={false}
+    contentContainerStyle={{ paddingLeft: 14, paddingRight: 14, gap: CARD_GAP }}
+    decelerationRate="fast"
+    snapToInterval={CARD_W + CARD_GAP}
+    snapToAlignment="start"
+  >
+    {children}
+  </ScrollView>
+));
+HScrollRow.displayName = 'HScrollRow';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 🤖 VIDEO GENERATION MODAL
+// ─────────────────────────────────────────────────────────────────────────────
 const EXPORT_FORMATS_VG = [
   { id: 'prores', label: 'ProRes 4K',   ext: 'mov',  desc: 'Festival / DCP',  icon: 'diamond-outline',  color: G.gold,    badge: 'FESTIVAL' },
   { id: 'h264',   label: 'H.264 1080p', ext: 'mp4',  desc: 'Standard web',    icon: 'film-outline',     color: G.primary, badge: 'STANDARD' },
@@ -656,13 +706,10 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
       try {
         const asset = await MediaLibrary.createAssetAsync(path);
         const album = await MediaLibrary.getAlbumAsync('UNIVERSE Studio');
-        if (album) {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        } else {
-          await MediaLibrary.createAlbumAsync('UNIVERSE Studio', asset, false);
-        }
+        if (album) await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        else       await MediaLibrary.createAlbumAsync('UNIVERSE Studio', asset, false);
         setSavedToLib(true);
-      } catch { /* format non supporté — on continue */ }
+      } catch { /* format non supporté */ }
 
       setExportStep('Ouverture du partage système…'); animProg(0.88);
       const mimeType = fmt.ext === 'mov' ? 'video/quicktime' : fmt.ext === 'webm' ? 'video/webm' : 'video/mp4';
@@ -673,7 +720,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
           dialogTitle: `Exporter — ${fmt.label}`,
         });
       }
-
       animProg(1);
       setExportStep('✅ Export terminé');
     } catch (err: any) {
@@ -713,7 +759,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
             </TouchableOpacity>
           </View>
 
-          {/* ════ PHASE A — Configuration ════ */}
           {!generated && <>
             <Text style={vg.sectionLabel}>STYLE CINÉMATOGRAPHIQUE</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}
@@ -788,7 +833,6 @@ const VideoGenModal = memo(({ visible, onClose }: { visible: boolean; onClose: (
             </TouchableOpacity>
           </>}
 
-          {/* ════ PHASE B — Export ════ */}
           {generated && <>
             <BlurView intensity={14} tint="dark" style={vg.successBanner}>
               <LinearGradient colors={['rgba(30,215,96,0.12)', 'transparent']} style={StyleSheet.absoluteFillObject} />
@@ -971,11 +1015,6 @@ export default function ProfileScreen() {
   const [videoGenVisible, setVideoGenVisible] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  const prefetched = useRef<Set<string>>(new Set());
-  const prefetchFilm = useCallback((id: string) => {
-    if (prefetched.current.has(id)) return;
-    prefetched.current.add(id);
-  }, []);
   const navigateFilm = useCallback((id: string) => { router.push(`/film/${id}`); }, [router]);
 
   const loadProfileData = useCallback(async () => {
@@ -999,18 +1038,15 @@ export default function ProfileScreen() {
 
   useEffect(() => { loadProfileData(); }, [loadProfileData]);
 
-  const allFavs = useMemo<Film[]>(() => {
+  /** Favoris : fusionner reviews 5★ + seen triés par note */
+  const favFilms = useMemo<Film[]>(() => {
     const fromRev = reviews
       .filter(r => r.film && r.rating >= 4)
       .sort((a, b) => b.rating - a.rating)
       .map(r => r.film as Film);
-    const extra = seenFilms.filter(f => !fromRev.some(r => r.id === f.id));
-    return [...fromRev, ...extra];
-  }, [reviews, seenFilms]);
-
-  const topFilm   = useMemo(() => (allFavs[0]          ?? TOP_FILM)  as Film,   [allFavs]);
-  const top2to3   = useMemo(() => (allFavs.slice(1, 3).length ? allFavs.slice(1, 3) : TOP_2_3) as Film[], [allFavs]);
-  const otherFavs = useMemo(() => (allFavs.slice(3, 7).length ? allFavs.slice(3, 7) : OTHER_FAVS.slice(0, 4)) as Film[], [allFavs]);
+    if (fromRev.length >= 4) return fromRev;
+    return [...fromRev, ...ALL_FAVS.filter(f => !fromRev.some(r => r.id === f.id))].slice(0, 8);
+  }, [reviews]);
 
   const formatStat = useCallback((n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -1023,152 +1059,210 @@ export default function ProfileScreen() {
   });
 
   // ── Skeleton ─────────────────────────────────────────────────────────────
-  const SkeletonRow = useCallback(() => (
-    <View style={{ flexDirection: 'row', backgroundColor: 'transparent' }}>
-      {[0, 1, 2].map(i => (
-        <React.Fragment key={i}>
-          {i > 0 && <View style={{ width: GRID_GUTTER }} />}
-          <View style={{ width: CELL_SIZE, height: CELL_SIZE * 1.3, overflow: 'hidden', backgroundColor: '#10001F' }}>
-            {/* Re-use ImageWithFallback's skeleton behavior via a loading state */}
-            <ImageWithFallback uri="" style={{ flex: 1 }} fallbackColors={['#1A0035', '#060010']} />
-          </View>
-        </React.Fragment>
+  const SkeletonCards = useCallback(() => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 14, gap: CARD_GAP }}>
+      {[...Array(5)].map((_, i) => (
+        <View key={i} style={{ width: CARD_W, height: CARD_H, overflow: 'hidden', backgroundColor: '#10001F' }}>
+          <ImageWithFallback uri="" style={{ flex: 1 }} fallbackColors={['#1A0035', '#060010']} />
+        </View>
       ))}
-    </View>
+    </ScrollView>
   ), []);
 
-  // ── Grid content ──────────────────────────────────────────────────────────
+  // ── Grid content (onglet 0) ───────────────────────────────────────────────
   function renderGridContent() {
     if (loading) {
       return (
-        <View>
-          <SkeletonRow />
-          {[...Array(4)].map((_, i) => (
-            <View key={i} style={{ marginTop: GRID_GUTTER }}>
-              <View style={{ flexDirection: 'row' }}>
-                {[...Array(3)].map((_, j) => (
-                  <React.Fragment key={j}>
-                    {j > 0 && <View style={{ width: GRID_GUTTER }} />}
-                    <View style={{ width: CELL_SIZE, height: CELL_SIZE, overflow: 'hidden' }}>
-                      <ImageWithFallback uri="" style={{ flex: 1 }} fallbackColors={['#1A0035', '#060010']} />
-                    </View>
-                  </React.Fragment>
-                ))}
+        <View style={{ paddingBottom: 40 }}>
+          {[G.gold, G.primary, G.cyan].map((c, i) => (
+            <View key={i}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingTop: 20, paddingBottom: 10, gap: 8 }}>
+                <View style={{ width: 24, height: 24, borderRadius: 8, backgroundColor: `${c}18` }} />
+                <View style={{ height: 11, width: 120, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.07)' }} />
               </View>
+              <SkeletonCards />
             </View>
           ))}
         </View>
       );
     }
 
-    const critiqueRows: Review[][] = [];
-    if (reviews[0]) critiqueRows.push([reviews[0], reviews[1]].filter(Boolean) as Review[]);
-    let ci = critiqueRows[0]?.length ?? 0;
-    while (ci < reviews.length) { critiqueRows.push(reviews.slice(ci, ci + 3)); ci += 3; }
-
-    const seenRows: Film[][] = [];
-    for (let si = 0; si < seenFilms.length; si += 3) seenRows.push(seenFilms.slice(si, si + 3));
-
     return (
-      <View>
-        {/* TOP FILMS */}
-        <View style={{ flexDirection: 'row' }}>
-          <TopFilmCell film={topFilm} onPress={() => navigateFilm(topFilm.id)} onPressIn={() => prefetchFilm(topFilm.id)} />
-          <View style={{ width: GRID_GUTTER }} />
-          <Top2FilmsCell films={top2to3} onPress={() => navigateFilm(top2to3[0]?.id ?? '')} />
-          <View style={{ width: GRID_GUTTER }} />
-          <OtherFavsCell films={otherFavs} onPress={() => router.push('/profile/favorites')} />
-        </View>
+      <View style={{ paddingBottom: 100 }}>
 
-        {/* CRITIQUE BANNER */}
-        <BlurView intensity={10} tint="dark" style={pg.sectionBanner}>
-          <Ionicons name="pencil" size={11} color="rgba(255,220,120,0.88)" />
-          <Text style={pg.sectionBannerText}>Critiques cinématographiques</Text>
-          <View style={pg.sectionBannerLine} />
-        </BlurView>
+        {/* ═══════════════════════════════════════════════
+            SECTION 1 — FILMS FAVORIS (numérotés)
+            ═══════════════════════════════════════════════ */}
+        <SectionHeader
+          icon="trophy"
+          label="Films favoris"
+          count={favFilms.length}
+          accentColor={G.gold}
+          onViewAll={() => router.push('/profile/favorites')}
+        />
+        {favFilms.length === 0
+          ? <EmptyState icon="heart-outline" text="Aucun favori" subtext="Notez des films 4★ ou plus" />
+          : (
+            <HScrollRow>
+              {favFilms.map((film, idx) => (
+                <FavCard
+                  key={film.id}
+                  film={film}
+                  rank={idx + 1}
+                  onPress={() => navigateFilm(film.id)}
+                />
+              ))}
+            </HScrollRow>
+          )
+        }
 
+        {/* Séparateur subtil */}
+        <View style={{ height: 0.5, backgroundColor: 'rgba(255,255,255,0.05)', marginTop: 18 }} />
+
+        {/* ═══════════════════════════════════════════════
+            SECTION 2 — CRITIQUES CINÉMATOGRAPHIQUES
+            ═══════════════════════════════════════════════ */}
+        <SectionHeader
+          icon="pencil"
+          label="Critiques"
+          count={reviews.length}
+          accentColor={G.gold}
+          onViewAll={() => router.push('/profile/reviews')}
+        />
         {reviews.length === 0
           ? <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
-          : critiqueRows.map((rowRevs, rowIdx) => (
-              <View key={`cr-${rowIdx}`}>
-                <View style={{ flexDirection: 'row' }}>
-                  {rowIdx === 0 ? (
-                    <>
-                      <CritiqueCell review={rowRevs[0]} index={0} onPress={() => rowRevs[0].film && navigateFilm(rowRevs[0].film.id)} />
-                      {rowRevs[1] && <>
-                        <View style={{ width: GRID_GUTTER }} />
-                        <CritiqueCell review={rowRevs[1]} index={1} onPress={() => rowRevs[1].film && navigateFilm(rowRevs[1].film.id)} />
-                      </>}
-                    </>
-                  ) : (
-                    rowRevs.map((rev, rIdx) => (
-                      <React.Fragment key={rev.id}>
-                        {rIdx > 0 && <View style={{ width: GRID_GUTTER }} />}
-                        <CritiqueCell review={rev} index={rIdx} onPress={() => rev.film && navigateFilm(rev.film.id)} />
-                      </React.Fragment>
-                    ))
-                  )}
-                </View>
-                <View style={{ height: GRID_GUTTER }} />
-              </View>
-            ))
+          : (
+            <HScrollRow>
+              {reviews.map(review => (
+                <CritiqueCard
+                  key={review.id}
+                  review={review}
+                  onPress={() => review.film && navigateFilm(review.film.id)}
+                />
+              ))}
+            </HScrollRow>
+          )
         }
 
-        {/* SEEN BANNER */}
-        <BlurView intensity={10} tint="dark" style={pg.sectionBanner}>
-          <Ionicons name="eye" size={11} color={G.cyan} />
-          <Text style={[pg.sectionBannerText, { color: G.cyan }]}>Films & Séries visionnés</Text>
-          <View style={[pg.sectionBannerLine, { backgroundColor: `${G.cyan}28` }]} />
-        </BlurView>
+        <View style={{ height: 0.5, backgroundColor: 'rgba(255,255,255,0.05)', marginTop: 18 }} />
 
+        {/* ═══════════════════════════════════════════════
+            SECTION 3 — FILMS & SÉRIES VISIONNÉS
+            ═══════════════════════════════════════════════ */}
+        <SectionHeader
+          icon="eye"
+          label="Films & Séries visionnés"
+          count={seenFilms.length}
+          accentColor={G.cyan}
+          onViewAll={() => router.push('/profile/seen')}
+        />
         {seenFilms.length === 0
-          ? <EmptyState icon="film-outline" text="Aucun film vu pour l'instant" />
-          : seenRows.map((rowFilms, rowIdx) => (
-              <View key={`sw-${rowIdx}`}>
-                <View style={{ flexDirection: 'row' }}>
-                  {rowFilms.map((film, fIdx) => (
-                    <React.Fragment key={film.id}>
-                      {fIdx > 0 && <View style={{ width: GRID_GUTTER }} />}
-                      <SeenCell film={film} onPress={() => navigateFilm(film.id)} onPressIn={() => prefetchFilm(film.id)} />
-                    </React.Fragment>
-                  ))}
-                </View>
-                <View style={{ height: GRID_GUTTER }} />
-              </View>
-            ))
+          ? <EmptyState icon="film-outline" text="Aucun visionnage" subtext="Marquez des films comme vus" />
+          : (
+            <HScrollRow>
+              {seenFilms.map(film => (
+                <SeenCard
+                  key={film.id}
+                  film={film}
+                  onPress={() => navigateFilm(film.id)}
+                />
+              ))}
+            </HScrollRow>
+          )
         }
-        <View style={{ height: 120 }} />
+
+        <View style={{ height: 0.5, backgroundColor: 'rgba(255,255,255,0.05)', marginTop: 18 }} />
+
+        {/* ═══════════════════════════════════════════════
+            STATS RÉCAPITULATIVES (inspiré MyDramaList)
+            ═══════════════════════════════════════════════ */}
+        <View style={{ paddingHorizontal: 14, paddingTop: 20, paddingBottom: 10 }}>
+          <BlurView intensity={12} tint="dark" style={pg.statsCard}>
+            {/* Titre */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <Ionicons name="bar-chart-outline" size={14} color={G.primary} />
+              <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800', letterSpacing: 0.2 }}>Mes statistiques</Text>
+            </View>
+            {/* Ligne de stats */}
+            <View style={{ flexDirection: 'row', gap: 0 }}>
+              {[
+                { val: `${seenFilms.filter(f => f.duration_type === 'film').length}`,  label: 'Films',   color: G.success, icon: 'film' },
+                { val: `${seenFilms.filter(f => f.duration_type === 'série').length}`, label: 'Séries',  color: G.cyan,    icon: 'tv'   },
+                { val: `${reviews.length}`,                                             label: 'Critiques',color: G.gold,   icon: 'pencil' },
+                { val: `${reviews.reduce((s, r) => s + r.likes_count, 0) >= 1000
+                    ? `${(reviews.reduce((s, r) => s + r.likes_count, 0) / 1000).toFixed(1)}k`
+                    : reviews.reduce((s, r) => s + r.likes_count, 0)}`,              label: 'Likes',   color: G.danger,  icon: 'heart' },
+              ].map((st, idx, arr) => (
+                <View key={st.label} style={[pg.statItem, idx < arr.length - 1 && { borderRightWidth: 0.5, borderRightColor: 'rgba(255,255,255,0.08)' }]}>
+                  <View style={[pg.statIconCircle, { backgroundColor: `${st.color}18` }]}>
+                    <Ionicons name={st.icon as any} size={13} color={st.color} />
+                  </View>
+                  <Text style={[pg.statVal, { color: st.color }]}>{st.val}</Text>
+                  <Text style={pg.statLbl}>{st.label}</Text>
+                </View>
+              ))}
+            </View>
+            {/* Barre de progression genre top */}
+            <View style={{ marginTop: 16 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.3)', fontSize: 9, fontWeight: '700', letterSpacing: 0.8, marginBottom: 8 }}>GENRE FAVORI</Text>
+              {(() => {
+                const genreMap: Record<string, number> = {};
+                [...seenFilms, ...reviews.map(r => r.film).filter(Boolean)].forEach(f => {
+                  if (f?.genre) genreMap[f.genre] = (genreMap[f.genre] ?? 0) + 1;
+                });
+                const sorted = Object.entries(genreMap).sort((a, b) => b[1] - a[1]).slice(0, 4);
+                const total  = sorted.reduce((s, [, c]) => s + c, 0) || 1;
+                const barColors = [G.primary, G.cyan, G.gold, G.accent];
+                return (
+                  <View style={{ gap: 6 }}>
+                    {sorted.map(([genre, count], gi) => (
+                      <View key={genre} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 9, width: 68 }} numberOfLines={1}>{genre}</Text>
+                        <View style={{ flex: 1, height: 5, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
+                          <View style={{ width: `${(count / total) * 100}%`, height: '100%', borderRadius: 3, backgroundColor: barColors[gi] ?? G.primary }} />
+                        </View>
+                        <Text style={{ color: 'rgba(255,255,255,0.35)', fontSize: 9, width: 22, textAlign: 'right' }}>{count}</Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+            </View>
+          </BlurView>
+        </View>
+
       </View>
     );
   }
 
-  // ── Reels content ─────────────────────────────────────────────────────────
+  // ── Reels content (onglet 1) ──────────────────────────────────────────────
   function renderReelsContent() {
-    const rows: (typeof OWN_REELS)[] = [];
-    for (let i = 0; i < OWN_REELS.length; i += 3) rows.push(OWN_REELS.slice(i, i + 3));
     return (
-      <View>
-        <TouchableOpacity onPress={() => setVideoGenVisible(true)} activeOpacity={0.88} style={{ margin: 12 }}>
+      <View style={{ paddingBottom: 100 }}>
+        <TouchableOpacity onPress={() => setVideoGenVisible(true)} activeOpacity={0.88} style={{ margin: 14 }}>
           <LinearGradient colors={['#2A0060', '#7B1FA2', G.primary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={pg.genCta}>
             <Ionicons name="sparkles" size={18} color="#fff" />
             <Text style={pg.genCtaText}>Générer un court métrage avec l'IA</Text>
             <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.65)" />
           </LinearGradient>
         </TouchableOpacity>
-        {rows.map((rowReels, ri) => (
-          <View key={`rl-${ri}`}>
-            <View style={{ flexDirection: 'row' }}>
-              {rowReels.map((reel, idx) => (
-                <React.Fragment key={reel.id}>
-                  {idx > 0 && <View style={{ width: GRID_GUTTER }} />}
-                  <ReelCell reel={reel} onPress={() => router.push(`/reel/${reel.id}` as any)} />
-                </React.Fragment>
-              ))}
-            </View>
-            <View style={{ height: GRID_GUTTER }} />
-          </View>
-        ))}
-        <View style={{ height: 120 }} />
+
+        <SectionHeader
+          icon="videocam"
+          label="Mes courts métrages"
+          count={OWN_REELS.length}
+          accentColor={G.primary}
+          onViewAll={() => router.push('/profile/reels' as any)}
+        />
+        <HScrollRow>
+          {OWN_REELS.map(reel => (
+            <ReelCard
+              key={reel.id}
+              reel={reel}
+              onPress={() => router.push(`/reel/${reel.id}` as any)}
+            />
+          ))}
+        </HScrollRow>
       </View>
     );
   }
@@ -1225,20 +1319,17 @@ export default function ProfileScreen() {
 
           {/* Avatar + Stats */}
           <View style={pg.avatarStatsRow}>
-            <View>
-                <View style={pg.avatarInner}>
-                  <ImageWithFallback
-                    uri={user.avatar_url ?? `https://i.pravatar.cc/150?u=${user.id}`}
-                    style={pg.avatar}
-                    fallbackColors={[G.bg1, G.bg0]}
-                  />
-                </View>
-          
+            <View style={pg.avatarInner}>
+              <ImageWithFallback
+                uri={user.avatar_url ?? `https://i.pravatar.cc/150?u=${user.id}`}
+                style={pg.avatar}
+                fallbackColors={[G.bg1, G.bg0]}
+              />
             </View>
             <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around' }}>
-              <StatColumn value={`${(user.reviews_count ?? 6) + (user.films_seen_count ?? 12)}`} label=" films" />
-              <StatColumn value={formatStat(user.followers_count ?? 2840)} label=" critiques" onPress={() => router.push('/ critiques')} />
-              <StatColumn value={formatStat(user.following_count ?? 318)} label="festivals" onPress={() => router.push('/festivals')} />
+              <StatColumn value={`${(user.reviews_count ?? reviews.length) + (user.films_seen_count ?? seenFilms.length)}`} label="films" />
+              <StatColumn value={formatStat(user.followers_count ?? 2840)} label="critiques" onPress={() => router.push('/critiques' as any)} />
+              <StatColumn value={formatStat(user.following_count ?? 318)} label="festivals" onPress={() => router.push('/festivals' as any)} />
             </View>
           </View>
 
@@ -1256,8 +1347,6 @@ export default function ProfileScreen() {
           <View style={pg.headerGlow} />
         </SafeAreaView>
 
-    
-
         {/* Grid tab bar */}
         <View style={pg.gridTabBar}>
           {(['grid-outline', 'play-circle-outline', 'person-circle-outline'] as const).map((icon, idx) => (
@@ -1273,6 +1362,7 @@ export default function ProfileScreen() {
         {activeGridTab === 2 && (
           <EmptyState icon="pricetag-outline" text="Aucun tag" subtext="Les films où vous êtes tagué apparaissent ici" />
         )}
+
       </Animated.ScrollView>
 
       <VideoGenModal visible={videoGenVisible} onClose={() => setVideoGenVisible(false)} />
@@ -1293,34 +1383,23 @@ const pg = StyleSheet.create({
   usernameNav:      { fontSize: 17, fontWeight: '800', color: '#fff', letterSpacing: -0.2 },
   navBtn:           { padding: 5 },
   avatarStatsRow:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginTop: 4, gap: 14 },
-  avatarRing:       { width: 92, height: 92, borderRadius: 46, alignItems: 'center', justifyContent: 'center' },
   avatarInner:      { width: 86, height: 86, borderRadius: 43, backgroundColor: G.bg0, alignItems: 'center', justifyContent: 'center' },
   avatar:           { width: 82, height: 82, borderRadius: 41 },
-  avatarAddBtn:     { position: 'absolute', bottom: 0, right: 0, width: 27, height: 27, borderRadius: 14, backgroundColor: G.bg0, alignItems: 'center', justifyContent: 'center' },
-  avatarAddGrad:    { width: 23, height: 23, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   bioSection:       { paddingHorizontal: 16, marginTop: 11, marginBottom: 20, gap: 4 },
   displayName:      { color: '#fff', fontSize: 14, fontWeight: '800' },
   rolePill:         { borderRadius: 20, paddingHorizontal: 9, paddingVertical: 3, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(192,96,255,0.32)' },
   rolePillText:     { color: 'rgba(255,255,255,0.88)', fontSize: 10, fontWeight: '700' },
-  bioText:          { color: 'rgba(255,255,255,0.62)', fontSize: 12.5, lineHeight: 18 },
-  cinephileRow:     { flexDirection: 'row', gap: 14, marginTop: 5 },
-  cinephileStat:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  cinephileStatText:{ color: 'rgba(255,255,255,0.5)', fontSize: 10.5, fontWeight: '600' },
-  actionRow:        { flexDirection: 'row', paddingHorizontal: 12, marginTop: 14, gap: 6, marginBottom: 4 },
-  actionBtn:        { flex: 1, height: 32, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
-  actionBtnText:    { color: '#fff', fontSize: 13, fontWeight: '600' },
-  actionBtnSquare:  { width: 32, height: 32, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' },
   headerGlow:       { height: 1, backgroundColor: 'rgba(192,96,255,0.18)', shadowColor: G.primary, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.6, shadowRadius: 4 },
-  highlightsScroll: { paddingHorizontal: 12, paddingVertical: 14, gap: 16 },
-  highlightChip:    { alignItems: 'center', gap: 6 },
-  highlightCircle:  { width: 62, height: 62, borderRadius: 31, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
-  highlightLabel:   { color: 'rgba(255,255,255,0.65)', fontSize: 10, fontWeight: '500', textAlign: 'center' },
   gridTabBar:       { flexDirection: 'row', borderTopWidth: 0.5, borderTopColor: 'rgba(255,255,255,0.09)', borderBottomWidth: 0.5, borderBottomColor: 'rgba(255,255,255,0.09)', backgroundColor: 'rgba(6,0,16,0.5)' },
   gridTabItem:      { flex: 1, alignItems: 'center', paddingVertical: 10, position: 'relative' },
   gridTabIndicator: { position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: '#fff' },
-  sectionBanner:    { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 9, overflow: 'hidden', borderTopWidth: 0.5, borderBottomWidth: 0.5, borderColor: 'rgba(255,255,255,0.06)', backgroundColor: 'rgba(6,0,16,0.45)' },
-  sectionBannerText:{ color: 'rgba(255,220,120,0.75)', fontSize: 10, fontWeight: '800', letterSpacing: 0.8 },
-  sectionBannerLine:{ flex: 1, height: 0.5, backgroundColor: 'rgba(255,220,120,0.16)' },
+  // Stats card
+  statsCard:        { borderRadius: 18, borderWidth: 1, borderColor: G.glassBorder, padding: 16, overflow: 'hidden' },
+  statItem:         { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 4 },
+  statIconCircle:   { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  statVal:          { fontSize: 16, fontWeight: '900', letterSpacing: -0.5 },
+  statLbl:          { color: 'rgba(255,255,255,0.38)', fontSize: 9, fontWeight: '600' },
+  // Gen CTA
   genCta:           { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 16 },
   genCtaText:       { color: '#fff', fontSize: 14, fontWeight: '800', flex: 1 },
 });
