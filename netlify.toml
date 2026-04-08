@@ -1,6 +1,6 @@
 [build]
   # On force la réinstallation de metro et l'alignement des dépendances
-  command = "npm install metro metro-config --save-dev --legacy-peer-deps && npx expo export -p web"
+  command = "npm install --legacy-peer-deps && npx expo export -p web"
   publish = "dist"
 
 [build.environment]
