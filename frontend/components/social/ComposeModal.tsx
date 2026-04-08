@@ -21,12 +21,12 @@ import React, {
   
   // Mini-liste de films à tagger (dans un vrai projet → API TMDB)
   const FILM_SUGGESTIONS: NonNullable<PostData['film']>[] = [
-    { title: 'The Lighthouse',  poster: 'https://image.tmdb.org/t/p/w200/3nk9UoepYmv1G9oP18q6JJCeYMB.jpg', year: '2019', filmId: 'lighthouse' },
-    { title: 'Asteroid City',   poster: 'https://image.tmdb.org/t/p/w200/qfgysK1I5s2m86e1hQY6k3qK5q8.jpg', year: '2023', filmId: 'asteroid-city' },
     { title: 'Petite Maman',    poster: 'https://picsum.photos/seed/pm/200/300',  year: '2021', filmId: 'petite-maman' },
     { title: 'Parasite',        poster: 'https://picsum.photos/seed/para/200/300',year: '2019', filmId: 'parasite' },
     { title: 'Spencer',         poster: 'https://picsum.photos/seed/spnc/200/300',year: '2021', filmId: 'spencer' },
     { title: 'Tár',             poster: 'https://picsum.photos/seed/tar1/200/300',year: '2022', filmId: 'tar' },
+    { title: 'Drive My Car',    poster: 'https://picsum.photos/seed/dmc/200/300', year: '2021', filmId: 'drive-my-car' },
+    { title: 'The Power of the Dog', poster: 'https://picsum.photos/seed/pow/200/300', year: '2021', filmId: 'the-power-of-the-dog' },
   ];
   
   // ─────────────────────────────────────────────────────────────────────────────

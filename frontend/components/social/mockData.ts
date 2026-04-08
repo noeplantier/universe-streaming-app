@@ -25,20 +25,7 @@ const ANAELLE= mkAuthor('Anaëlle C.','anaelle_c',     'https://i.pravatar.cc/60
 
 // ─── Feed ─────────────────────────────────────────────────────────
 export const INITIAL_POSTS: PostData[] = [
-  {
-      id: '1', tab: 'foryou', author: NOLAN, time: '2h',
-      liked: false, saved: false, likes: 1240,
-      content: 'La photographie dans "The Lighthouse" est une masterclass de contraste. Le ratio 1.19:1 enferme littéralement les personnages dans leur folie. Des avis ? 🎥',
-      film: { title: 'The Lighthouse', poster: 'https://image.tmdb.org/t/p/w200/3nk9UoepYmv1G9oP18q6JJCeYMB.jpg', year: '2019', filmId: 'lighthouse', rating: 4.8 },
-      comments: [
-          mkComment('c1', LUCIE, "Totalement d'accord, un chef d'œuvre !", '1h', 14),
-          mkComment('c2', MARC, "Le ratio 1.19:1 c'est Eggers en mode maîtrise totale.", '45m', 8),
-          mkComment('c3', ANAELLE, "Je préfère quand même The Witch pour l'ambiance.", '20m', 3),
-      ],
-      avatar: '',
-      createdAt: '',
-      userName: undefined
-  },
+
   {
       id: '2', tab: 'subs', author: SARAH, time: '4h',
       liked: false, saved: false, likes: 856,
@@ -51,19 +38,7 @@ export const INITIAL_POSTS: PostData[] = [
       createdAt: '',
       userName: undefined
   },
-  {
-      id: '3', tab: 'trending', author: MARC, time: '5h',
-      liked: false, saved: false, likes: 2100,
-      content: "Petit thread sur l'utilisation des lentilles anamorphiques chez Wes Anderson. Chaque film est une étude de symétrie et de couleur 👇",
-      film: { title: 'Asteroid City', poster: 'https://image.tmdb.org/t/p/w200/qfgysK1I5s2m86e1hQY6k3qK5q8.jpg', year: '2023', filmId: 'asteroid-city', rating: 4.2 },
-      comments: [
-          mkComment('c6', EMMA, 'Grand Island en arrière-plan = niveau de détail dingue.', '4h', 18),
-          mkComment('c7', JULIE, 'Tes analyses sont toujours au top Marc !', '3h', 7),
-      ],
-      avatar: '',
-      createdAt: '',
-      userName: undefined
-  },
+
   {
       id: '4', tab: 'foryou', author: JULIE, time: '6h',
       liked: false, saved: false, likes: 430,
