@@ -4,6 +4,7 @@
   "main": "src/App.tsx",
   "scripts": {
     "start": "expo start",
+    "build": "expo build",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web"
