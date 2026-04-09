@@ -41,7 +41,8 @@ const BottomCard = memo(function BottomCard({
     <View style={[s.wrap, { bottom: insetBot + 90 }]}>
       {/* Caption cinématique */}
       <View style={s.captionBlock}>
-        {film.caption.split('\n').map((line, i) => (
+        {/* Vérification que caption existe, sinon on fournit une chaîne vide */}
+        {(film.caption || '').split('\n').map((line, i) => (
           <Text key={i} style={s.captionLine}>{line}</Text>
         ))}
       </View>
