@@ -175,7 +175,7 @@ export default function ProfileScreen() {
       <View>
 
         {/* ════════════════════════════════════════════════════════════════
-            SECTION 1 — 🏆 FILMS FAVORIS (Apple TV Top-N numbered)
+        SECTION 1 — 🏆 FILMS FAVORIS (Apple TV Top-N numbered)
         ════════════════════════════════════════════════════════════════ */}
         <SectionHeader
           icon="trophy"
@@ -188,71 +188,76 @@ export default function ProfileScreen() {
         {favFilms.length === 0
           ? <EmptyState icon="heart-outline" text="Aucun favori" subtext="Note des films 4★ ou plus" />
           : (
-            <HScrollRow>
-              {favFilms.map((film, idx) => (
-                <FavCard key={film.id} film={film} rank={idx + 1} onPress={() => goFilm(film.id)} />
-              ))}
-            </HScrollRow>
+        <HScrollRow>
+          {favFilms.map((film, idx) => (
+            <View key={film.id} style={{ zIndex: 10 }}>
+          <FavCard film={film} rank={idx + 1} onPress={() => goFilm(film.id)} />
+            </View>
+          ))}
+        </HScrollRow>
           )
         }
 
-        /* Apple TV section divider */}
           <View style={pg.divider} />
 
           {/* ════════════════════════════════════════════════════════════════
-              SECTION 2 — ✍️ CRITIQUES (ranked by likes)
+          SECTION 2 — ✍️ CRITIQUES (ranked by likes)
           ════════════════════════════════════════════════════════════════ */}
           <SectionHeader
-            icon="pencil"
-            label="Critiques"
-            subtitle="Classées par popularité"
-            accentColor={G.amber}
-            onViewAll={() => router.push('/profile/reviews')}
+        icon="pencil"
+        label="Critiques"
+        subtitle="Classées par popularité"
+        accentColor={G.amber}
+        onViewAll={() => router.push('/profile/reviews')}
           />
           {sortedReviews.length === 0
-            ? <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
-            : (
-              <HScrollRow>
-                {sortedReviews.map((rev) => (
-            <CritiqueCard
-              key={rev.id} review={rev}
-              onPress={() => rev.film && goFilm(rev.film.id)}
-            />
-                ))}
-              </HScrollRow>
-            )
-            }
+        ? <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
+        : (
+          <HScrollRow>
+            {sortedReviews.map((rev) => (
+        <View key={rev.id} style={{ zIndex: 10 }}>
+          <CritiqueCard
+            review={rev}
+            onPress={() => rev.film && goFilm(rev.film.id)}
+          />
+        </View>
+            ))}
+          </HScrollRow>
+        )
+        }
 
-            <View style={pg.divider} />
+        <View style={pg.divider} />
 
-            {/* ════════════════════════════════════════════════════════════════
-              SECTION 3 — 👁️ FILMS & SÉRIES VISIONNÉS (ranked by rating)
-            ════════════════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════════════════════════
+          SECTION 3 — 👁️ FILMS & SÉRIES VISIONNÉS (ranked by rating)
+        ════════════════════════════════════════════════════════════════ */}
           <SectionHeader
-            icon="eye"
-            label="Films & Séries visionnés"
-            subtitle="Classés par note"
-            count={sortedSeen.length}
-            accentColor={G.cyan}
-            onViewAll={() => router.push('/profile/seen')}
+        icon="eye"
+        label="Films & Séries visionnés"
+        subtitle="Classés par note"
+        count={sortedSeen.length}
+        accentColor={G.cyan}
+        onViewAll={() => router.push('/profile/seen')}
           />
           {sortedSeen.length === 0
-            ? <EmptyState icon="film-outline" text="Aucun visionnage" subtext="Marque des films comme vus" />
-            : (
-            <HScrollRow>
-              {sortedSeen.map((film) => (
-              <SeenCard key={film.id} film={film} onPress={() => goFilm(film.id)} />
-              ))}
-            </HScrollRow>
-            )
+        ? <EmptyState icon="film-outline" text="Aucun visionnage" subtext="Marque des films comme vus" />
+        : (
+        <HScrollRow>
+          {sortedSeen.map((film) => (
+          <View key={film.id} style={{ zIndex: 10 }}>
+            <SeenCard film={film} onPress={() => goFilm(film.id)} />
+          </View>
+          ))}
+        </HScrollRow>
+        )
           }
 
           <View style={pg.divider} />
 
           {/* ════════════════════════════════════════════════════════════════
-            STATS BLOCK
+        STATS BLOCK
           ════════════════════════════════════════════════════════════════ */}
-   
+       
         <View style={{ height: 110 }} />
       </View>
     );

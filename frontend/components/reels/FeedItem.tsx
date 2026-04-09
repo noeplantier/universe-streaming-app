@@ -396,8 +396,8 @@ export default FeedItem;
 
 const s = StyleSheet.create({
   loadWrap:  { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  loadRing:  { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: 'rgba(192,96,255,0.35)', alignItems: 'center', justifyContent: 'center' },
-  loadDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(192,96,255,0.7)' },
+  loadRing:  { width: 44, height: 44, borderRadius: 22, borderWidth: 2, borderColor: 'rgba(23, 29, 74, 0.7)', alignItems: 'center', justifyContent: 'center' },
+  loadDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: 'rgba(23, 29, 74, 0.7)' },
   errWrap:   { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(7,0,15,0.78)', gap: 14 },
   errTxt:    { color: P.t2, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
   retryBtn:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: P.primary, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 11 },

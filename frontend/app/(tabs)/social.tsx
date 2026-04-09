@@ -769,11 +769,7 @@ const cm = StyleSheet.create({
 const ComposeBar = memo(function ComposeBar({ onPress }: { onPress: () => void }) {
   return (
     <TouchableOpacity style={cbar.wrap} onPress={onPress} activeOpacity={0.88}>
-      <LinearGradient
-        colors={['rgba(192,96,255,0.12)', 'rgba(192,96,255,0.04)', 'transparent']}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-        style={StyleSheet.absoluteFill}
-      />
+
       <View style={cbar.topBorder} />
       <Image source={{ uri: 'https://i.pravatar.cc/100?u=me' }} style={cbar.avi} />
       <View style={cbar.body}>
@@ -806,7 +802,7 @@ const ComposeBar = memo(function ComposeBar({ onPress }: { onPress: () => void }
 
 const cbar = StyleSheet.create({
   wrap:      { marginHorizontal: EDGE, marginBottom: 14, borderRadius: 20, borderWidth: 1, borderColor: C.borderHi, flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, overflow: 'hidden' },
-  topBorder: { position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(192,96,255,0.3)' },
+  topBorder: { position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: 'rgba(191, 96, 255, 0)' },
   avi:       { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: C.borderHi },
   body:      { flex: 1, gap: 3 },
   title:     { color: C.text, fontSize: 14, fontWeight: '700' },
