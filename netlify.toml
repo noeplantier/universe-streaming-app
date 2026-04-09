@@ -1,11 +1,12 @@
 [build]
-  command = "npm install --force && npx expo export"
+  command = "npm install --legacy-peer-deps && npx expo export"
   publish = "dist"
 
 [build.environment]
   NODE_VERSION = "18"
-  # Souvent requis par Expo web en production
   EXPO_WEB_DEBUG = "true"
+  # Cela aide npm à ignorer les strict peer dependencies dans les environnements CI
+  NPM_FLAGS = "--legacy-peer-deps"
 
 [[redirects]]
   from = "/*"
