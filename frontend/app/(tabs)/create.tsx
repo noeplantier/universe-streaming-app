@@ -142,7 +142,7 @@ const StepIndicator = memo(function StepIndicator({ step }: { step: Step }) {
         return (
           <React.Fragment key={label}>
             <View style={si.item}>
-              <View style={[si.dot, done && si.dotDone, active && si.dotActive]}>
+              <View style={[si.dot, done && si.dotDone, active && si.dotActive, !done && !active && si.dotInactive]}>
                 {done
                   ? <Ionicons name="checkmark" size={11} color="white" />
                   : <Text style={[si.dotTxt, active && { color: 'white' }]}>{i + 1}</Text>
@@ -215,7 +215,7 @@ const TrimBar = memo(function TrimBar({
         <View style={[tb.excluded, { width: `${leftPct * 100}%` }]} />
         {/* Zone sélectionnée */}
         <LinearGradient
-          colors={overMax ? ['#FF3B5C55', '#FF3B5C88'] : ['rgba(155,109,202,0.5)', 'rgba(90,200,250,0.5)']}
+          colors={overMax ? ['#FF3B5C55', '#FF3B5C88'] : [ '#0a2f63', 'rgba(90,200,250,0.5)']}
           start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
           style={[tb.selected, { width: `${(rightPct - leftPct) * 100}%` }]}
         />
@@ -312,11 +312,11 @@ const StepImport = memo(function StepImport({
       {!videoUri ? (
         <TouchableOpacity style={imp.pickZone} onPress={onPick} activeOpacity={0.85}>
           <LinearGradient
-            colors={['rgba(155,109,202,0.10)', 'rgba(90,200,250,0.05)', 'transparent']}
+            colors={['#0a2f63', 'rgba(90,200,250,0.05)', 'transparent']}
             style={StyleSheet.absoluteFill}
           />
           <View style={imp.pickIconWrap}>
-            <LinearGradient colors={[C.violet, '#5AC8FA']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={imp.pickIconBg}>
+            <LinearGradient colors={[C.violet, '#0a2f63']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={imp.pickIconBg}>
               <Ionicons name="film-outline" size={28} color="white" />
             </LinearGradient>
           </View>
@@ -582,7 +582,7 @@ const StepPublish = memo(function StepPublish({
       {!uploading && (
         <TouchableOpacity style={pub.cta} onPress={onUpload} activeOpacity={0.88}>
           <LinearGradient
-            colors={[C.violet, '#7B6DB0', '#5AC8FA']}
+            colors={[C.violet, '#0a2f63',  '#0a2f63']}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
             style={pub.ctaGrad}
           >
@@ -611,7 +611,7 @@ const pub = StyleSheet.create({
   reelDurTxt:    { color: 'rgba(255,255,255,0.7)', fontSize: 9, fontWeight: '700' },
   reelInfo:      { flex: 1, gap: 5 },
   genreTag:      { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: C.violetMid, borderWidth: 1, borderColor: C.borderAcc },
-  genreTagTxt:   { color: '#D4B8F5', fontSize: 10, fontWeight: '700' },
+  genreTagTxt:   { color:  '#0a2f63', fontSize: 10, fontWeight: '700' },
   reelTitle:     { color: C.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
   reelDir:       { color: C.textSec, fontSize: 12 },
   reelSynopsis:  { color: C.textTert, fontSize: 11, lineHeight: 16, fontStyle: 'italic' },
@@ -646,6 +646,20 @@ export default function CreateScreen() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [trimStart,     setTrimStart]     = useState(0);
   const [trimEnd,       setTrimEnd]       = useState(0);
+  const [activeTab, setActiveTab] = useState<'video' | 'critiques'>('video');
+
+
+    // 2. États pour le CritiquePanel
+    const [filmTitle, setFilmTitle] = useState('');
+    const [critiqueText, setCritiqueText] = useState('');
+    const [publishing, setPublishing] = useState(false);
+  
+    const handlePublishCritique = async () => {
+      setPublishing(true);
+      // Logique de publication API ici...
+      setPublishing(false);
+    };
+  
 
   // ── Métadonnées ───────────────────────────────────────────────────────────
   const [meta, setMeta] = useState<ReelMeta>({
@@ -779,18 +793,9 @@ const handleUpload = useCallback(async () => {
 
           {/* ── Header ─────────────────────────────────────────────────────── */}
           <View style={s.header}>
-            <TouchableOpacity style={s.backBtn} onPress={goPrev}>
-              <Ionicons name="chevron-back" size={20} color={C.textSec} />
-            </TouchableOpacity>
+         
             <View style={{ flex: 1 }}>
-              <Text style={s.headerTitle}>Nouveau Réel</Text>
-              <Text style={s.headerSub}>Micro-format · {MAX_DURATION}s max · Cinéma indépendant</Text>
             </View>
-            {step < 2 && (
-              <TouchableOpacity style={[s.skipBtn, !canContinue && { opacity: 0 }]} onPress={goNext}>
-                <Text style={s.skipTxt}>Suivant</Text>
-              </TouchableOpacity>
-            )}
           </View>
 
           {/* ── Step indicator ─────────────────────────────────────────────── */}

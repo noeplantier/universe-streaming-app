@@ -11,8 +11,8 @@ export const H_PADDING   = 16;
 
 // ─── Numbered card (Apple TV Top-10 layout) ──────────────────────────────────
 // [  N  [CARD]]  — number sits LEFT, card overlaps it from the right
-export const NUM_W       = 52;    // px reserved for the rank digit area
-export const NUM_OVERLAP = 20;    // px the card overlaps the number
+export const NUM_W       = 60;    // px reserved for the rank digit area
+export const NUM_OVERLAP = 50;    // px the card overlaps the number
 // Total item slot width (number area + card - overlap):
 export const NUM_ITEM_W  = NUM_W + CARD_W - NUM_OVERLAP; // = 162
 

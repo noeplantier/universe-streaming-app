@@ -190,9 +190,12 @@ export default function ProfileScreen() {
           : (
         <HScrollRow>
           {favFilms.map((film, idx) => (
-            <View key={film.id} style={{ zIndex: 10 }}>
-          <FavCard film={film} rank={idx + 1} onPress={() => goFilm(film.id)} />
-            </View>
+        <View key={film.id} style={{ flexDirection: 'row', alignItems: 'flex-end', zIndex: 10 }}>
+          <View style={{ marginRight: -NUM_OVERLAP, zIndex: 20, justifyContent: 'flex-end', paddingBottom: 30 }}>
+        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 60, fontWeight: '900' }}>{idx + 1}</Text>
+          </View>
+          <FavCard film={film}  onPress={() => goFilm(film.id)} />
+        </View>
           ))}
         </HScrollRow>
           )
@@ -214,14 +217,14 @@ export default function ProfileScreen() {
         ? <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
         : (
           <HScrollRow>
-            {sortedReviews.map((rev) => (
+        {sortedReviews.map((rev) => (
         <View key={rev.id} style={{ zIndex: 10 }}>
           <CritiqueCard
-            review={rev}
-            onPress={() => rev.film && goFilm(rev.film.id)}
+        review={rev}
+        onPress={() => rev.film && goFilm(rev.film.id)}
           />
         </View>
-            ))}
+        ))}
           </HScrollRow>
         )
         }
@@ -235,7 +238,6 @@ export default function ProfileScreen() {
         icon="eye"
         label="Films & Séries visionnés"
         subtitle="Classés par note"
-        count={sortedSeen.length}
         accentColor={G.cyan}
         onViewAll={() => router.push('/profile/seen')}
           />
@@ -245,7 +247,7 @@ export default function ProfileScreen() {
         <HScrollRow>
           {sortedSeen.map((film) => (
           <View key={film.id} style={{ zIndex: 10 }}>
-            <SeenCard film={film} onPress={() => goFilm(film.id)} />
+        <SeenCard film={film} onPress={() => goFilm(film.id)} />
           </View>
           ))}
         </HScrollRow>
