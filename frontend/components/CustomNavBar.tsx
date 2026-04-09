@@ -59,7 +59,7 @@ function CustomNavBar() {
         />
 
         <NavItem
-          icon={<MaterialCommunityIcons name="play-box-multiple" size={24} color="white" />}
+          icon={<MaterialCommunityIcons name="filmstrip" size={24} color="white" />}
           label="Véloces"
           onPress={() => navigate('/')}
         />
@@ -81,10 +81,10 @@ function CustomNavBar() {
 
         <NavItem
           icon={
-            <Image
-              source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',}}
-              style={styles.profile}
-            />
+        <Image
+          source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',}}
+          style={styles.profile}
+        />
           }
           label="Profil"
           onPress={() => navigate('/profile')}

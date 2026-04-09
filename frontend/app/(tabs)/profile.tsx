@@ -392,22 +392,6 @@ export default function ProfileScreen() {
             </BlurView>
           </View>
 
-          {/* ── Action buttons ── */}
-          <View style={pg.actionRow}>
-            <TouchableOpacity style={pg.actionBtn} activeOpacity={0.8}
-              onPress={() => router.push('/edit-profile' as any)}>
-              <Text style={pg.actionBtnTxt}>Modifier le profil</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pg.actionBtn} activeOpacity={0.8}
-              onPress={() => router.push('/share-profile' as any)}>
-              <Text style={pg.actionBtnTxt}>Partager le profil</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pg.actionBtnSq} activeOpacity={0.8}
-              onPress={() => router.push('/add-contact' as any)}>
-              <Ionicons name="person-add-outline" size={17} color={G.text} />
-            </TouchableOpacity>
-          </View>
-
           {/* Glow separator */}
           <View style={pg.glowSep} />
         </SafeAreaView>
