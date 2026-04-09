@@ -35,6 +35,8 @@
     "supabase": "^2.84.8"
   },
   "devDependencies": {
+    "metro": "^0.84.2",
+    "metro-core": "^0.84.2",
     "typescript": "^4.5.4"
   },
   "private": true

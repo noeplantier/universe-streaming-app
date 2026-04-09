@@ -1,11 +1,11 @@
 [build]
-  # On force la réinstallation de metro et l'alignement des dépendances
-  command = "npm install --legacy-peer-deps && npx expo export -p web"
+  command = "npm install --force && npx expo export"
   publish = "dist"
 
 [build.environment]
-  NPM_FLAGS = "--legacy-peer-deps"
-  NODE_VERSION = "20" 
+  NODE_VERSION = "18"
+  # Souvent requis par Expo web en production
+  EXPO_WEB_DEBUG = "true"
 
 [[redirects]]
   from = "/*"
