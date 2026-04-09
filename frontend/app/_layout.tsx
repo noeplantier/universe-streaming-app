@@ -27,7 +27,6 @@ function RootLayoutNav() {
       <Stack.Screen name="film/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="user/[id]" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="settings" options={{ animation: 'slide_from_right' }} />
-      <Stack.Screen name="premium" options={{ animation: 'slide_from_bottom' }} />
       <Stack.Screen name="watchlist" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="notifications" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="category/[type]" options={{ animation: 'slide_from_right' }} />

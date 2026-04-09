@@ -21,14 +21,12 @@ import { FavCard, CritiqueCard, SeenCard, ReelCard } from '../../components/prof
 import {
   SectionHeader, HScrollRow, EmptyState, StatsBlock, StatColumn,
 } from '../../components/profile/Section';
-import { VideoGenModal } from '../../components/profile/VideoGenModal';
 
 // Debug: vérifiez quel composant est undefined
 console.log('GalaxyBackground:', GalaxyBackground);
 console.log('ImageWithFallback:', ImageWithFallback);
 console.log('FavCard:', FavCard, 'CritiqueCard:', CritiqueCard, 'SeenCard:', SeenCard, 'ReelCard:', ReelCard);
 console.log('SectionHeader:', SectionHeader, 'HScrollRow:', HScrollRow, 'EmptyState:', EmptyState, 'StatsBlock:', StatsBlock, 'StatColumn:', StatColumn);
-console.log('VideoGenModal:', VideoGenModal);
 import { G, H_PADDING, HEADER_SCROLL_DISTANCE, CARD_W, CARD_H, NUM_W, NUM_OVERLAP, NUM_ITEM_W, CARD_GAP} from '../../components/profile/theme';
 import {
   ALL_FAVS, DEFAULT_REVIEWS, DEFAULT_SEEN, OWN_REELS,
@@ -96,7 +94,6 @@ export default function ProfileScreen() {
   const [seenFilms,       setSeenFilms]       = useState<FilmItem[]>([]);
   const [loading,         setLoading]         = useState(true);
   const [refreshing,      setRefreshing]      = useState(false);
-  const [videoGenVisible, setVideoGenVisible] = useState(false);
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
@@ -256,13 +253,7 @@ export default function ProfileScreen() {
         {/* ════════════════════════════════════════════════════════════════
             STATS BLOCK
         ════════════════════════════════════════════════════════════════ */}
-        <SectionHeader
-          icon="bar-chart-outline"
-          label="Statistiques"
-          accentColor={G.primary}
-        />
-        <StatsBlock reviews={sortedReviews} seenFilms={sortedSeen} />
-
+   
         <View style={{ height: 110 }} />
       </View>
     );
@@ -274,18 +265,6 @@ export default function ProfileScreen() {
   function renderReelsContent() {
     return (
       <View>
-        {/* AI CTA banner */}
-        <TouchableOpacity onPress={() => setVideoGenVisible(true)} activeOpacity={0.88}
-          style={{ paddingHorizontal: H_PADDING, paddingTop: 18, paddingBottom: 6 }}>
-          <LinearGradient
-            colors={['#2A0060', '#7B1FA2', G.primary]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={pg.genCta}>
-            <Ionicons name="sparkles" size={18} color="#fff" />
-            <Text style={pg.genCtaTxt}>Générer un court métrage avec l'IA</Text>
-            <Ionicons name="arrow-forward" size={16} color="rgba(255,255,255,0.60)" />
-          </LinearGradient>
-        </TouchableOpacity>
 
         <SectionHeader
           icon="videocam"
@@ -357,9 +336,7 @@ export default function ProfileScreen() {
               <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.55)" />
             </View>
             <View style={{ flexDirection:'row', gap:2 }}>
-              <TouchableOpacity style={pg.navBtn} onPress={() => setVideoGenVisible(true)}>
-                <Ionicons name="sparkles-outline" size={23} color={G.text} />
-              </TouchableOpacity>
+          
               <TouchableOpacity testID="profile-add-post-btn" style={pg.navBtn} onPress={() => router.push('/create')}>
                 <Ionicons name="add-circle-outline" size={23} color={G.text} />
               </TouchableOpacity>
@@ -465,9 +442,6 @@ export default function ProfileScreen() {
           />
         )}
       </Animated.ScrollView>
-
-      {/* ── AI Studio modal ── */}
-      <VideoGenModal visible={videoGenVisible} onClose={() => setVideoGenVisible(false)} />
     </View>
   );
 }

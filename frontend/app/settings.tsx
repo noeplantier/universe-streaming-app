@@ -1,10 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// app/settings.tsx  —  Paramètres UNIVERSE
-//
-// Orchestrateur fin : toutes les actions modifient directement le context
-// (optimiste, persisté AsyncStorage, appliqué à l'app en temps réel).
-// ─────────────────────────────────────────────────────────────────────────────
-
 import React, {
   useCallback, useRef, memo,
 } from 'react';
@@ -25,7 +18,6 @@ import { SettingsProvider, useSettings } from '@/components/settings/SettingsCon
 
 // Components
 import ProfileCard   from '@/components/settings/ProfileCard';
-import PremiumBanner from '@/components/settings/PremiumBanner';
 import {
   SectionHeader, SettingsGroup,
   SettingsRow, SettingsToggle, SettingsPicker,
@@ -179,8 +171,7 @@ function SettingsBody() {
       {/* ── Profil héro ── */}
       <ProfileCard />
 
-      {/* ── Premium ── */}
-      <PremiumBanner />
+
 
       {/* ═══════════════════════════════════════════════════════════════════
           LECTURE

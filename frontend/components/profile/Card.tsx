@@ -84,8 +84,8 @@ export const FavCard = memo(({ film, rank, onPress }: FavCardProps) => {
     if (rank !== 1) return;
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseScl, { toValue: 1.014, duration: 2400, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
-        Animated.timing(pulseScl, { toValue: 1,     duration: 2400, easing: Easing.inOut(Easing.sine), useNativeDriver: true }),
+        Animated.timing(pulseScl, { toValue: 1.014, duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseScl, { toValue: 1,     duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ]),
     ).start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

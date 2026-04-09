@@ -1,8 +1,8 @@
 
-import React, { memo, useRef, useEffect, useState } from 'react';
+import React, { memo, useRef, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Animated, Easing, Dimensions,
+  View, Text, StyleSheet, TouchableOpacity,
+  Animated, Dimensions,
 } from 'react-native';
 import { BlurView }       from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -36,21 +36,7 @@ export const StepImport = memo(function StepImport({
 }: StepImportProps) {
   const [showEditor, setShowEditor] = useState(false);
 
-  const pulseAnim = useRef(new Animated.Value(1)).current;
   const glowAnim  = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const p = Animated.loop(Animated.sequence([
-      Animated.timing(pulseAnim, { toValue: 1.04, duration: 1500, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
-      Animated.timing(pulseAnim, { toValue: 1,    duration: 1500, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
-    ]));
-    const g = Animated.loop(Animated.sequence([
-      Animated.timing(glowAnim, { toValue: 1, duration: 2000, useNativeDriver: false }),
-      Animated.timing(glowAnim, { toValue: 0, duration: 2000, useNativeDriver: false }),
-    ]));
-    p.start(); g.start();
-    return () => { p.stop(); g.stop(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const borderColor = glowAnim.interpolate({
     inputRange:  [0, 1],
