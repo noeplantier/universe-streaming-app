@@ -41,45 +41,41 @@ const BottomCard = memo(function BottomCard({
     <View style={[s.wrap, { bottom: insetBot + 90 }]}>
       {/* Caption cinématique */}
       <View style={s.captionBlock}>
-        {/* Vérification que caption existe, sinon on fournit une chaîne vide */}
         {(film.caption || '').split('\n').map((line, i) => (
           <Text key={i} style={s.captionLine}>{line}</Text>
         ))}
       </View>
 
       {/* Info card glassmorphism */}
-     
-        <View style={s.inner}>
+      <View style={s.inner}>
 
-          {/* Header */}
-          <View style={s.topRow}>
-            <View style={{ flex: 1 }}>
-              <View style={s.titleRow}>
-                <Text style={s.seriesName} numberOfLines={1}>{film.series}</Text>
-             
-              </View>
-              <Text style={s.epLabel} numberOfLines={1}>
-                Ép. {film.episode} · {film.episode_title}
-              </Text>
+        {/* Header */}
+        <View style={s.topRow}>
+          <View style={{ flex: 1 }}>
+            <View style={s.titleRow}>
+              <Text style={s.seriesName} numberOfLines={1}>{film.series}</Text>
             </View>
-            <View style={s.tagsRow}>
-              
-            </View>
+            <Text style={s.epLabel} numberOfLines={1}>
+              Ép. {film.episode} · {film.episode_title}
+            </Text>
           </View>
+          <View style={s.tagsRow}>
+          </View>
+        </View>
 
-          {/* Réalisateur */}
-          <Text style={s.directorTxt}>{film.director} · {film.year}</Text>
+        {/* Réalisateur */}
+        <Text style={s.directorTxt}>{film.director} · {film.year}</Text>
 
-          {/* Barre de progression */}
-          <View style={s.progressTrack}>
-            <View style={[s.progressFill, { width: `${clampedPct}%` }]} />
-          </View>
-          <View style={s.timesRow}>
-            <Text style={s.timeText}>{elMin}:{elSec}</Text>
-            <Text style={[s.timeText, { color: P?.t3 || '#888' }]}>{film.duration}</Text>
-          </View>
-          </View>
-          </View>
+        {/* Barre de progression */}
+        <View style={s.progressTrack}>
+          <View style={[s.progressFill, { width: `${clampedPct}%`, backgroundColor: '#fff' }]} />
+        </View>
+        <View style={s.timesRow}>
+          <Text style={s.timeText}>{elMin}:{elSec}</Text>
+          <Text style={[s.timeText, { color: P?.t3 || '#fff' }]}>{film.duration}</Text>
+        </View>
+      </View>
+    </View>
 
   );
 });
@@ -95,14 +91,14 @@ const s = StyleSheet.create({
   topRow:         { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   titleRow:       { flexDirection: 'row', alignItems: 'center' },
   seriesName:     { color: P?.t1 || '#FFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.1, flexShrink: 1 },
-  epLabel:        { color: P?.t2 || '#AAA', fontSize: 12, marginTop: 2 },
-  directorTxt:    { color: P?.t3 || '#888', fontSize: 11, fontWeight: '500' },
+  epLabel:        { color: P?.t2 || '#FFF', fontSize: 12, marginTop: 2 },
+  directorTxt:    { color: P?.t3 || '#FFF', fontSize: 11, fontWeight: '500' },
   tagsRow:        { flexDirection: 'row', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' },
   tag:            { backgroundColor: 'rgba(146,64,214,0.22)', borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: P.bord },
   tagOriginal:    { backgroundColor: 'rgba(192,96,255,0.22)', borderColor: P.primL },
-  tagTxt:         { color: P?.t2 || '#AAA', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  tagTxt:         { color: P?.t2 || '#FFF', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   tagTxtOriginal: { color: P.primL },
-  progressTrack:  { height: 3.5, backgroundColor: 'rgba(255,255,255,0.14)', borderRadius: 2, overflow: 'visible' },
+  progressTrack:  { height: 3.5, backgroundColor: 'rgb(255, 255, 255)', borderRadius: 2, overflow: 'visible' },
   progressFill:   { height: '100%', backgroundColor: P.primL, borderRadius: 2, position: 'relative', overflow: 'hidden' },
   progressGlow:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.30)' },
   progressThumb:  { position: 'absolute', top: -5, marginLeft: -6, width: 13, height: 13, borderRadius: 7, backgroundColor: '#fff', borderWidth: 2.5, borderColor: P.primL, shadowColor: P.primL, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 4, elevation: 4 },

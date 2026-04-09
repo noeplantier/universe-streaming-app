@@ -348,20 +348,8 @@ export const ReelCard = memo(({ reel, rank, onPress }: ReelCardProps) => {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'flex-end', width: NUM_W + CARD_W - NUM_OVERLAP }}>
 
-      {/* Rank number */}
-      <View style={{ width: NUM_W, height: CARD_H, justifyContent: 'flex-end', paddingBottom: 6, zIndex: 0 }}>
-        <Text style={{
-          fontSize: numFontSize, fontWeight: '900',
-          color: rankColor, opacity: rank <= 3 ? 0.88 : 0.24,
-          lineHeight: numFontSize + 4, textAlign: 'right', letterSpacing: -4,
-          textShadowColor: G.bg, textShadowOffset: { width: 2, height: 3 }, textShadowRadius: 0,
-        }}>
-          {rank}
-        </Text>
-      </View>
-
       {/* Card */}
-      <TouchableOpacity style={{ marginLeft: -NUM_OVERLAP, zIndex: 2 }} onPress={onPress} activeOpacity={0.88}>
+      <TouchableOpacity style={{ marginLeft: 0, zIndex: 1 }} onPress={onPress} activeOpacity={0.88}>
         <View style={s.card}>
           <ImageWithFallback uri={reel.posterUrl} style={StyleSheet.absoluteFillObject} />
           <LinearGradient colors={['rgba(13,13,18,0.08)', 'rgba(13,13,18,0.88)']} style={StyleSheet.absoluteFillObject} />
@@ -396,6 +384,18 @@ export const ReelCard = memo(({ reel, rank, onPress }: ReelCardProps) => {
           <View style={s.innerBorder} pointerEvents="none" />
         </View>
       </TouchableOpacity>
+
+      {/* Rank number (on top) */}
+      <View style={{ position: 'absolute', width: NUM_W, height: CARD_H, justifyContent: 'flex-end', paddingBottom: 6, zIndex: 10, right: -NUM_OVERLAP + 8 }}>
+        <Text style={{
+          fontSize: numFontSize, fontWeight: '900',
+          color: rankColor, opacity: rank <= 3 ? 0.92 : 0.28,
+          lineHeight: numFontSize + 4, textAlign: 'right', letterSpacing: -4,
+          textShadowColor: G.bg, textShadowOffset: { width: 2, height: 3 }, textShadowRadius: 0,
+        }}>
+          {rank}
+        </Text>
+      </View>
     </View>
   );
 });

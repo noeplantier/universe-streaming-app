@@ -274,7 +274,6 @@ export default function ProfileScreen() {
           icon="videocam"
           label="Mes courts métrages"
           subtitle="Sélection festival"
-          count={OWN_REELS.length}
           accentColor={G.primary}
           onViewAll={() => router.push('/profile/reels' as any)}
         />
