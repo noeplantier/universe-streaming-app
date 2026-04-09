@@ -334,20 +334,7 @@ const FeedItem = memo(function FeedItem({
           </View>
         )}
 
-        {/* ── Gradients cinématiques ── */}
-        <LinearGradient
-          colors={['rgba(7,0,15,0.06)', 'transparent', 'rgba(7,0,15,0.28)', 'rgba(7,0,15,0.94)']}
-          locations={[0, 0.30, 0.62, 1]}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-        <LinearGradient
-          colors={['rgba(90,15,200,0.28)', 'transparent']}
-          start={{ x: 0, y: 0.5 }} end={{ x: 0.36, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
-
+ 
         {/* ── Cœur double-tap ── */}
         <Animated.View
           style={[s.bigHeart, { opacity: heartOpac, transform: [{ scale: heartScale }] }]}

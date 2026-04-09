@@ -1,14 +1,4 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// app/(tabs)/index.tsx  —  ReelsScreen UNIVERSE
-//
-// Fix principal :
-//   · isNear = Math.abs(index - activeIndex) <= 1 → pool de 3 players max
-//   · windowSize={5} pour éviter les unmounts trop agressifs
-//   · onViewableItemsChanged stable (ref) → activeIndex toujours à jour
-//   · Supabase intégration conservée + fallback MOCK_FEED
-//   · Pause globale useFocusEffect
-// ─────────────────────────────────────────────────────────────────────────────
-
 import React, {
   useState, useRef, useCallback, useEffect,
 } from 'react';
@@ -60,7 +50,7 @@ export default function ReelsScreen() {
   // ── Chargement Supabase + fallback MOCK ──────────────────────────────────
   useEffect(() => {
     async function loadFeed() {
-      if (!supabase) return;          // pas configuré → MOCK déjà chargé
+      if (!supabase) return;        
       try {
         const { data, error } = await supabase
           .from('films')
@@ -121,7 +111,7 @@ export default function ReelsScreen() {
       <FeedItem
         film={item}
         isActive={index === activeIndex}
-        isNear={Math.abs(index - activeIndex) <= 1}   // ← pool ±1
+        isNear={Math.abs(index - activeIndex) <= 1}
         screenFocused={screenFocused}
         itemW={W}
         itemH={ITEM_H}
