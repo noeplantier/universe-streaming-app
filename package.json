@@ -35,9 +35,12 @@
     "react-native-web": "~0.19.10",
     "supabase": "^2.84.8"
   },
-  "devDependencies": {
+  "overrides": {
     "metro": "^0.84.2",
     "metro-core": "^0.84.2",
+    "metro-resolver": "0.80.9"
+  },
+  "devDependencies": {
     "typescript": "^4.5.4"
   },
   "private": true

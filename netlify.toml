@@ -3,9 +3,9 @@
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "18"
+  # PASSEZ LA VERSION DE NODE A 20
+  NODE_VERSION = "20"
   EXPO_WEB_DEBUG = "true"
-  # Cela aide npm à ignorer les strict peer dependencies dans les environnements CI
   NPM_FLAGS = "--legacy-peer-deps"
 
 [[redirects]]
