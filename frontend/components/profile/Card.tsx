@@ -389,6 +389,7 @@ export const ReelCard = memo(({ reel, rank, onPress }: ReelCardProps) => {
       <View style={{ position: 'absolute', width: NUM_W, height: CARD_H, justifyContent: 'flex-end', paddingBottom: 6, zIndex: 10, right: -NUM_OVERLAP + 8 }}>
         <Text style={{
           fontSize: numFontSize, fontWeight: '900',
+          zIndex: 1000,
           color: rankColor, opacity: rank <= 3 ? 0.92 : 0.28,
           lineHeight: numFontSize + 4, textAlign: 'right', letterSpacing: -4,
           textShadowColor: G.bg, textShadowOffset: { width: 2, height: 3 }, textShadowRadius: 0,
