@@ -278,9 +278,9 @@ export default function ProfileScreen() {
           onViewAll={() => router.push('/profile/reels' as any)}
         />
         <HScrollRow paddingBottom={8}>
-          {OWN_REELS.map((reel, idx) => (
+          {OWN_REELS.map((reel) => (
             <ReelCard
-              key={reel.id} reel={reel} rank={idx + 1}
+              key={reel.id} reel={reel}
               onPress={() => router.push(`/reel/${reel.id}` as any)}
             />
           ))}

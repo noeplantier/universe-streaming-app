@@ -130,7 +130,6 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
     borderRadius: 200,
-    backgroundColor: '#A855F7',
   },
 
   logo: {
@@ -154,7 +153,7 @@ const styles = StyleSheet.create({
 
   progressBar: {
     height: 3,
-    backgroundColor: '#A855F7',
+    backgroundColor: '#0a2f63',
     borderRadius: 10,
   },
 });

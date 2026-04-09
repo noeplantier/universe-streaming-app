@@ -16,18 +16,18 @@ import React, {
   // ─── Types ────────────────────────────────────────────────────────
   
   export const MENU_ITEMS = [
-    { icon: '🎬', label: 'Pour vous',        key: 'foryou',   badge: null,   hot: true  },
-    { icon: '🌟', label: 'Courts métrages',  key: 'short',    badge: 'NEW',  hot: false },
+    { icon: '🎬', label: 'Pour vous',        key: 'foryou',   badge: null,   hot: false  },
+    { icon: '🌟', label: 'Courts métrages',  key: 'short',    badge: null,  hot: false },
     { icon: '🎭', label: 'Drame',            key: 'drama',    badge: null,   hot: false },
     { icon: '🚀', label: 'Science-Fiction',  key: 'scifi',    badge: null,   hot: false },
     { icon: '💜', label: 'Romance',          key: 'romance',  badge: null,   hot: false },
-    { icon: '🔪', label: 'Thriller',         key: 'thriller', badge: '12',   hot: true  },
+    { icon: '🔪', label: 'Thriller',         key: 'thriller', badge: null,   hot: false  },
     { icon: '✨', label: 'Films ORIGINAL',   key: 'original', badge: null,   hot: false },
     { icon: '🏆', label: 'Sélection Cannes', key: 'cannes',   badge: null,   hot: false },
     { icon: '🎪', label: 'Fantasy',          key: 'fantasy',  badge: null,   hot: false },
     { icon: '📽',  label: 'Documentaire',    key: 'docu',     badge: null,   hot: false },
-    { icon: '🎨', label: 'Animation',        key: 'anim',     badge: 'NEW',  hot: false },
-    { icon: '🔥', label: 'Tendances',        key: 'trend',    badge: null,   hot: true  },
+    { icon: '🎨', label: 'Animation',        key: 'anim',     badge: null,  hot: false },
+    { icon: '🔥', label: 'Tendances',        key: 'trend',    badge: null,   hot: false  },
   ] as const;
   
   export type MenuKey = typeof MENU_ITEMS[number]['key'];
@@ -44,13 +44,13 @@ import React, {
     bg:      '#07000F',
     surface: '#130025',
     glass:   'rgba(255,255,255,0.06)',
-    primary: '#9240D6',
-    primL:   '#C060FF',
-    primGl:  'rgba(146,64,214,0.38)',
+    primary: '#0a2f63',
+    primL:   '##0a2f63',
+    primGl:  '#0a2f63',
     t1:      '#FFFFFF', 
     t2:      'rgba(240,232,255,0.62)',
     t3:      'rgba(240,232,255,0.36)',
-    bord:    'rgba(146,64,214,0.30)',
+    bord:    '#0a2f63',
     bordL:   'rgba(255,255,255,0.08)',
     gold:    '#FFD60A',
     red:     '#EF4444',
@@ -120,7 +120,7 @@ import React, {
         >
           {isActive && (
             <LinearGradient
-              colors={['rgba(192,96,255,0.22)', 'rgba(146,64,214,0.08)']}
+              colors={['#0a2f63', '#0a2f63']}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
               style={StyleSheet.absoluteFill}
             />
@@ -262,7 +262,7 @@ import React, {
           {/* Glow border droit */}
           <View style={s.glowEdge} />
           <LinearGradient
-            colors={['rgba(192,96,255,0.18)', 'transparent', 'rgba(146,64,214,0.10)']}
+            colors={['#0a2f63', 'transparent', '#0a2f63']}
             locations={[0, 0.5, 1]}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"

@@ -151,7 +151,7 @@ const s = StyleSheet.create({
   bar:            { position: 'absolute', right: 14, bottom: 220, alignItems: 'center', gap: 20 },
   iconBtn:        { alignItems: 'center', justifyContent: 'center' },
   iconWrap:       { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.08)' },
-  iconWrapActive: { backgroundColor: 'rgba(146,64,214,0.28)' },
+  iconWrapActive: { backgroundColor: '#0a2f63' },
   item:           { alignItems: 'center', gap: 4 },
   count:          { color: 'rgba(240,232,255,0.82)', fontSize: 11, fontWeight: '700' },
 });
