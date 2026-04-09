@@ -36,8 +36,8 @@
     "supabase": "^2.84.8"
   },
   "overrides": {
-    "metro": "^0.84.2",
-    "metro-core": "^0.84.2",
+    "metro": "0.80.9",
+    "metro-core": "0.80.9",
     "metro-resolver": "0.80.9"
   },
   "devDependencies": {

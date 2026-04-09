@@ -1,9 +1,11 @@
 [build]
+  # Indique à Netlify que le projet Expo est dans /frontend
+  base = "frontend"
   command = "npm install --legacy-peer-deps && npx expo export"
+  # Le dossier dist sera relatif à "frontend" (donc frontend/dist)
   publish = "dist"
 
 [build.environment]
-  # PASSEZ LA VERSION DE NODE A 20
   NODE_VERSION = "20"
   EXPO_WEB_DEBUG = "true"
   NPM_FLAGS = "--legacy-peer-deps"
