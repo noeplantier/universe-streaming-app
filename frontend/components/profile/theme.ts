@@ -21,12 +21,12 @@ export const HEADER_SCROLL_DISTANCE = 90;
 
 // ─── Apple TV × Galaxy palette ──────────────────────────────────────────────
 export const G = {
-  // Backgrounds
-  bg:          '#0D0D12',   // ATV near-black, slightly blue-shifted
-  bg1:         '#13131C',
-  bg2:         '#0A0A10',
-  surface:     '#1C1C26',
-  surfaceHi:   '#26263A',
+  // Backgrounds - Rendus transparents pour laisser voir le fond Galaxy
+  bg:          'transparent',   
+  bg1:         'transparent',
+  bg2:         'transparent',
+  surface:     'rgba(28, 28, 38, 0.4)', // Légèrement translucide pour la lisibilité
+  surfaceHi:   'rgba(38, 38, 58, 0.5)',
 
   // Glass layers
   glass:       'rgba(255,255,255,0.048)',
@@ -36,10 +36,10 @@ export const G = {
   // Star particle palette
   sW: '#F5F0FF', sB: '#B8CCFF', sG: '#FFE880', sP: '#D4A0FF', sCy: '#90EEFF',
 
-  // Brand purple
-  primary:  '#BF5FFF',
-  accent:   '#9B3FF0',
-  purple2:  '#7020C8',
+  // Brand colors - Violet supprimé et remplacé par des tons neutres/blancs
+  primary:  '#FFFFFF',
+  accent:   'rgba(255, 255, 255, 0.8)',
+  purple2:  'rgba(255, 255, 255, 0.5)',
 
   // ATV semantic colours
   gold:     '#FFD60A',   // Apple gold — rank #1

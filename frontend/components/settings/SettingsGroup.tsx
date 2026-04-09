@@ -29,7 +29,7 @@ import React, {
   
   const sh = StyleSheet.create({
     row: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 20, paddingTop: 22, paddingBottom: 8 },
-    txt: { fontSize: 11, fontWeight: '800', color: 'rgba(192,96,255,0.65)', letterSpacing: 1.4 },
+    txt: { fontSize: 11, fontWeight: '800', letterSpacing: 1.4 },
   });
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ import React, {
   }: RowProps) {
     const iconBg = danger
       ? 'rgba(255,59,48,0.15)'
-      : 'rgba(192,96,255,0.14)';
+      : 'rgb(255, 255, 255)';
     const iconColor = danger ? G.red : G.primary;
   
     const handlePress = useCallback(() => {
@@ -154,9 +154,9 @@ import React, {
           <Switch
             value={value}
             onValueChange={onChange}
-            trackColor={{ false: 'rgba(255,255,255,0.12)', true: G.primary }}
+            trackColor={{ true: 'rgb(255, 255, 255)' }}
             thumbColor="#fff"
-            ios_backgroundColor="rgba(255,255,255,0.12)"
+            ios_backgroundColor="rgba(255, 255, 255, 0)"
           />
         }
       />
@@ -211,11 +211,6 @@ import React, {
             <View style={pk.handle} />
             <Text style={pk.sheetTitle}>{title}</Text>
   
-            <LinearGradient
-              colors={['transparent', G.primary, 'transparent']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={pk.sep}
-            />
   
             <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
               {options.map((opt, i) => {
@@ -250,7 +245,7 @@ import React, {
   
   const pk = StyleSheet.create({
     backdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-    sheet:     { backgroundColor: '#0E0028', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 40, maxHeight: '75%', borderTopWidth: 1, borderColor: 'rgba(192,96,255,0.2)' },
+    sheet:     { backgroundColor: '#0E0028', borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, paddingBottom: 40, maxHeight: '75%', borderTopWidth: 1 },
     handle:    { width: 38, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', alignSelf: 'center', marginBottom: 16 },
     sheetTitle:{ color: G.sW, fontSize: 17, fontWeight: '800', textAlign: 'center', marginBottom: 14 },
     sep:       { height: 1, marginBottom: 14 },

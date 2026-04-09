@@ -36,40 +36,16 @@ const ProfileCard = memo(function ProfileCard() {
 
       <View style={s.cardOuter}>
         {/* Fond glassmorphism avec gradient */}
-        <LinearGradient
-          colors={['#1A0038', '#2C0064', '#180040']}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
+       
         <BlurView intensity={8} tint="dark" style={StyleSheet.absoluteFill} />
-
-        {/* Lueur d'arrière-plan */}
-        <View style={s.glow} pointerEvents="none">
-          <LinearGradient
-            colors={['rgba(192,96,255,0.30)', 'transparent']}
-            style={{ flex: 1 }}
-          />
-        </View>
-
-        {/* Badge Premium */}
-        {user.isPremium && (
-          <View style={s.premiumBadge}>
-            <Text style={s.premiumBadgeTxt}>✨ PREMIUM</Text>
-          </View>
-        )}
 
         <View style={s.cardInner}>
           {/* Avatar + anneau dégradé */}
           <TouchableOpacity onPress={() => setEditOpen(true)} activeOpacity={0.9}>
-            <LinearGradient
-              colors={['#C060FF', '#86EEFF', '#FFD60A']}
-              start={{ x: 0, y: 1 }} end={{ x: 1, y: 0 }}
-              style={s.avatarRing}
-            >
+      
               <View style={s.avatarInner}>
                 <Image source={{ uri: user.avatar_url }} style={s.avatar} />
               </View>
-            </LinearGradient>
             <View style={s.editBadge}>
               <Ionicons name="pencil" size={10} color="#fff" />
             </View>
@@ -114,7 +90,7 @@ const ProfileCard = memo(function ProfileCard() {
 export default ProfileCard;
 
 const s = StyleSheet.create({
-  cardOuter:    { marginHorizontal: 16, borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(192,96,255,0.28)', marginBottom: 14 },
+  cardOuter:    { marginHorizontal: 16, borderRadius: 22, overflow: 'hidden', borderWidth: 1, marginBottom: 14 },
   glow:         { position: 'absolute', top: -40, left: -40, width: 160, height: 160, borderRadius: 80 },
   premiumBadge: { position: 'absolute', top: 14, right: 14, backgroundColor: 'rgba(255,214,10,0.18)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(255,214,10,0.35)', zIndex: 2 },
   premiumBadgeTxt:{ color: G.gold, fontSize: 9, fontWeight: '800', letterSpacing: 1 },

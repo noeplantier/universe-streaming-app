@@ -90,7 +90,7 @@ export default function Loading() {
 
       {/* 🪐 LOGO */}
       <Animated.Image
-        source={require('../assets/images/logouniverse.png')}
+        source={require('../assets/images/logouniverse2.png')}
         style={[
           styles.logo,
           {
@@ -134,8 +134,8 @@ const styles = StyleSheet.create({
   },
 
   logo: {
-    width: 500,
-    height: 500,
+    width: 300,
+    height: 300,
     zIndex: 2,
   },
 

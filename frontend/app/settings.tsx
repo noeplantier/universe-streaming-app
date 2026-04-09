@@ -1,3 +1,10 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// app/settings.tsx  —  Paramètres UNIVERSE
+//
+// Orchestrateur fin : toutes les actions modifient directement le context
+// (optimiste, persisté AsyncStorage, appliqué à l'app en temps réel).
+// ─────────────────────────────────────────────────────────────────────────────
+
 import React, {
   useCallback, useRef, memo,
 } from 'react';
