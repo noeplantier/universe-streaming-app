@@ -196,63 +196,62 @@ export default function ProfileScreen() {
           )
         }
 
-        {/* Apple TV section divider */}
-        <View style={pg.divider} />
+        /* Apple TV section divider */}
+          <View style={pg.divider} />
 
-        {/* ════════════════════════════════════════════════════════════════
-            SECTION 2 — ✍️ CRITIQUES (ranked by likes)
-        ════════════════════════════════════════════════════════════════ */}
-        <SectionHeader
-          icon="pencil"
-          label="Critiques"
-          subtitle="Classées par popularité"
-          count={sortedReviews.length}
-          accentColor={G.amber}
-          onViewAll={() => router.push('/profile/reviews')}
-        />
-        {sortedReviews.length === 0
-          ? <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
-          : (
+          {/* ════════════════════════════════════════════════════════════════
+              SECTION 2 — ✍️ CRITIQUES (ranked by likes)
+          ════════════════════════════════════════════════════════════════ */}
+          <SectionHeader
+            icon="pencil"
+            label="Critiques"
+            subtitle="Classées par popularité"
+            accentColor={G.amber}
+            onViewAll={() => router.push('/profile/reviews')}
+          />
+          {sortedReviews.length === 0
+            ? <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
+            : (
+              <HScrollRow>
+                {sortedReviews.map((rev) => (
+            <CritiqueCard
+              key={rev.id} review={rev}
+              onPress={() => rev.film && goFilm(rev.film.id)}
+            />
+                ))}
+              </HScrollRow>
+            )
+            }
+
+            <View style={pg.divider} />
+
+            {/* ════════════════════════════════════════════════════════════════
+              SECTION 3 — 👁️ FILMS & SÉRIES VISIONNÉS (ranked by rating)
+            ════════════════════════════════════════════════════════════════ */}
+          <SectionHeader
+            icon="eye"
+            label="Films & Séries visionnés"
+            subtitle="Classés par note"
+            count={sortedSeen.length}
+            accentColor={G.cyan}
+            onViewAll={() => router.push('/profile/seen')}
+          />
+          {sortedSeen.length === 0
+            ? <EmptyState icon="film-outline" text="Aucun visionnage" subtext="Marque des films comme vus" />
+            : (
             <HScrollRow>
-              {sortedReviews.map((rev, idx) => (
-                <CritiqueCard
-                  key={rev.id} review={rev} rank={idx + 1}
-                  onPress={() => rev.film && goFilm(rev.film.id)}
-                />
+              {sortedSeen.map((film) => (
+              <SeenCard key={film.id} film={film} onPress={() => goFilm(film.id)} />
               ))}
             </HScrollRow>
-          )
-        }
+            )
+          }
 
-        <View style={pg.divider} />
+          <View style={pg.divider} />
 
-        {/* ════════════════════════════════════════════════════════════════
-            SECTION 3 — 👁️ FILMS & SÉRIES VISIONNÉS (ranked by rating)
-        ════════════════════════════════════════════════════════════════ */}
-        <SectionHeader
-          icon="eye"
-          label="Films & Séries visionnés"
-          subtitle="Classés par note"
-          count={sortedSeen.length}
-          accentColor={G.cyan}
-          onViewAll={() => router.push('/profile/seen')}
-        />
-        {sortedSeen.length === 0
-          ? <EmptyState icon="film-outline" text="Aucun visionnage" subtext="Marque des films comme vus" />
-          : (
-            <HScrollRow>
-              {sortedSeen.map((film, idx) => (
-                <SeenCard key={film.id} film={film} rank={idx + 1} onPress={() => goFilm(film.id)} />
-              ))}
-            </HScrollRow>
-          )
-        }
-
-        <View style={pg.divider} />
-
-        {/* ════════════════════════════════════════════════════════════════
+          {/* ════════════════════════════════════════════════════════════════
             STATS BLOCK
-        ════════════════════════════════════════════════════════════════ */}
+          ════════════════════════════════════════════════════════════════ */}
    
         <View style={{ height: 110 }} />
       </View>
