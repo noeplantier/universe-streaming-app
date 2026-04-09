@@ -48,12 +48,7 @@ const BottomCard = memo(function BottomCard({
       </View>
 
       {/* Info card glassmorphism */}
-      <BlurView intensity={45} tint="dark" style={s.blurCard}>
-        <LinearGradient
-          colors={['rgba(146,64,214,0.14)', 'rgba(7,0,15,0.12)']}
-          style={StyleSheet.absoluteFill}
-          pointerEvents="none"
-        />
+     
         <View style={s.inner}>
 
           {/* Header */}
@@ -61,20 +56,14 @@ const BottomCard = memo(function BottomCard({
             <View style={{ flex: 1 }}>
               <View style={s.titleRow}>
                 <Text style={s.seriesName} numberOfLines={1}>{film.series}</Text>
-                {film.verified && (
-                  <Ionicons name="checkmark-circle" size={14} color={P.primL} style={{ marginLeft: 4 }} />
-                )}
+             
               </View>
               <Text style={s.epLabel} numberOfLines={1}>
                 Ép. {film.episode} · {film.episode_title}
               </Text>
             </View>
             <View style={s.tagsRow}>
-              {film.tags.slice(0, 2).map(tag => (
-                <View key={tag} style={[s.tag, tag === 'ORIGINAL' && s.tagOriginal]}>
-                  <Text style={[s.tagTxt, tag === 'ORIGINAL' && s.tagTxtOriginal]}>{tag}</Text>
-                </View>
-              ))}
+              
             </View>
           </View>
 
@@ -89,53 +78,9 @@ const BottomCard = memo(function BottomCard({
             <Text style={s.timeText}>{elMin}:{elSec}</Text>
             <Text style={[s.timeText, { color: P?.t3 || '#888' }]}>{film.duration}</Text>
           </View>
-
-          {/* Amis */}
-          <View style={s.friendsRow}>
-            <View style={s.avatarStack}>
-              {film.liked_by_friends.slice(0, 3).map((f, i) => (
-                <View key={f.id} style={[s.friendAvWrap, { marginLeft: i > 0 ? -11 : 0, zIndex: 10 - i }]}>
-                  <Image source={{ uri: f.avatar }} style={s.friendAv} />
-                  {f.followed && <View style={s.followedDot} />}
-                </View>
-              ))}
-              {film.liked_by_friends.length > 3 && (
-                <View style={[s.friendAvWrap, s.extraCount, { marginLeft: -11 }]}>
-                  <Text style={s.extraCountTxt}>+{film.liked_by_friends.length - 3}</Text>
-                </View>
-              )}
-            </View>
-
-            {unfollowed ? (
-              <TouchableOpacity
-                onPress={() => {
-                  if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  onFollow(unfollowed.id);
-                }}
-                style={s.followBtn}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="person-add" size={13} color={P.primL} />
-                <Text style={s.followTxt}>{unfollowed.name.replace('@', '')}</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={s.allFollowedBadge}>
-                <Ionicons name="checkmark-circle" size={13} color={P.green} />
-                <Text style={[s.followTxt, { color: P.green }]}>Tous suivis</Text>
-              </View>
-            )}
+          </View>
           </View>
 
-          {/* Commentaire */}
-          {film.comment ? (
-            <View style={s.commentRow}>
-              <Ionicons name="chatbubble-outline" size={12} color={P?.t3 || '#888'} />
-              <Text style={s.commentTxt} numberOfLines={1}>{film.comment}</Text>
-            </View>
-          ) : null}
-        </View>
-      </BlurView>
-    </View>
   );
 });
 
