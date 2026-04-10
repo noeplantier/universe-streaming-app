@@ -227,21 +227,67 @@ async function dbRecordShare(postId: string, userId: string, platform: string) {
   await supabase.from('post_shares').insert({ post_id: postId, user_id: userId, platform });
 }
 
-async function dbPublishPost(payload: {
-  user_id: string; work_title: string; work_year: string;
-  work_director: string; work_genre: string; rating: number;
-  body: string; image_url: string; image_valid: boolean;
-  tags: string[]; tone: Tone;
-}): Promise<string | null> {
+async function dbPublishPost(
+  payload: Omit<{
+    user_id: string;
+    work_title: string;
+    work_year: string;
+    work_director: string;
+    work_genre: string;
+    rating: number;
+    body: string;
+    image_url: string;
+    image_valid: boolean;
+    tags: string[];
+    tone: Tone;
+  }, 'user_id'>
+): Promise<string | null> {
+  // Récupère la session si possible, sinon crée une session anonyme
+  const getOrCreateSession = async () => {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+
+    if (sessionError) {
+      console.warn('[publish] getSession error', sessionError);
+    }
+
+    let userId = sessionData.session?.user?.id;
+    if (userId) return sessionData.session;
+
+    // Si pas de session: créer une session anonyme
+    const { data, error } = await supabase.auth.signInAnonymously();
+    if (error) throw error;
+
+    return data.session;
+  };
+
+  let session: any;
+  try {
+    session = await getOrCreateSession();
+  } catch (e) {
+    console.error('[publish] auth failed', e);
+    return null;
+  }
+
+  const userId = session?.user?.id;
+  if (!userId) {
+    console.error('[publish] No session / not authenticated');
+    return null;
+  }
+
+  // 2) Insertion Postgres
   const { data, error } = await supabase
     .from('community_posts')
-    .insert(payload)
+    .insert({ ...payload, user_id: userId })
     .select('id')
     .single();
-  if (error) { console.error('[publish]', error); return null; }
+
+  if (error) {
+    console.error('[publish] insert error', error);
+    return null;
+  }
+
   return (data as { id: string }).id;
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // HOOK — Feed Supabase + temps réel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -516,7 +562,7 @@ function ComposeModal({ visible, onClose, onPublished, userId }: {
     if (!form.tone)       { Alert.alert('Ton manquant', 'Choisissez un ton de critique.'); return; }
     setPublishing(true);
     const id = await dbPublishPost({
-      user_id: userId, work_title: form.workTitle.trim(),
+      work_title: form.workTitle.trim(),
       work_year: form.workYear.trim(), work_director: form.workDirector.trim(),
       work_genre: form.workGenre, rating: form.rating,
       body: form.body.trim(), image_url: form.imageUrl,
@@ -525,7 +571,7 @@ function ComposeModal({ visible, onClose, onPublished, userId }: {
     setPublishing(false);
     if (id) { onPublished?.(); onClose(); }
     else Alert.alert('Erreur', 'Publication échouée. Réessayez.');
-  }, [form, userId, onPublished, onClose]);
+  }, [form, onPublished, onClose]);
 
   const stepIdx  = CSTEPS.indexOf(step);
   const bodyLen  = form.body.trim().length;
