@@ -173,10 +173,19 @@ export default function FilmDetailScreen() {
   // ── Fetch ──────────────────────────────────────────────────────
   const load = useCallback(async () => {
     if (!id) return;
+  
     setLoading(true);
     setError(false);
+  
+    const rawId = Array.isArray(id) ? id[0] : id; // ✅ string
+    if (!rawId || !/^\d+$/.test(String(rawId))) {
+      setError(true);
+      setLoading(false);
+      return;
+    }
+  
     try {
-      const data = await fetchWorkById(id);
+      const data = await fetchWorkById(String(rawId)); // ✅ PAS de Number()
       if (!data) throw new Error('not found');
       setWork(data);
     } catch {

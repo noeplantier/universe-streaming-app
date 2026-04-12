@@ -32,9 +32,16 @@ import {
   ALL_FAVS, DEFAULT_REVIEWS, DEFAULT_SEEN, OWN_REELS,
   type FilmItem, type ReviewItem,
 } from '../../components/profile/data';
+import
+ { resolveWorkIdByTitleYear } 
+from
+ 
+'@/lib/supabase'
+;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ⭐ STAR RATING (inline — small helper, no separate file needed)
+// ⭐ STAR RATING (inline — small helper, 
+// no separate file needed)
 // ─────────────────────────────────────────────────────────────────────────────
 const StarRatingRow = memo(({ rating }: { rating: number }) => (
   <View style={{ flexDirection: 'row', gap: 1.5 }}>
@@ -97,8 +104,36 @@ export default function ProfileScreen() {
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  // ── Navigation helpers ────────────────────────────────────────────────────
-  const goFilm  = useCallback((id: string) => router.push(`/film/${id}`), [router]);
+// ── Navigation helpers ────────────────────────────────────────────────────
+const goFilm = useCallback(
+  async (filmOrId: any) => {
+    // Cas 1: on reçoit directement un id numérique (works.id)
+    if (typeof filmOrId === 'number') {
+      router.push(`/film/${filmOrId}`);
+      return;
+    }
+
+    // Cas 2: on reçoit une string/numeric
+    if (typeof filmOrId === 'string' && /^\d+$/.test(filmOrId)) {
+      router.push(`/film/${Number(filmOrId)}`);
+      return;
+    }
+
+    // Cas 3: on reçoit un objet (FilmItem) -> on résout via title+year+type
+    const film = filmOrId as Partial<FilmItem> | undefined;
+    if (!film?.title) return;
+
+    const workId = await resolveWorkIdByTitleYear({
+      title: String(film.title),
+      year: typeof film.year === 'number' ? film.year : undefined,
+      type: (film.type as any) === 'série' ? 'série' : 'film',
+    });
+
+    if (!workId) return;
+    router.push(`/film/${workId}`);
+  },
+  [router],
+);
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -185,28 +220,29 @@ export default function ProfileScreen() {
           accentColor={G.gold}
           onViewAll={() => router.push('/profile/favorites')}
         />
-        {favFilms.length === 0
-          ? <EmptyState icon="heart-outline" text="Aucun favori" subtext="Note des films 4★ ou plus" />
-          : (
-        <HScrollRow>
-          {favFilms.map((film, idx) => (
-        <View key={film.id} style={{ flexDirection: 'row', alignItems: 'flex-end', zIndex: 10 }}>
+{favFilms.length === 0
+  ? <EmptyState icon="heart-outline" text="Aucun favori" subtext="Note des films 4★ ou plus" />
+  : (
+    <HScrollRow>
+      {favFilms.map((film, idx) => (
+        <View key={String((film as any).workId ?? film.id)} style={{ flexDirection: 'row', alignItems: 'flex-end', zIndex: 10 }}>
           <View style={{ marginRight: -NUM_OVERLAP, zIndex: 20, justifyContent: 'flex-end', paddingBottom: 30 }}>
-        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 60, fontWeight: '900' }}>{idx + 1}</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 60, fontWeight: '900' }}>{idx + 1}</Text>
           </View>
-          <FavCard film={film}  onPress={() => goFilm(film.id)} />
+
+          <FavCard film={film} onPress={() => goFilm(film)} />
         </View>
-          ))}
-        </HScrollRow>
-          )
-        }
+      ))}
+    </HScrollRow>
+  )
+}
 
           <View style={pg.divider} />
 
           {/* ════════════════════════════════════════════════════════════════
           SECTION 2 — ✍️ CRITIQUES (ranked by likes)
           ════════════════════════════════════════════════════════════════ */}
-          <SectionHeader
+                    <SectionHeader
         icon="pencil"
         label="Critiques"
         subtitle="Classées par popularité"
@@ -219,10 +255,10 @@ export default function ProfileScreen() {
           <HScrollRow>
         {sortedReviews.map((rev) => (
         <View key={rev.id} style={{ zIndex: 10 }}>
-          <CritiqueCard
-        review={rev}
-        onPress={() => rev.film && goFilm(rev.film.id)}
-          />
+<CritiqueCard
+  review={rev}
+  onPress={() => router.push(`/review/${rev.id}` as any)}
+/>
         </View>
         ))}
           </HScrollRow>
@@ -245,11 +281,11 @@ export default function ProfileScreen() {
         ? <EmptyState icon="film-outline" text="Aucun visionnage" subtext="Marque des films comme vus" />
         : (
         <HScrollRow>
-          {sortedSeen.map((film) => (
-          <View key={film.id} style={{ zIndex: 10 }}>
-        <SeenCard film={film} onPress={() => goFilm(film.id)} />
-          </View>
-          ))}
+     {sortedSeen.map((film) => (
+  <View key={String((film as any).workId ?? film.id)} style={{ zIndex: 10 }}>
+    <SeenCard film={film} onPress={() => goFilm(film as any)} />
+  </View>
+))}
         </HScrollRow>
         )
           }
@@ -342,9 +378,7 @@ export default function ProfileScreen() {
             </View>
             <View style={{ flexDirection:'row', gap:2 }}>
           
-              <TouchableOpacity testID="profile-add-post-btn" style={pg.navBtn} onPress={() => router.push('/create')}>
-                <Ionicons name="add-circle-outline" size={23} color={G.text} />
-              </TouchableOpacity>
+             
               <TouchableOpacity testID="profile-settings-btn" style={pg.navBtn} onPress={() => router.push('/settings')}>
                 <Ionicons name="menu" size={23} color={G.text} />
               </TouchableOpacity>

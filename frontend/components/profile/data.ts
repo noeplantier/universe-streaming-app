@@ -2,17 +2,19 @@
 // 📐 SHARED TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 export interface FilmItem {
-    id: string;
-    title: string;
-    posterUrl: string;
-    genre: string;
-    type: 'film' | 'série';
-    rating: number;
-    director?: string;
-    year?: number;
-    episodes?: number;
-    status?: string;
-  }
+  id: string; // UI key (fav1, fav2...) — uniquement pour React keys
+  title: string;
+  posterUrl: string;
+  genre: string;
+  type: 'film' | 'série';
+  rating: number;
+  director?: string;
+  year?: number;
+  episodes?: number;
+  status?: string;
+
+  workId?: number; // résolu depuis Supabase
+}
   
   export interface ReviewItem {
     id: string;
@@ -48,14 +50,14 @@ export interface FilmItem {
   // 🏆 FILMS FAVORIS (top 8, ranked 1→8)
   // ─────────────────────────────────────────────────────────────────────────────
   export const ALL_FAVS: FilmItem[] = [
-    { id:'fav1', title:'Mulholland Drive',     posterUrl:poster('mulholland-drive-lynch'),      genre:'Néo-Noir',   type:'film',  rating:5, director:'David Lynch',    year:2001 },
-    { id:'fav2', title:'La Haine',             posterUrl:poster('la-haine-kassovitz-1995'),     genre:'Drame',      type:'film',  rating:5, director:'M. Kassovitz',  year:1995 },
-    { id:'fav3', title:'Parasite',             posterUrl:poster('parasite-bong-joon-ho'),       genre:'Thriller',   type:'film',  rating:5, director:'Bong Joon-ho',  year:2019 },
-    { id:'fav4', title:'Moonlight',            posterUrl:poster('moonlight-2016-barry'),        genre:'Drame',      type:'film',  rating:5, director:'B. Jenkins',    year:2016 },
-    { id:'fav5', title:'Mad Max: Fury Road',   posterUrl:poster('mad-max-fury-road-2015'),      genre:'Action',     type:'film',  rating:5, director:'G. Miller',     year:2015 },
-    { id:'fav6', title:'2001: A Space Odyssey',posterUrl:poster('2001-kubrick-space'),          genre:'Sci-Fi',     type:'film',  rating:5, director:'S. Kubrick',    year:1968 },
-    { id:'fav7', title:'Grand Budapest Hotel', posterUrl:poster('grand-budapest-wes'),          genre:'Comédie',    type:'film',  rating:5, director:'Wes Anderson',  year:2014 },
-    { id:'fav8', title:'Roma',                 posterUrl:poster('roma-alfonso-cuaron'),         genre:'Drame',      type:'film',  rating:5, director:'A. Cuarón',     year:2018 },
+    { id:'fav1', workId: undefined, title:'Mulholland Drive', posterUrl:poster('mulholland-drive-lynch'), genre:'Néo-Noir', type:'film', rating:5, director:'David Lynch', year:2001 },
+    { id:'fav2', workId: undefined, title:'La Haine', posterUrl:poster('la-haine-kassovitz-1995'), genre:'Drame', type:'film', rating:5, director:'M. Kassovitz', year:1995 },
+    { id:'fav3', workId: undefined, title:'Parasite', posterUrl:poster('parasite-bong-joon-ho'), genre:'Thriller', type:'film', rating:5, director:'Bong Joon-ho', year:2019 },
+    { id:'fav4', workId: undefined, title:'Moonlight', posterUrl:poster('moonlight-2016-barry'), genre:'Drame', type:'film', rating:5, director:'B. Jenkins', year:2016 },
+    { id:'fav5', workId: undefined, title:'Mad Max: Fury Road', posterUrl:poster('mad-max-fury-road-2015'), genre:'Action', type:'film', rating:5, director:'G. Miller', year:2015 },
+    { id:'fav6', workId: undefined, title:'2001: A Space Odyssey', posterUrl:poster('2001-kubrick-space'), genre:'Sci-Fi', type:'film', rating:5, director:'S. Kubrick', year:1968 },
+    { id:'fav7', workId: undefined, title:'Grand Budapest Hotel', posterUrl:poster('grand-budapest-wes'), genre:'Comédie', type:'film', rating:5, director:'Wes Anderson', year:2014 },
+    { id:'fav8', workId: undefined, title:'Roma', posterUrl:poster('roma-alfonso-cuaron'), genre:'Drame', type:'film', rating:5, director:'A. Cuarón', year:2018 },
   ];
   
   // ─────────────────────────────────────────────────────────────────────────────

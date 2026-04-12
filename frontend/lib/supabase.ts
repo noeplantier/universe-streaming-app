@@ -137,12 +137,41 @@ export async function fetchTrending(limit = 4): Promise<Work[]> {
 }
 
 export async function fetchWorkById(id: number | string): Promise<Work | null> {
+  const raw = typeof id === 'string' ? id.trim() : String(id);
+
+  if (!/^\d+$/.test(raw)) return null;
+
   const { data, error } = await supabase
     .from('works')
     .select('*')
-    .eq('id', id)
+    .eq('id', raw) // ✅ évite bigint -> Number
     .single<Work>();
 
   if (error) throw error;
   return data ?? null;
+}
+
+export async function resolveWorkIdByTitleYear(params: {
+  title: string;
+  year?: number;
+  type: 'film' | 'série';
+}): Promise<number | null> {
+  const { title, year, type } = params;
+
+  let q = supabase.from('works').select('id').ilike('title', title);
+
+  if (typeof year === 'number') q = q.eq('year', year);
+
+  if (type === 'série') {
+    q = q.eq('category', 'Mini-série');
+  } else {
+    // tes favs sont des films : tu peux élargir comme ça
+    q = q.in('category', ['Film', 'ORIGINAL', 'Interdit']);
+  }
+
+  const { data, error } = await q.limit(1);
+  if (error) throw error;
+
+  const id = data?.[0]?.id ?? null;
+  return typeof id === 'number' ? id : null;
 }

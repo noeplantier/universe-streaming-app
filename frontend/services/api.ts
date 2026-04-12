@@ -9,7 +9,13 @@ async function request(path: string, options: RequestInit = {}) {
     ...(options.headers as Record<string, string> || {}),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const res = await fetch(`${BASE_URL}/api${path}`, { ...options, headers });
+
+  // Si c’est une Edge Function, on n’ajoute pas "/api"
+  const isFunction = path.startsWith('/functions/');
+  const prefix = isFunction ? '' : '/api';
+
+  const res = await fetch(`${BASE_URL}${prefix}${path}`, { ...options, headers });
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Erreur réseau' }));
     throw new Error(err.detail || 'Erreur');
@@ -36,13 +42,22 @@ export const filmsAPI = {
   getFeed: () => request('/feed'),
 };
 
-// Reviews
+// Reviews (Edge Function)
 export const reviewsAPI = {
-  getByFilm: (filmId: string) => request(`/reviews?film_id=${filmId}`),
-  getByUser: (userId: string) => request(`/reviews?user_id=${userId}`),
+  getByFilm: (filmId: string) =>
+    request(`/functions/v1/reviews?film_id=${filmId}`),
+
+  getByUser: (userId: string) =>
+    request(`/functions/v1/reviews?user_id=${userId}`),
+
   create: (data: { film_id: string; content: string; rating: number }) =>
-    request('/reviews', { method: 'POST', body: JSON.stringify(data) }),
-  like: (id: string) => request(`/reviews/${id}/like`, { method: 'POST' }),
+    request(`/functions/v1/reviews`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  like: (id: string) =>
+    request(`/functions/v1/reviews/${id}/like`, { method: 'POST' }),
 };
 
 // Posts
@@ -51,6 +66,11 @@ export const postsAPI = {
   create: (data: { content: string; film_id?: string }) =>
     request('/posts', { method: 'POST', body: JSON.stringify(data) }),
   like: (id: string) => request(`/posts/${id}/like`, { method: 'POST' }),
+};
+
+// Favorites
+export const favoritesAPI = {
+  getByUser: (userId: string) => request(`/favorites?user_id=${userId}`),
 };
 
 // Users
