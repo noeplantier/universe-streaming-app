@@ -61,7 +61,7 @@ import type { FeedFilm } from './types';
 interface FeedItemProps {
   film:           FeedFilm;
   isActive:       boolean;
-  isNear:         boolean;   // ±1 de l'actif → player pré-initialisé
+  isNear:         boolean;   
   screenFocused:  boolean;
   itemW:          number;
   itemH:          number;
