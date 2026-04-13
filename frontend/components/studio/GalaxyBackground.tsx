@@ -62,7 +62,7 @@ const ShootingStar = memo(function ShootingStar({
         easing: Easing.out(Easing.quad), useNativeDriver: true,
       }),
     ]).start(onDone);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); 
 
   const tx = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(m.ang * Math.PI / 180) * 220] });
   const ty = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(m.ang * Math.PI / 180) * 220] });

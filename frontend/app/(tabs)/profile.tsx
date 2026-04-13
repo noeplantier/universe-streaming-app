@@ -139,6 +139,8 @@ const goFilm = useCallback(
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
+      console.log("auth user.id:", user?.id);
+      console.log("typeof user.id:", typeof user?.id, "value:", user?.id);
       const [rev, seen] = await Promise.all([
         reviewsAPI.getByUser(user.id).catch(() => null),
         seenAPI.getByUser(user.id).catch(() => null),

@@ -46,40 +46,34 @@ export default function ReviewDetailScreen() {
 
     try {
       // 1) Charger la critique depuis la bonne table (public.critiques)
-      const { data: reviewData, error: reviewErr } = await supabase
-        .from('critiques')
-        .select(
-          `
-          *,
-          user:user_id ( id, username, avatar_url )
-        `
-        )
-        .eq('id', id)
-        .single();
+   // 1) Charger la critique
+const { data: reviewData, error: reviewErr } = await supabase
+.from('critiques')
+.select('*')
+.eq('id', id)
+.single();
 
-      if (reviewErr) throw reviewErr;
-      if (!reviewData) throw new Error('No review data');
+if (reviewErr) throw reviewErr;
 
-      // 2) Charger le film via film_title (pas de film_id FK)
-      //    Table films: id uuid, title, genre, thumbnail_url (pas poster_url)
-      let filmData: any = null;
+let userData: any = null;
 
-      const filmTitle = reviewData.film_title;
-      if (filmTitle) {
-        const { data: film, error: filmErr } = await supabase
-          .from('films')
-          .select('id, title, genre, thumbnail_url')
-          .eq('title', filmTitle)
-          .maybeSingle();
+// 2) Charger le profil via user_id
+if (reviewData?.user_id) {
+const { data: profile, error: profileErr } = await supabase
+  .from('profiles')
+  .select('id, username, avatar_url')
+  .eq('id', reviewData.user_id)
+  .maybeSingle();
 
-        if (filmErr) throw filmErr;
-        filmData = film;
-      }
+if (profileErr) throw profileErr;
+userData = profile;
+}
 
-      setReview({
-        ...reviewData,
-        film: filmData, // réutilise ton UI existant
-      });
+setReview({
+...reviewData,
+user: userData, // <-- ton UI attend review.user.username/avatar_url
+});
+
     } catch (err) {
       console.error(err);
       setError(true);

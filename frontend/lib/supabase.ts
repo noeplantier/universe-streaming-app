@@ -158,14 +158,18 @@ export async function resolveWorkIdByTitleYear(params: {
 }): Promise<number | null> {
   const { title, year, type } = params;
 
-  let q = supabase.from('works').select('id').ilike('title', title);
+  const cleanedTitle = title.trim();
+  let q = supabase
+    .from('works')
+    .select('id')
+    .ilike('title', `%${cleanedTitle}%`); // ✅ contient, pas égal
 
+  // Si year existe, on filtre; sinon on laisse libre
   if (typeof year === 'number') q = q.eq('year', year);
 
   if (type === 'série') {
     q = q.eq('category', 'Mini-série');
   } else {
-    // tes favs sont des films : tu peux élargir comme ça
     q = q.in('category', ['Film', 'ORIGINAL', 'Interdit']);
   }
 

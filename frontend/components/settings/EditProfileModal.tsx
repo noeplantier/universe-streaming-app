@@ -111,7 +111,7 @@ import React, {
                 <TouchableOpacity style={s.changeAviBtn} activeOpacity={0.85}>
                   <Text style={s.changeAviTxt}>Changer la photo</Text>
                 </TouchableOpacity>
-              </View>
+              </View> 
   
               {/* Champs */}
               <View style={s.fields}>

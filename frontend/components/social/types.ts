@@ -48,6 +48,9 @@ export const G = {
   }
   
   export interface PostData {
+    avatar: string;
+    createdAt: string;
+    userName: ReactNode;
     id:       string;
     author:   Author;
     content:  string;

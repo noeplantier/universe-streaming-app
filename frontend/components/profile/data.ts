@@ -118,14 +118,70 @@ export interface FilmItem {
   // 🎞️ COURTS MÉTRAGES
   // ─────────────────────────────────────────────────────────────────────────────
   export const OWN_REELS: ReelItem[] = [
-    { id:'rl1', title:'Fragmenta',   duration:"12'", posterUrl:still('reel-fragmenta-cm'),  views:'2.4K', festival:'Clermont-Ferrand 2024' },
-    { id:'rl2', title:'Ekho',        duration:"8'",  posterUrl:still('reel-ekho-cm'),       views:'1.1K', festival:'SXSW 2024' },
-    { id:'rl3', title:'La Fenêtre',  duration:"18'", posterUrl:still('reel-lafenetre-cm'),  views:'890',  festival:'Sundance 2023' },
-    { id:'rl4', title:'Nox',         duration:"6'",  posterUrl:still('reel-nox-cm'),        views:'3.2K', festival:'Cannes 2023' },
-    { id:'rl5', title:'Seuil',       duration:"22'", posterUrl:still('reel-seuil-cm'),      views:'670',  festival:'Berlin 2024' },
-    { id:'rl6', title:'Miroir Noir', duration:"15'", posterUrl:still('reel-miroirnoir-cm'), views:'1.8K', festival:'Tribeca 2024' },
+    {
+      id: 'e1',
+      title: 'Reprends là où tu t\'es arrêté',
+      posterUrl:
+        'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
+      duration: '9:56',
+      views: '1324 likes',
+      festival: 'Puffers',
+    },
+    {
+      id: 'e2',
+      title: 'La première fracture',
+      posterUrl:
+        'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=800&q=80',
+      duration: '10:54',
+      views: '872 likes',
+      festival: 'Nuit de Verre',
+    },
+    {
+      id: 'e3',
+      title: 'Le dernier signal',
+      posterUrl:
+        'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800&q=80',
+      duration: '0:15',
+      views: '2100 likes',
+      festival: 'Horizon Brisé',
+    },
+    {
+      id: 'e4',
+      title: 'Masques',
+      posterUrl:
+        'https://images.unsplash.com/photo-1518998053901-5348d3961a04?w=800&q=80',
+      duration: '0:15',
+      views: '3400 likes',
+      festival: 'Velours Rouge',
+    },
+    {
+      id: 'e5',
+      title: 'Avant le tremblement',
+      posterUrl:
+        'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=800&q=80',
+      duration: '14:48',
+      views: '2750 likes',
+      festival: 'Fractures',
+    },
+    {
+      id: 'e6',
+      title: 'Les voix oubliées',
+      posterUrl:
+        'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
+      duration: '12:30',
+      views: '1980 likes',
+      festival: 'Échos du Passé',
+    },
+    {
+      id: 'e7',
+      title: 'La rencontre',
+      posterUrl:
+        'https://images.unsplash.com/photo-1491895200222-0fc4a4c35e18?w=800&q=80',
+      duration: '9:20',
+      views: '2560 likes',
+      festival: 'Lumières Fugitives',
+    },
   ];
-  
   // ─────────────────────────────────────────────────────────────────────────────
   // 🎨 EXPORT / GENERATION CONSTANTS (shared with VideoGenModal)
   // ─────────────────────────────────────────────────────────────────────────────
