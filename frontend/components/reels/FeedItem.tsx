@@ -1,19 +1,4 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// components/reels/FeedItem.tsx
-//
-// STRATÉGIE CROSS-PLATFORM — fix du bug src="" sur Chrome :
-//
-//   WEB   → <video> HTML natif contrôlé par ref (autoPlay, loop, playsInline)
-//           expo-video n'est PAS utilisé sur web (c'est lui qui génère src="")
-//
-//   NATIF → expo-video (useVideoPlayer + VideoView)
-//
-// Dans les deux cas :
-//   · poster image en fond pendant le chargement
-//   · autoplay dès isActive && screenFocused
-//   · pause + reset quand l'item quitte l'écran (comportement TikTok)
-//   · double-tap → like animé / simple-tap → play/pause
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 import React, {
   memo, useState, useEffect, useRef, useCallback,
@@ -29,7 +14,6 @@ import { useRouter }       from 'expo-router';
 import * as Haptics        from 'expo-haptics';
 
 // ── expo-video : importé uniquement sur natif ─────────────────────────────
-// Sur web il génère <video src=""> → bug Chrome. On le court-circuite.
 let _useVideoPlayer: any = () => ({
   play(){}, pause(){}, seekBy(){}, replace(){},
   duration: 0, currentTime: 0, muted: false,
@@ -67,6 +51,9 @@ interface FeedItemProps {
   itemH:          number;
   insetBot:       number;
   onFollowFriend: (fid: string) => void;
+  // Ajouts depuis le patch :
+  onInfoPress?:   (film: FeedFilm) => void;
+  onProgress?:    (p: { positionMs: number; durationMs: number }) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,13 +68,14 @@ interface WebVideoProps {
   itemW:         number;
   itemH:         number;
   onProgress:    (pct: number) => void;
+  onTimeUpdate?: (posMs: number, durMs: number) => void; // Ajout pour le Web
   onReady:       () => void;
   onError:       () => void;
 }
 
 const WebVideoPlayer = memo(function WebVideoPlayer({
   src, muted, isActive, screenFocused,
-  itemW, itemH, onProgress, onReady, onError,
+  itemW, itemH, onProgress, onTimeUpdate, onReady, onError,
 }: WebVideoProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
 
@@ -96,7 +84,7 @@ const WebVideoPlayer = memo(function WebVideoPlayer({
     const v = ref.current;
     if (!v) return;
     if (isActive && screenFocused) {
-      v.play().catch(() => {}); // la politique autoplay peut rejeter en silent
+      v.play().catch(() => {});
     } else {
       v.pause();
       if (!isActive) v.currentTime = 0;
@@ -112,7 +100,12 @@ const WebVideoPlayer = memo(function WebVideoPlayer({
   useEffect(() => {
     const v = ref.current;
     if (!v) return;
-    const onTime  = () => { if (v.duration > 0) onProgress(v.currentTime / v.duration); };
+    const onTime  = () => { 
+      if (v.duration > 0) {
+        onProgress(v.currentTime / v.duration);
+        if (onTimeUpdate) onTimeUpdate(v.currentTime * 1000, v.duration * 1000);
+      }
+    };
     const onCan   = () => onReady();
     const onErr   = () => onError();
     v.addEventListener('timeupdate', onTime);
@@ -123,12 +116,11 @@ const WebVideoPlayer = memo(function WebVideoPlayer({
       v.removeEventListener('canplay',    onCan);
       v.removeEventListener('error',      onErr);
     };
-  }, [onProgress, onReady, onError]);
+  }, [onProgress, onTimeUpdate, onReady, onError]);
 
-  // React.createElement pour éviter les erreurs TypeScript sur <video> dans RN
   return React.createElement('video', {
     ref,
-    src,           // ← toujours une URL valide (jamais "")
+    src,
     autoPlay: true,
     loop:     true,
     playsInline: true,
@@ -153,20 +145,17 @@ const WebVideoPlayer = memo(function WebVideoPlayer({
 const FeedItem = memo(function FeedItem({
   film, isActive, isNear, screenFocused,
   itemW, itemH, insetBot, onFollowFriend,
+  onInfoPress, onProgress
 }: FeedItemProps) {
 
   const router = useRouter();
   const isWeb  = Platform.OS === 'web';
 
-  // Source JAMAIS vide — null si absente
   const src: string | null =
     film.video_url && film.video_url.trim().length > 0
       ? film.video_url.trim()
       : null;
 
-  // ── Player natif (expo-video) — ignoré sur web ────────────────────────────
-  // Le hook est toujours appelé (règle des hooks React) mais le mock
-  // no-op est renvoyé sur web grâce à la substitution ci-dessus.
   const player = _useVideoPlayer(
     isWeb ? null : (isNear ? src : null),
     (p: any) => {
@@ -185,7 +174,6 @@ const FeedItem = memo(function FeedItem({
     bufferedPosition: 0, currentLiveTimestamp: null, currentOffsetFromLive: null,
   });
 
-  // ── État local ────────────────────────────────────────────────────────────
   const [liked,       setLiked]       = useState(false);
   const [muted,       setMuted]       = useState(false);
   const [saved,       setSaved]       = useState(false);
@@ -196,14 +184,12 @@ const FeedItem = memo(function FeedItem({
 
   const isReady = isWeb ? webReady : nativeReady;
 
-  // ── Surveillance erreurs/readyToPlay natif ────────────────────────────────
   useEffect(() => {
     if (isWeb) return;
     if (status === 'error')          { setHasErr(true);       setNativeReady(false); }
     else if (status === 'readyToPlay') { setNativeReady(true);  setHasErr(false);      }
   }, [status, isWeb]);
 
-  // ── Autoplay natif ────────────────────────────────────────────────────────
   useEffect(() => {
     if (isWeb || !src || !player) return;
     if (isActive && screenFocused && nativeReady) {
@@ -216,24 +202,30 @@ const FeedItem = memo(function FeedItem({
     }
   }, [isActive, screenFocused, nativeReady, isNear, player, src, isWeb]);
 
-  // ── Sync mute natif ───────────────────────────────────────────────────────
   useEffect(() => {
     if (isWeb || !player) return;
     player.muted = muted;
   }, [muted, player, isWeb]);
 
-  // ── Progression ───────────────────────────────────────────────────────────
   const nativeDuration = (!isWeb && player?.duration) ? player.duration : 0;
   const nativeProgress = nativeDuration > 0 ? Math.min(currentTime / nativeDuration, 1) : 0;
   const progress       = isWeb ? webProgress : nativeProgress;
   const showLoading    = !!src && !isReady && !hasErr;
 
-  // ── Callbacks web ─────────────────────────────────────────────────────────
+  // ── Dispatch de l'évènement de progression (Natif) ────────────────────────
+  useEffect(() => {
+    if (!isWeb && nativeDuration > 0 && onProgress) {
+      onProgress({
+        positionMs: currentTime * 1000,
+        durationMs: nativeDuration * 1000
+      });
+    }
+  }, [currentTime, nativeDuration, isWeb, onProgress]);
+
   const handleWebProgress = useCallback((p: number) => setWebProgress(p), []);
   const handleWebReady    = useCallback(() => { setWebReady(true);  setHasErr(false); }, []);
   const handleWebError    = useCallback(() => { setHasErr(true);    setWebReady(false); }, []);
 
-  // ── Retry ─────────────────────────────────────────────────────────────────
   const handleRetry = useCallback(() => {
     setHasErr(false);
     setNativeReady(false);
@@ -244,7 +236,6 @@ const FeedItem = memo(function FeedItem({
     }
   }, [isWeb, src, player]);
 
-  // ── Double-tap / Simple-tap ───────────────────────────────────────────────
   const lastTap   = useRef(0);
   const heartAnim = useRef(new Animated.Value(0)).current;
 
@@ -272,21 +263,26 @@ const FeedItem = memo(function FeedItem({
   const handleLike = useCallback(() => setLiked(p => !p), []);
   const handleMute = useCallback(() => setMuted(p => !p), []);
   const handleSave = useCallback(() => setSaved(p => !p), []);
-  const handleInfo = useCallback(() => router.push(`/film/${film.id}`), [film.id, router]);
+  
+  // ── Prise en compte du prop onInfoPress injecté ───────────────────────────
+  const handleInfo = useCallback(() => {
+    if (onInfoPress) {
+      onInfoPress(film);
+    } else {
+      router.push(`/film/${film.id}`);
+    }
+  }, [film, router, onInfoPress]);
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <TouchableWithoutFeedback onPress={handleTap}>
       <View style={{ width: itemW, height: itemH, backgroundColor: '#000', overflow: 'hidden' }}>
 
-        {/* ── Poster en fond ── */}
         <Image
           source={{ uri: film.poster_url }}
           style={[StyleSheet.absoluteFill, { width: itemW, height: itemH }]}
           resizeMode="cover"
         />
 
-        {/* ════════ LECTEUR WEB — <video> HTML natif ════════ */}
         {isWeb && !!src && !hasErr && (
           <WebVideoPlayer
             src={src}
@@ -296,12 +292,12 @@ const FeedItem = memo(function FeedItem({
             itemW={itemW}
             itemH={itemH}
             onProgress={handleWebProgress}
+            onTimeUpdate={(p, d) => onProgress && onProgress({ positionMs: p, durationMs: d })}
             onReady={handleWebReady}
             onError={handleWebError}
           />
         )}
 
-        {/* ════════ LECTEUR NATIF — expo-video ════════ */}
         {!isWeb && isNear && !!src && !hasErr && (
           <_VideoView
             player={player}
@@ -313,7 +309,6 @@ const FeedItem = memo(function FeedItem({
           />
         )}
 
-        {/* ── Loader discret ── */}
         {showLoading && (
           <View style={s.loadWrap} pointerEvents="none">
             <View style={s.loadRing}>
@@ -322,7 +317,6 @@ const FeedItem = memo(function FeedItem({
           </View>
         )}
 
-        {/* ── Erreur + retry ── */}
         {hasErr && (
           <View style={s.errWrap}>
             <Ionicons name="warning-outline" size={38} color={P.primL} />
@@ -334,8 +328,6 @@ const FeedItem = memo(function FeedItem({
           </View>
         )}
 
- 
-        {/* ── Cœur double-tap ── */}
         <Animated.View
           style={[s.bigHeart, { opacity: heartOpac, transform: [{ scale: heartScale }] }]}
           pointerEvents="none"
@@ -343,7 +335,6 @@ const FeedItem = memo(function FeedItem({
           <Ionicons name="heart" size={100} color={P.red} />
         </Animated.View>
 
-        {/* ── Icône pause (natif uniquement) ── */}
         {!isWeb && !isPlaying && nativeReady && (
           <View style={s.pauseWrap} pointerEvents="none">
             <BlurView intensity={22} tint="dark" style={s.pauseBlur}>
@@ -352,7 +343,6 @@ const FeedItem = memo(function FeedItem({
           </View>
         )}
 
-        {/* ── Actions droite ── */}
         <RightBar
           film={film}
           liked={liked}
@@ -364,7 +354,6 @@ const FeedItem = memo(function FeedItem({
           onSave={handleSave}
         />
 
-        {/* ── Card épisode bas ── */}
         <BottomCard
           film={film}
           progress={progress}
@@ -378,8 +367,6 @@ const FeedItem = memo(function FeedItem({
 });
 
 export default FeedItem;
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   loadWrap:  { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
