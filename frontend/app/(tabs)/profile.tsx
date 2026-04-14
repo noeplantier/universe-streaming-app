@@ -1,11 +1,4 @@
-import React, {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   RefreshControl,
@@ -13,6 +6,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
-import { seenAPI, reviewsAPI } from '../../services/api';
+import { reviewsAPI, seenAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
 // ── Local components ──────────────────────────────────────────────────────────
@@ -35,23 +29,24 @@ import {
   StatColumn,
 } from '../../components/profile/Section';
 
-// theme + data
 import {
   G,
   H_PADDING,
   HEADER_SCROLL_DISTANCE,
-  CARD_H,
   CARD_W,
+  CARD_H,
   NUM_W,
   NUM_OVERLAP,
   NUM_ITEM_W,
   CARD_GAP,
 } from '../../components/profile/theme';
+
 import {
   ALL_FAVS,
   DEFAULT_REVIEWS,
   DEFAULT_SEEN,
   OWN_REELS,
+  poster, // ✅ important (pas de thumbnail_url -> on génère une image)
   type FilmItem,
   type ReviewItem,
 } from '../../components/profile/data';
@@ -60,7 +55,7 @@ import { resolveWorkIdByTitleYear } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ⭐ STAR RATING (inline — small helper)
+// ⭐ STAR RATING (inline — small helper, no separate file needed)
 // ─────────────────────────────────────────────────────────────────────────────
 const StarRatingRow = memo(({ rating }: { rating: number }) => (
   <View style={{ flexDirection: 'row', gap: 1.5 }}>
@@ -77,7 +72,7 @@ const StarRatingRow = memo(({ rating }: { rating: number }) => (
 StarRatingRow.displayName = 'StarRatingRow';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎬 TAB BAR ICONS
+// 🔵 TAB BAR ICON
 // ─────────────────────────────────────────────────────────────────────────────
 type GridTab = 0 | 1 | 2;
 const TAB_ICONS: Array<keyof typeof Ionicons.glyphMap> = [
@@ -87,7 +82,7 @@ const TAB_ICONS: Array<keyof typeof Ionicons.glyphMap> = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎞️ SKELETON SECTION
+// 🎬 SKELETON PLACEHOLDER — horizontal scroll of ghost cards
 // ─────────────────────────────────────────────────────────────────────────────
 const SkeletonSection = memo(({ accentColor = G.primary }: { accentColor?: string }) => (
   <View>
@@ -101,31 +96,64 @@ const SkeletonSection = memo(({ accentColor = G.primary }: { accentColor?: strin
         paddingBottom: 12,
       }}
     >
-      <View style={{ width: 26, height: 26, borderRadius: 9, backgroundColor: `${accentColor}14` }} />
-      <View style={{ height: 12, width: 120, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.06)' }} />
-    </View>
-
-    <View>
-      {/* horizontal ghost cards */}
       <View
         style={{
-          flexDirection: 'row',
-          paddingHorizontal: H_PADDING,
-          gap: CARD_GAP,
+          width: 26,
+          height: 26,
+          borderRadius: 9,
+          backgroundColor: `${accentColor}14`,
         }}
-      >
-        {[...Array(4)].map((_, i) => (
-          <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-end', width: NUM_ITEM_W }}>
-            <View style={{ width: NUM_W, height: CARD_H, justifyContent: 'flex-end', paddingBottom: 6 }}>
-              <View style={{ height: 68, width: 38, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 6, alignSelf: 'flex-end' }} />
-            </View>
-            <View style={{ marginLeft: -NUM_OVERLAP, width: CARD_W, height: CARD_H, borderRadius: 13, backgroundColor: G.surface, overflow: 'hidden' }}>
-              <ImageWithFallback uri="" style={{ flex: 1 }} fallbackColors={[G.surface, G.bg]} />
-            </View>
-          </View>
-        ))}
-      </View>
+      />
+      <View
+        style={{
+          height: 12,
+          width: 120,
+          borderRadius: 6,
+          backgroundColor: 'rgba(255,255,255,0.06)',
+        }}
+      />
     </View>
+
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={{
+        paddingLeft: H_PADDING,
+        paddingRight: H_PADDING,
+        gap: CARD_GAP,
+      }}
+    >
+      {[...Array(4)].map((_, i) => (
+        <View key={i} style={{ flexDirection: 'row', alignItems: 'flex-end', width: NUM_ITEM_W }}>
+          {/* Ghost number */}
+          <View style={{ width: NUM_W, height: CARD_H, justifyContent: 'flex-end', paddingBottom: 6 }}>
+            <View
+              style={{
+                height: 68,
+                width: 38,
+                backgroundColor: 'rgba(255,255,255,0.04)',
+                borderRadius: 6,
+                alignSelf: 'flex-end',
+              }}
+            />
+          </View>
+
+          {/* Ghost card */}
+          <View
+            style={{
+              marginLeft: -NUM_OVERLAP,
+              width: CARD_W,
+              height: CARD_H,
+              borderRadius: 13,
+              backgroundColor: G.surface,
+              overflow: 'hidden',
+            }}
+          >
+            <ImageWithFallback uri="" style={{ flex: 1 }} fallbackColors={[G.surface, G.bg]} />
+          </View>
+        </View>
+      ))}
+    </ScrollView>
   </View>
 ));
 SkeletonSection.displayName = 'SkeletonSection';
@@ -139,7 +167,7 @@ export default function ProfileScreen() {
 
   const [activeTab, setActiveTab] = useState<GridTab>(0);
 
-  // ✅ critiques -> ReviewItem[]
+  // Critiques (compat CritiqueCard via ReviewItem)
   const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [seenFilms, setSeenFilms] = useState<FilmItem[]>([]);
 
@@ -148,6 +176,7 @@ export default function ProfileScreen() {
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
+  // ── Navigation helpers ────────────────────────────────────────────────────
   const goFilm = useCallback(
     async (filmOrId: any) => {
       if (typeof filmOrId === 'number') {
@@ -174,106 +203,83 @@ export default function ProfileScreen() {
     [router],
   );
 
-  // ✅ fetch critiques + reels (pour construire review.film)
-  const fetchCritiquesForProfile = useCallback(async (uid: string) => {
+  // ── Fetch critiques + reels (pour reconstruire review.film) ────────────
+  const loadReviewsFromSupabase = useCallback(async (uid: string) => {
     setLoading(true);
 
-    const [{ data: critData, error: critErr }, { data: reelsData, error: reelsErr }] =
-      await Promise.all([
-        supabase
-          .from('critiques')
-          .select(`
-            id,
-            user_id,
-            reel_id,
-            film_title,
-            titre,
-            contenu,
-            note,
-            likes_count,
-            likes,
-            created_at,
-            updated_at
-          `)
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('reels')
-          .select(`
-            id,
-            title,
-            video_url,
-            thumbnail_url
-          `)
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false }),
-      ]);
-
-    if (critErr || reelsErr) {
-      console.error('fetchCritiquesForProfile error:', critErr ?? reelsErr);
+    // ✅ Sécurité : Empêche la requête Supabase si l'ID n'est pas un UUID valide (ex: données mockées)
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uid);
+    if (!isUUID) {
+      console.warn("UID invalide (non-UUID), utilisation des données par défaut.");
       setReviews(DEFAULT_REVIEWS);
+      setLoading(false);
       return;
     }
-
-    const reelsById = new Map<string, any>(
-      (reelsData ?? []).map((r: any) => [String(r.id), r]),
-    );
-
-    // ✅ Normalisation pour matcher CritiqueCard: review.film, review.likes, review.rating, review.content, review.date
-    const normalized: ReviewItem[] = (critData ?? []).map((c: any) => {
-      const reel = c.reel_id ? reelsById.get(String(c.reel_id)) : undefined;
-
-      const rating =
-        c.note ??
-        c.rating ??
-        // fallback si jamais tu as encore un champ rating
-        0;
-
-      const likes =
-        c.likes_count ??
-        c.likes ??
-        0;
-
-      const content =
-        c.contenu ??
-        c.content ??
-        '';
-
-      const date = c.created_at ? new Date(c.created_at) : new Date();
-
-      const filmFromReel: any = {
-        // CritiqueCard attend film.posterUrl + film.title
-        title: c.film_title ?? reel?.title ?? c.titre ?? '—',
-        posterUrl: reel?.thumbnail_url ?? reel?.video_url ?? '',
-      };
-
-      return {
-        // champs attendus par CritiqueCard
-        id: c.id,
-        reel_id: c.reel_id,
-
-        film: filmFromReel,
-
-        likes,
-        rating: typeof rating === 'number' ? rating : Number(rating) || 0,
+  
+    const { data, error } = await supabase
+      .from('critiques_with_profile')
+      .select(`
+        id,
+        user_id,
+        reel_id,
+        film_title,
+        title,
         content,
-
-        // utilisé dans CritiqueCard
-        date,
-
-        // util si ton ReviewItem a d’autres champs
-        titre: c.titre,
-        contenu: c.contenu,
-        note: c.note,
-        tags: c.tags,
-      } as ReviewItem;
+        rating,
+        likes_count,
+        created_at
+      `)
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false });
+  
+    if (error) {
+      console.error('loadReviewsFromSupabase error:', error);
+      setReviews(DEFAULT_REVIEWS);
+      setLoading(false);
+      return;
+    }
+  
+    const normalized: ReviewItem[] = (data ?? []).map((c: any) => {
+      const filmTitle = String(c.title ?? c.film_title ?? '—');
+  
+      return {
+        id: String(c.id),
+        filmId: String(c.reel_id ?? c.id),
+  
+        // ✅ Match CritiqueCard (ReviewItem)
+        content: String(c.content ?? ''),
+        rating:
+          c.rating === null || c.rating === undefined
+            ? 0
+            : typeof c.rating === 'number'
+              ? c.rating
+              : Number(c.rating) || 0,
+  
+        likes: Number(c.likes_count ?? 0),
+  
+        date: c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString(),
+  
+        film: {
+          id: String(c.reel_id ?? c.id),
+          title: filmTitle,
+  
+          // ✅ tu n'as pas thumbnail_url => on génère depuis ton helper
+          posterUrl: poster(filmTitle),
+  
+          genre: '—',
+          type: 'film',
+        },
+      };
     });
-
+  
+    // ✅ rank par likes desc si tu veux le classement identique à ton UI
+    normalized.sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
+  
     setReviews(normalized);
+    setLoading(false);
   }, []);
 
-  // fetch seen films (tu peux garder ton seenAPI existant)
-  const fetchSeen = useCallback(async (uid: string) => {
+  const loadSeen = useCallback(async (uid: string) => {
     const seen = await seenAPI.getByUser(uid).catch(() => null);
     setSeenFilms(seen?.length ? seen : DEFAULT_SEEN);
   }, []);
@@ -281,9 +287,11 @@ export default function ProfileScreen() {
   const loadData = useCallback(async () => {
     if (!user) return;
     try {
-      setRefreshing(false);
       setLoading(true);
-      await Promise.all([fetchCritiquesForProfile(user.id), fetchSeen(user.id)]);
+      await Promise.all([
+        loadReviewsFromSupabase(user.id),
+        loadSeen(user.id),
+      ]);
     } catch {
       setReviews(DEFAULT_REVIEWS);
       setSeenFilms(DEFAULT_SEEN);
@@ -291,30 +299,31 @@ export default function ProfileScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user, fetchCritiquesForProfile, fetchSeen]);
+  }, [user, loadReviewsFromSupabase, loadSeen]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
+  // Critiques triées par likes desc (définit rank)
   const sortedReviews = useMemo(() => {
-    // CritiqueCard utilise likes pour le rank ordonné
-    return [...reviews].sort(
-      (a: any, b: any) => (b.likes ?? 0) - (a.likes ?? 0),
-    );
+    return [...reviews].sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0));
   }, [reviews]);
 
+  // Seen triés par rating then title
   const sortedSeen = useMemo(
     () => [...seenFilms].sort((a, b) => b.rating - a.rating || a.title.localeCompare(b.title)),
     [seenFilms],
   );
 
+  // ── Format stat numbers ───────────────────────────────────────────────────
   const fmt = useCallback((n: number) => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
     return `${n}`;
   }, []);
 
+  // ── Animated header opacity ───────────────────────────────────────────────
   const stickyOp = scrollY.interpolate({
     inputRange: [0, HEADER_SCROLL_DISTANCE],
     outputRange: [0, 1],
@@ -323,6 +332,9 @@ export default function ProfileScreen() {
 
   if (!user) return null;
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 🎬 TAB 0 — Main grid content
+  // ─────────────────────────────────────────────────────────────────────────
   function renderMainContent() {
     if (loading) {
       return (
@@ -335,29 +347,34 @@ export default function ProfileScreen() {
       );
     }
 
+    // ⚠️ ta section "Films favoris" dans ton extrait ne dépend pas de critiquesAPI:
+    // je garde ALL_FAVS comme dans ton fichier d’origine
+    const favFilms = ALL_FAVS;
+
     return (
       <View>
-        {/* SECTION 1 — FILMS FAVORIS (tu peux garder ta logique existante) */}
         <SectionHeader
           icon="trophy"
           label="Films favoris"
           subtitle="Tes œuvres préférées classées"
-          count={ALL_FAVS.length}
+          count={favFilms.length}
           accentColor={G.gold}
           onViewAll={() => router.push('/profile/favorites')}
         />
 
-        {ALL_FAVS.length === 0 ? (
+        {favFilms.length === 0 ? (
           <EmptyState icon="heart-outline" text="Aucun favori" subtext="Note des films 4★ ou plus" />
         ) : (
           <HScrollRow>
-            {ALL_FAVS.slice(0, 8).map((film, idx) => (
+            {favFilms.map((film, idx) => (
               <View
                 key={String((film as any).workId ?? film.id)}
                 style={{ flexDirection: 'row', alignItems: 'flex-end', zIndex: 10 }}
               >
                 <View style={{ marginRight: -NUM_OVERLAP, zIndex: 20, justifyContent: 'flex-end', paddingBottom: 30 }}>
-                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 60, fontWeight: '900' }}>{idx + 1}</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 60, fontWeight: '900' }}>
+                    {idx + 1}
+                  </Text>
                 </View>
                 <FavCard film={film} onPress={() => goFilm(film)} />
               </View>
@@ -367,7 +384,7 @@ export default function ProfileScreen() {
 
         <View style={pg.divider} />
 
-        {/* SECTION 2 — CRITIQUES */}
+        {/* SECTION 2 — ✍️ CRITIQUES */}
         <SectionHeader
           icon="pencil"
           label="Critiques"
@@ -380,7 +397,7 @@ export default function ProfileScreen() {
           <EmptyState icon="chatbubble-outline" text="Aucune critique publiée" />
         ) : (
           <HScrollRow>
-            {sortedReviews.map((rev: any, idx: number) => (
+            {sortedReviews.map((rev, idx) => (
               <View key={rev.id} style={{ zIndex: 10 }}>
                 <CritiqueCard
                   review={rev}
@@ -394,7 +411,7 @@ export default function ProfileScreen() {
 
         <View style={pg.divider} />
 
-        {/* SECTION 3 — SEEN */}
+        {/* SECTION 3 — 👁️ FILMS & SÉRIES VISIONNÉS */}
         <SectionHeader
           icon="eye"
           label="Films & Séries visionnés"
@@ -420,6 +437,9 @@ export default function ProfileScreen() {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 🎬 TAB 1 — Reels content
+  // ─────────────────────────────────────────────────────────────────────────
   function renderReelsContent() {
     return (
       <View>
@@ -444,6 +464,9 @@ export default function ProfileScreen() {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // 🖼️ RENDER
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={pg.root}>
       <StatusBar style="light" />
@@ -456,7 +479,6 @@ export default function ProfileScreen() {
         </View>
       </Animated.View>
 
-      {/* Main Scroll */}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event(
@@ -482,8 +504,12 @@ export default function ProfileScreen() {
             pointerEvents="none"
           />
 
-          {/* Top nav */}
           <View style={pg.topNav}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="lock-closed" size={12} color="rgba(255,255,255,0.68)" />
+              <Text style={pg.topNavUser}>{user
+.username}</Text>
+
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <Ionicons name="lock-closed" size={12} color="rgba(255,255,255,0.68)" />
               <Text style={pg.topNavUser}>{user.username}</Text>
@@ -495,6 +521,7 @@ export default function ProfileScreen() {
                 <Ionicons name="menu" size={23} color={G.text} />
               </TouchableOpacity>
             </View>
+          </View>
           </View>
 
           {/* Avatar row */}

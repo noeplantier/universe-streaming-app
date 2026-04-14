@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { DEFAULT_REVIEWS } from '../../components/profile/data';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -25,7 +26,6 @@ const G = {
   bg2: '#070014',
   textSub: '#BCB8C2',
   primary: '#C060FF',
-  accent: '#A855F7',
   glass: 'rgba(255,255,255,0.056)',
   glassBorder: 'rgba(255,255,255,0.09)',
 };
@@ -44,35 +44,73 @@ export default function ReviewDetailScreen() {
     setLoading(true);
     setError(false);
 
+    // 1) Vérification si l'ID est un vrai UUID Supabase ou un faux ID de de test (ex: "cr2")
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+    // 2) Gérer les données de test (Mock data)
+    if (!isUUID) {
+      const mockReview = DEFAULT_REVIEWS.find(r => r.id === id);
+      if (mockReview) {
+        setReview({
+          id: mockReview.id,
+          content: mockReview.content,
+          rating: mockReview.rating,
+          likes_count: mockReview.likes,
+          created_at: mockReview.date,
+          user: { 
+            username: 'Critique Cinéma', 
+            avatar_url: `https://i.pravatar.cc/150?u=${mockReview.id}` 
+          },
+          film: {
+            id: mockReview.film.id,
+            title: mockReview.film.title,
+            poster_url: mockReview.film.posterUrl,
+            genre: mockReview.film.genre || '—',
+          }
+        });
+        setLoading(false);
+        return;
+      }
+
+      setError(true);
+      setLoading(false);
+      return;
+    }
+
+    // 3) Gérer les vraies données Supabase si c'est un UUID
     try {
-      // 1) Charger la critique depuis la bonne table (public.critiques)
-   // 1) Charger la critique
-const { data: reviewData, error: reviewErr } = await supabase
-.from('critiques')
-.select('*')
-.eq('id', id)
-.single();
+      const { data: reviewData, error: reviewErr } = await supabase
+        .from('critiques')
+        .select('*')
+        .eq('id', id)
+        .single();
 
-if (reviewErr) throw reviewErr;
+      if (reviewErr) throw reviewErr;
 
-let userData: any = null;
+      let userData: any = null;
 
-// 2) Charger le profil via user_id
-if (reviewData?.user_id) {
-const { data: profile, error: profileErr } = await supabase
-  .from('profiles')
-  .select('id, username, avatar_url')
-  .eq('id', reviewData.user_id)
-  .maybeSingle();
+      if (reviewData?.user_id) {
+        const { data: profile, error: profileErr } = await supabase
+          .from('profiles')
+          .select('id, username, avatar_url')
+          .eq('id', reviewData.user_id)
+          .maybeSingle();
 
-if (profileErr) throw profileErr;
-userData = profile;
-}
+        if (!profileErr) userData = profile;
+      }
 
-setReview({
-...reviewData,
-user: userData, // <-- ton UI attend review.user.username/avatar_url
-});
+      const filmTitle = reviewData.film_title || reviewData.title || 'Film inconnu';
+      
+      setReview({
+        ...reviewData,
+        user: userData,
+        film: {
+          id: reviewData.reel_id || reviewData.id,
+          title: filmTitle,
+          poster_url: `https://picsum.photos/seed/${encodeURIComponent(filmTitle)}/500/750`,
+          genre: '—',
+        },
+      });
 
     } catch (err) {
       console.error(err);
@@ -127,14 +165,14 @@ user: userData, // <-- ton UI attend review.user.username/avatar_url
           <View style={{ width: 40 }} />
         </View>
 
-        {/* Film Card Context */}
+        {/* Film Context */}
         {!!review.film && (
           <TouchableOpacity
             style={s.filmCard}
             onPress={() => router.push(`/film/${review.film.id}`)}
             activeOpacity={0.85}
           >
-            <Image source={{ uri: review.film.thumbnail_url }} style={s.filmPoster} />
+            <Image source={{ uri: review.film.poster_url }} style={s.filmPoster} />
             <View style={s.filmInfo}>
               <Text style={s.filmTitle}>{review.film.title}</Text>
               <Text style={s.filmGenre}>{review.film.genre}</Text>
@@ -147,16 +185,11 @@ user: userData, // <-- ton UI attend review.user.username/avatar_url
         <View style={s.reviewBody}>
           <View style={s.userRow}>
             <Image
-              source={{
-                uri:
-                  review.user?.avatar_url ||
-                  'https://i.pravatar.cc/100?img=13',
-              }}
+              source={{ uri: review.user?.avatar_url || 'https://i.pravatar.cc/100?img=13' }}
               style={s.userAvatar}
             />
             <View style={{ flex: 1 }}>
               <Text style={s.userName}>{review.user?.username || 'Utilisateur inconnu'}</Text>
-
               <View style={s.ratingRow}>
                 {stars.map((star) => (
                   <Ionicons
@@ -194,83 +227,41 @@ user: userData, // <-- ton UI attend review.user.username/avatar_url
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: G.bg0 },
   scroll: { paddingBottom: 100 },
-
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 20,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 20,
   },
-
   backBtn: {},
   blurCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    overflow: 'hidden',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: G.glassBorder,
+    width: 40, height: 40, borderRadius: 20, overflow: 'hidden',
+    justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: G.glassBorder,
   },
   headerTitle: { color: 'white', fontSize: 18, fontWeight: '700' },
-
   backBtnCenter: {
-    marginTop: 20,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: G.primary,
+    marginTop: 20, paddingHorizontal: 24, paddingVertical: 12,
+    borderRadius: 24, borderWidth: 1, borderColor: G.primary,
   },
-
   filmCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: G.glass,
-    marginHorizontal: 20,
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: G.glassBorder,
-    marginBottom: 24,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: G.glass,
+    marginHorizontal: 20, padding: 12, borderRadius: 16, borderWidth: 1,
+    borderColor: G.glassBorder, marginBottom: 24,
   },
-  filmPoster: { width: 50, height: 75, borderRadius: 8, marginRight: 12 },
+  filmPoster: { width: 50, height: 75, borderRadius: 8, marginRight: 12, backgroundColor: G.glassBorder },
   filmInfo: { flex: 1 },
   filmTitle: { color: 'white', fontSize: 16, fontWeight: '700', marginBottom: 4 },
   filmGenre: { color: G.textSub, fontSize: 13 },
-
   reviewBody: {
-    backgroundColor: G.glass,
-    marginHorizontal: 20,
-    padding: 20,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: G.glassBorder,
+    backgroundColor: G.glass, marginHorizontal: 20, padding: 20,
+    borderRadius: 20, borderWidth: 1, borderColor: G.glassBorder,
   },
-
   userRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  userAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12 },
+  userAvatar: { width: 44, height: 44, borderRadius: 22, marginRight: 12, backgroundColor: G.glassBorder },
   userName: { color: 'white', fontSize: 15, fontWeight: '700', marginBottom: 2 },
-
   ratingRow: { flexDirection: 'row', gap: 2 },
-
-  reviewText: {
-    color: 'white',
-    fontSize: 16,
-    lineHeight: 26,
-    marginBottom: 24,
-    fontStyle: 'italic',
-  },
-
+  reviewText: { color: 'white', fontSize: 16, lineHeight: 26, marginBottom: 24, fontStyle: 'italic' },
   statsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: G.glassBorder,
-    paddingTop: 16,
+    flexDirection: 'row', justifyContent: 'space-between',
+    borderTopWidth: 1, borderTopColor: G.glassBorder, paddingTop: 16,
   },
   statItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   statText: { color: G.textSub, fontSize: 13, fontWeight: '600' },
