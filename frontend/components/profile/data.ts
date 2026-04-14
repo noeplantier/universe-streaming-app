@@ -1,3 +1,5 @@
+import { G } from './theme';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 📐 SHARED TYPES
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,10 +184,17 @@ export interface FilmItem {
       festival: 'Lumières Fugitives',
     },
   ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+  // 🎞️ MOYENS ET LONGS MÉTRAGES
+  // ─────────────────────────────────────────────────────────────────────────────
+  export const OWN_MOYEN_REELS: ReelItem[] = []; // Sélections 30-60 min
+  export const OWN_LONG_REELS: ReelItem[] = [];  // Sélections 60 min+
+
+
   // ─────────────────────────────────────────────────────────────────────────────
   // 🎨 EXPORT / GENERATION CONSTANTS (shared with VideoGenModal)
   // ─────────────────────────────────────────────────────────────────────────────
-  import { G } from './theme';
   
   export const EXPORT_FORMATS = [
     { id:'prores', label:'ProRes 4K',   ext:'mov',  desc:'Festival / DCP',  icon:'diamond-outline',  color:G.gold,    badge:'FESTIVAL' },
