@@ -203,10 +203,10 @@ import React, {
   const ti = StyleSheet.create({
     row:      { flexDirection: 'row', gap: 8 },
     input:    { flex: 1, backgroundColor: C.surf, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 11, color: C.text, fontSize: 14 },
-    addBtn:   { width: 44, height: 44, borderRadius: 12, backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.purpleMid, alignItems: 'center', justifyContent: 'center' },
+    addBtn:   { width: 44, height: 44, borderRadius: 12, backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
     tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-    tag:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.purpleMid },
-    tagTxt:   { color: C.purple, fontSize: 12, fontWeight: '600' },
+    tag:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.navyMid },
+    tagTxt:   { color: C.navyMid, fontSize: 12, fontWeight: '600' },
   });
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -365,7 +365,7 @@ import React, {
   
         {/* Tags */}
         <View style={f.field}>
-          <Text style={f.label}>TAGS <Text style={{ color: C.textTert, fontWeight: '400' }}>(max 6)</Text></Text>
+          <Text style={f.label}>TAGS <Text style={{ color: C.navyMid, fontWeight: '400' }}>(max 6)</Text></Text>
           <TagInput tags={form.tags} onChange={v => patch('tags', v)} />
         </View>
   
@@ -561,7 +561,7 @@ import React, {
               {critiques.length > 0 && (
                 <TouchableOpacity style={l.newBtn} onPress={openNew} activeOpacity={0.85}>
                     <LinearGradient
-                      colors={[C.teal, C.navyMid]}
+                      colors={[C.navyMid, C.navyMid]}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={l.newBtnGrad}

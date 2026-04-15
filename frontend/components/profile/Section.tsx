@@ -7,6 +7,7 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { G, H_PADDING, NUM_ITEM_W, CARD_GAP } from './theme';
 import type { FilmItem, ReviewItem } from './data';
+import { C } from '../create/tokens';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 📌 SECTION HEADER — Apple TV aesthetic
@@ -91,7 +92,7 @@ export const EmptyState = memo(({
   icon, text, subtext,
 }: { icon: keyof typeof Ionicons.glyphMap; text: string; subtext?: string }) => (
   <View style={es.wrap}>
-    <LinearGradient colors={['rgba(191,95,255,0.14)', 'transparent']} style={es.circle}>
+    <LinearGradient colors={[C.navyMid, 'transparent']} style={es.circle}>
       <Ionicons name={icon} size={34} color={G.primary} />
     </LinearGradient>
     <Text style={es.text}>{text}</Text>
@@ -101,7 +102,7 @@ export const EmptyState = memo(({
 EmptyState.displayName = 'EmptyState';
 const es = StyleSheet.create({
   wrap:   { alignItems:'center', paddingVertical:44, gap:12 },
-  circle: { width:68, height:68, borderRadius:34, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(191,95,255,0.20)' },
+  circle: { width:68, height:68, borderRadius:34, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:C.navyMid },
   text:   { color:'rgba(255,255,255,0.36)', fontSize:14, fontWeight:'600' },
   sub:    { color:'rgba(255,255,255,0.20)', fontSize:12 },
 });

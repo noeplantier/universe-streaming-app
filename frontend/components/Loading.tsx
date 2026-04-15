@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Starfield from '../components/StarField';
+import { C } from './create/tokens';
 
 const { width } = Dimensions.get('window');
 
@@ -147,12 +148,14 @@ const styles = StyleSheet.create({
     height: 3,
     backgroundColor: 'rgba(255,255,255,0.08)',
     borderRadius: 10,
-    overflow: 'hidden',
+    borderColor: '#fff',
+
   },
 
   progressBar: {
     height: 3,
-    backgroundColor: '#0a2f63',
+    backgroundColor: C.text,
+    borderColor: '#fff',
     borderRadius: 10,
   },
 });

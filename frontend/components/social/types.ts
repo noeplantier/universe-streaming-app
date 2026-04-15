@@ -1,5 +1,7 @@
+import { C } from "../create/tokens";
+
 export const G = {
-    bg0: '#060010', bg1: '#0A001E', bg2: '#070014',
+    bg0: C.navyMid, bg1: '#0A001E', bg2: '#070014',
     sW:  '#F3EDFF', sB:  '#B2CCFF', sG:  '#FFE270',
     sP:  '#CF98FF', sCy: '#86EEFF',
     glass:       'rgba(255,255,255,0.056)',

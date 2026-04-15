@@ -15,6 +15,7 @@ import { StatusBar }      from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { fetchWorkById, type Work } from '@/lib/supabase';
+import { C } from '@/components/create/tokens';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -28,7 +29,7 @@ const G = {
   glassBorder: 'rgba(255,255,255,0.09)',
   primary: '#C060FF',
   pinkBadge: '#E91E63',
-  purpleBadge: '#6A1B9A',
+  purpleBadge: 'C.navyMid',
   accent: '#A855F7',
   textSub: '#BCB8C2',
 };
@@ -77,7 +78,7 @@ const ShootingStar = memo(({ m, onDone }: { m: Met; onDone: () => void }) => {
   const ty = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(m.ang * Math.PI / 180) * 200] });
   return (
     <Animated.View style={{ position: 'absolute', left: m.sx, top: m.sy, opacity: op, transform: [{ translateX: tx }, { translateY: ty }, { rotate: `${m.ang}deg` }] }}>
-      <LinearGradient colors={['rgba(255,255,255,0)', 'rgba(175,110,255,0.8)', '#fff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: m.len, height: 2, borderRadius: 1 }} />
+      <LinearGradient colors={['C.navyMid', 'C.navyMid', '#fff']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: m.len, height: 2, borderRadius: 1 }} />
     </Animated.View>
   );
 });
@@ -116,14 +117,14 @@ const CastChip = memo(({ name }: { name: string }) => (
 CastChip.displayName = 'CastChip';
 const cast = StyleSheet.create({
   chip:   { alignItems: 'center', marginRight: 16, width: 64 },
-  avatar: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: G.accent, marginBottom: 6 },
+  avatar: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, borderColor: C.navyMid, marginBottom: 6 },
   name:   { color: G.textSub, fontSize: 11, textAlign: 'center' },
 });
 
 /** Stat pill */
 const StatPill = memo(({ icon, value, color }: { icon: string; value: string; color?: string }) => (
   <View style={sp.pill}>
-    <Ionicons name={icon as any} size={15} color={color ?? G.accent} />
+    <Ionicons name={icon as any} size={15} color={color ?? C.navyMid} />
     <Text style={[sp.val, color ? { color } : {}]}>{value}</Text>
   </View>
 ));
@@ -144,7 +145,7 @@ const FilmSkeleton = memo(() => {
   }, []); // eslint-disable-line
   return (
     <Animated.View style={{ flex: 1, opacity: op }}>
-      <View style={{ height: H * 0.52, backgroundColor: G.glass }} />
+      <View style={{ height: H * 0.52, backgroundColor: C.navyMid }} />
       <View style={{ padding: 24, gap: 14 }}>
         {[200, 120, '100%', '80%'].map((w, i) => (
           <View key={i} style={{ height: i === 0 ? 32 : 14, width: w, backgroundColor: G.glass, borderRadius: 8 }} />
@@ -226,7 +227,7 @@ export default function FilmDetailScreen() {
   );
 
   const imageUri = work.image ?? `https://picsum.photos/seed/${work.id}/400/600`;
-  const badgeColor = work.is_original ? G.purpleBadge : G.pinkBadge;
+  const badgeColor = work.is_original ? C.navyMid : C.navyMid;
   const likesTotal = work.likes + (liked ? 1 : 0);
 
   return (
@@ -280,7 +281,7 @@ export default function FilmDetailScreen() {
 
           {/* Stats pills */}
           <View style={s.pills}>
-            <StatPill icon="heart"        value={likesTotal.toLocaleString()} color={G.accent} />
+            <StatPill icon="heart"        value={likesTotal.toLocaleString()} color='white' />
             {work.comments != null && (
               <StatPill icon="chatbubble"  value={String(work.comments)} />
             )}
@@ -300,10 +301,10 @@ export default function FilmDetailScreen() {
           {/* ── PLAY + LIKE ── */}
           <View style={s.cta}>
             <TouchableOpacity style={s.playBtn} activeOpacity={0.85}>
-              <LinearGradient colors={['#9B30FF', '#C060FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.playGrad}>
+                <LinearGradient colors={[C.navyMid, C.navyMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.playGrad}>
                 <Ionicons name="play" size={22} color="white" />
                 <Text style={s.playText}>Regarder</Text>
-              </LinearGradient>
+                </LinearGradient>
             </TouchableOpacity>
 
             <TouchableOpacity style={s.likeBtn} onPress={handleLike}>
@@ -335,15 +336,15 @@ export default function FilmDetailScreen() {
             </View>
           ) : null}
 
-          {/* ── CASTING ── */}
-          {work.cast_list && work.cast_list.length > 0 ? (
-            <View style={s.section}>
+            {/* ── CASTING ── */}
+            {work.cast_list && work.cast_list.length > 0 ? (
+            <View style={[s.section, { marginBottom: 0 }]}>
               <Text style={s.sectionTitle}>Avec</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {work.cast_list.map(name => <CastChip key={name} name={name} />)}
+              {work.cast_list.map(name => <CastChip key={name} name={name} />)}
               </ScrollView>
             </View>
-          ) : null}
+            ) : null}
 
         </View>
       </ScrollView>
@@ -355,7 +356,7 @@ export default function FilmDetailScreen() {
 //  STYLES
 // ═══════════════════════════════════════════════════════════════════
 const s = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: G.bg0 },
+  container:     { flex: 1, backgroundColor: C.navyMid },
   scroll:        { paddingBottom: 100 },
 
   // Hero
@@ -383,15 +384,15 @@ const s = StyleSheet.create({
 
   // Tags
   tags:          { flexDirection: 'row', gap: 8, marginBottom: 24 },
-  tag:           { backgroundColor: 'rgba(168,85,247,0.15)', borderWidth: 1, borderColor: 'rgba(168,85,247,0.35)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
-  tagText:       { color: G.accent, fontSize: 12, fontWeight: '600' },
+  tag:           { backgroundColor: G.glass, borderWidth: 1, borderColor: G.glass, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20 },
+  tagText:       { color: '#fff', fontSize: 12, fontWeight: '600' },
 
   // CTA
   cta:           { flexDirection: 'row', gap: 12, marginBottom: 30, alignItems: 'center' },
   playBtn:       { flex: 1, borderRadius: 16, overflow: 'hidden' },
   playGrad:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
   playText:      { color: 'white', fontSize: 17, fontWeight: '700' },
-  likeBtn:       { width: 54, height: 54, borderRadius: 27, backgroundColor: G.glass, borderWidth: 1, borderColor: G.glassBorder, justifyContent: 'center', alignItems: 'center' },
+  likeBtn:       { width: 54, height: 54, borderRadius: 27, backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.navyMid, justifyContent: 'center', alignItems: 'center' },
 
   // Sections
   section:       { marginBottom: 28 },
@@ -400,6 +401,8 @@ const s = StyleSheet.create({
 
   // Réalisateur
   directorRow:   { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  directorAvatar:{ width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: G.accent },
+  directorAvatar:{ width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: G.glass },
   directorName:  { color: 'white', fontSize: 15, fontWeight: '600' },
 });
+
+

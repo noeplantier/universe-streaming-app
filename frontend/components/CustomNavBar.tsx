@@ -10,12 +10,13 @@ import {
 import { BlurView } from 'expo-blur';
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { C } from './create/tokens';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🎨 CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 const COLORS = {
-  accent: '#A855F7',
+  accent: C.navyMid,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -101,70 +102,70 @@ export default memo(CustomNavBar);
 // 🎨 STYLES
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-    container: {
-      position: 'absolute',
-      bottom: 12,
-      left: 10,
-      right: 10,
-      height: 70,
-      borderRadius: 20,
-      overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.15)',
-      zIndex: 999, 
+  container: {
+    position: 'absolute',
+    bottom: 12,
+    left: 10,
+    right: 10,
+    height: 70,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    zIndex: 999, 
   
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.4,
-      shadowRadius: 12,
-      elevation: 20,
-    },
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 20,
+  },
 
   blur: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingHorizontal: 10,
+  flex: 1,
+  flexDirection: 'row',
+  justifyContent: 'space-around',
+  alignItems: 'center',
+  paddingHorizontal: 10,
   },
 
   navItem: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: '100%',
-    paddingTop: 8,
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100%',
+  paddingTop: 8,
   },
 
   navLabel: {
-    color: 'white',
-    fontSize: 10,
-    marginTop: 4,
-    fontWeight: '500',
+  color: 'white',
+  fontSize: 10,
+  marginTop: 4,
+  fontWeight: '500',
   },
 
   centerButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginTop: 4,
-    justifyContent: 'center',
-    alignItems: 'center',
+  width: 60,
+  height: 60,
+  borderRadius: 30,
+  marginTop: 4,
+  justifyContent: 'center',
+  alignItems: 'center',
 
-    backgroundColor: 'rgba(168,85,247,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+  backgroundColor: 'rgba(70, 130, 180, 0.3)',
+  borderWidth: 1,
+  borderColor: C.navyMid,
 
-    shadowColor: COLORS.accent,
-    shadowRadius: 10,
-    shadowOpacity: 0.6,
-    elevation: 10,
+  shadowColor: C.navyMid,
+  shadowRadius: 10,
+  shadowOpacity: 0.6,
+  elevation: 10,
   },
 
   profile: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.accent,
+  width: 28,
+  height: 28,
+  borderRadius: 14,
+  borderWidth: 1,
+  borderColor: C.navyMid,
   },
 });

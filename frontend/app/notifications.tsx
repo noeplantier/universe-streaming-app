@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary },
   headerSub: { fontSize: 11, color: COLORS.primary, marginTop: 2 },
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6 },
-  clearText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
+  clearText: { color: "#fff", fontSize: 13, fontWeight: '900' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   notifCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

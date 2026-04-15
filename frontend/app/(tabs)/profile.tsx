@@ -53,6 +53,7 @@ import {
 
 import { resolveWorkIdByTitleYear } from '@/lib/supabase';
 import { supabase } from '@/lib/supabase';
+import { C } from '@/components/create/tokens';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ⭐ STAR RATING (inline — small helper, no separate file needed)
@@ -508,7 +509,7 @@ export default function ProfileScreen() {
             </View>
             <View style={{ flex: 1 }} />
             <TouchableOpacity testID="profile-settings-btn" style={pg.navBtn} onPress={() => router.push('/settings')}>
-              <Ionicons name="settings" size={23} color={G.text} />
+              <Ionicons name="settings" size={23} color={C.textTert} />
             </TouchableOpacity>
           </View>
           </View>

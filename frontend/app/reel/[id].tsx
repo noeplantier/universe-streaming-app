@@ -23,6 +23,7 @@ import React, {
     updateEpisodeLikes,
     type FeedFilm, type Friend,
   } from '@/lib/supabaseReels';
+import { C } from '@/components/create/tokens';
   
   const { width: W, height: H } = Dimensions.get('window');
   
@@ -354,10 +355,10 @@ import React, {
   
             {/* Bouton Play principal */}
             <TouchableOpacity style={s.playBtn} activeOpacity={0.85}>
-              <LinearGradient colors={['#9B30FF','#C060FF']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.playGrad}>
+                <LinearGradient colors={[C.teal, C.navyMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.playGrad}>
                 <Ionicons name="play" size={22} color="white" />
                 <Text style={s.playTxt}>Regarder l'épisode</Text>
-              </LinearGradient>
+                </LinearGradient>
             </TouchableOpacity>
   
             {/* Caption */}
@@ -430,7 +431,7 @@ import React, {
     seriesLabel:  { color: G.accent, fontSize: 13, fontWeight: '700', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 },
     epTitle:      { color: 'white', fontSize: 26, fontWeight: '800', letterSpacing: -0.5, marginBottom: 16, lineHeight: 32 },
   
-    tag:          { backgroundColor: 'rgba(168,85,247,0.15)', borderWidth: 1, borderColor: 'rgba(168,85,247,0.35)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginRight: 8 },
+    tag:          { backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.navyMid, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginRight: 8 },
     tagTxt:       { color: G.accent, fontSize: 12, fontWeight: '600' },
   
     stats:        { flexDirection: 'row', gap: 20, marginBottom: 20, alignItems: 'center' },
