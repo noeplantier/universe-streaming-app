@@ -90,8 +90,6 @@ const TabItem = memo(({ config, active, onPress }: TabItemProps) => {
         />
       )}
 
-      {/* Liseré lumineux en haut du pill actif */}
-      {active && <View style={tb.activeLine} pointerEvents="none" />}
 
       <Ionicons
         name={config.icon}
@@ -208,7 +206,6 @@ const tb = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 const ScreenHeader = memo(() => (
   <View style={s.header}>
-    <Text style={s.headerTitle}>Créer</Text>
     <View style={s.headerRule} />
   </View>
 ));

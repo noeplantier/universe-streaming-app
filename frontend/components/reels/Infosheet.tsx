@@ -1,13 +1,3 @@
-/**
- * InfoSheet.tsx
- *
- * Fiche détaillée de l'œuvre en cours — bottom sheet plein écran
- *
- * Design : verre sombre + galactic depth, typographie éditoriale
- * Animation : spring native-driver (0 JS thread)
- * Perf : 100% memo + useCallback, 0 objet inline dans le rendu
- */
-
 import React, {
     memo,
     useCallback,

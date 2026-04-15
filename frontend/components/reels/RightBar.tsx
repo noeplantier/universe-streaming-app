@@ -67,7 +67,7 @@ const RightBar = memo(function RightBar({
         activeOpacity={0.75}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
       >
-        <View style={[s.iconWrap, muted && s.iconWrapActive]}>
+        <View style={[s.iconWrap, muted && { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
           <Ionicons
             name={muted ? 'volume-mute' : 'volume-high'}
             size={22}
@@ -91,7 +91,6 @@ const RightBar = memo(function RightBar({
             />
           </Animated.View>
         </TouchableOpacity>
-        <Text style={s.count}>{likeCount.toLocaleString('fr-FR')}</Text>
       </View>
 
       {/* ── Info ── */}
@@ -151,7 +150,6 @@ const s = StyleSheet.create({
   bar:            { position: 'absolute', right: 14, bottom: 220, alignItems: 'center', gap: 20 },
   iconBtn:        { alignItems: 'center', justifyContent: 'center' },
   iconWrap:       { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.08)' },
-  iconWrapActive: { backgroundColor: '#0a2f63' },
   item:           { alignItems: 'center', gap: 4 },
   count:          { color: 'rgba(240,232,255,0.82)', fontSize: 11, fontWeight: '700' },
 });

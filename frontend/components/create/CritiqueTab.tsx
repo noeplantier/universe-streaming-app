@@ -560,14 +560,15 @@ import React, {
               </View>
               {critiques.length > 0 && (
                 <TouchableOpacity style={l.newBtn} onPress={openNew} activeOpacity={0.85}>
-                  <LinearGradient
-                    colors={[C.purple, C.navyMid]}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                    style={l.newBtnGrad}
-                  >
-                    <Ionicons name="add" size={16} color="white" />
-                    <Text style={l.newBtnTxt}>Nouvelle</Text>
-                  </LinearGradient>
+                    <LinearGradient
+                      colors={[C.teal, C.navyMid]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={l.newBtnGrad}
+                    >
+                      <Ionicons name="add" size={16} color="white" />
+                      <Text style={l.newBtnTxt}>Nouvelle</Text>
+                    </LinearGradient>
                 </TouchableOpacity>
               )}
             </View>

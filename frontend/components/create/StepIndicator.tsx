@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { C } from './tokens';
 import type { Step } from './types';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const LABELS = ['Import', 'Infos', 'Publication'] as const;
 
@@ -15,12 +16,17 @@ const StepIndicator = memo(function StepIndicator({ step }: { step: Step }) {
         return (
           <React.Fragment key={label}>
             <View style={s.item}>
-              <View style={[s.dot, done && s.dotDone, active && s.dotActive]}>
+                <View style={[s.dot, done && s.dotDone, active && s.dotActive]}>
                 {done
                   ? <Ionicons name="checkmark" size={11} color="white" />
-                  : <Text style={[s.dotTxt, active && { color: 'white' }]}>{i + 1}</Text>
+                  : <LinearGradient
+                    colors={active ? [C.teal, C.navyMid] : ['transparent', 'transparent']}
+                    style={s.dot}
+                  >
+                    <Text style={[s.dotTxt, active && { color: 'white' }]}>{i + 1}</Text>
+                  </LinearGradient>
                 }
-              </View>
+                </View>
               <Text style={[s.label, active && s.labelActive, done && s.labelDone]}>
                 {label}
               </Text>
@@ -40,7 +46,7 @@ export default StepIndicator;
 const s = StyleSheet.create({
   wrap:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 28, marginBottom: 24 },
   item:        { alignItems: 'center', gap: 5 },
-  dot:         { width: 28, height: 28, borderRadius: 14, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+  dot:         { width: 28, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   dotActive:   { backgroundColor: C.teal, borderColor: C.teal },
   dotDone:     { backgroundColor: C.green, borderColor: C.green },
   dotTxt:      { color: C.textTert, fontSize: 12, fontWeight: '700' },

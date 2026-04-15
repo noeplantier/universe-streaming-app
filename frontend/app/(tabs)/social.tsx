@@ -1,10 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// app/social.tsx  —  Communauté Universe App
-// Fix critique :
-//   • Posts chargés depuis community_posts (Supabase) + realtime INSERT
-//   • Upload image via FileSystem.readAsStringAsync + decode() (fix 400 mobile)
-//   • Palette galactique (teal #00C9FF + gold #F5C842, zero violet)
-// ─────────────────────────────────────────────────────────────────────────────
 import React, {
   useState, useCallback, useRef, useMemo,
   useEffect, useContext, createContext, memo,
@@ -1017,30 +1010,30 @@ const cm = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPOSE BAR
 // ─────────────────────────────────────────────────────────────────────────────
-const ComposeBar = memo(function ComposeBar({ onPress }: { onPress: () => void }) {
+const ComposeBar = memo(function ComposeBar({ onPress, userId }: { onPress: () => void; userId: string }) {
   return (
     <TouchableOpacity style={cbar.wrap} onPress={onPress} activeOpacity={0.88}>
       <LinearGradient
-        colors={[C.tealSoft, 'transparent']}
-        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-        style={StyleSheet.absoluteFill}
+      colors={[C.tealSoft, 'transparent']}
+      start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+      style={StyleSheet.absoluteFill}
       />
-      <Image source={{ uri: 'https://i.pravatar.cc/100?u=me' }} style={cbar.avi} />
+      <Image source={{ uri: `https://i.pravatar.cc/100?u=${userId}` }} style={cbar.avi} />
       <View style={cbar.body}>
-        <Text style={cbar.title}>Partagez votre critique</Text>
-        <Text style={cbar.sub}>Analyse · Coup de cœur · Réflexion · Déception</Text>
-        <View style={cbar.pills}>
-          {([
-            { icon: 'film-outline',  label: 'Œuvre',  color: C.teal },
-            { icon: 'star-outline',  label: 'Note',   color: C.gold },
-            { icon: 'image-outline', label: 'Visuel', color: '#7DD3FC' },
-          ] as const).map(p => (
-            <View key={p.label} style={[cbar.pill, { backgroundColor: `${p.color}12`, borderColor: `${p.color}28` }]}>
-              <Ionicons name={p.icon} size={11} color={p.color} />
-              <Text style={[cbar.pillTxt, { color: p.color }]}>{p.label}</Text>
-            </View>
-          ))}
+      <Text style={cbar.title}>Partagez votre critique</Text>
+      <Text style={cbar.sub}>Analyse · Coup de cœur · Réflexion · Déception</Text>
+      <View style={cbar.pills}>
+        {([
+        { icon: 'film-outline',  label: 'Œuvre',  color: C.teal },
+        { icon: 'star-outline',  label: 'Note',   color: C.gold },
+        { icon: 'image-outline', label: 'Visuel', color: '#7DD3FC' },
+        ] as const).map(p => (
+        <View key={p.label} style={[cbar.pill, { backgroundColor: `${p.color}12`, borderColor: `${p.color}28` }]}>
+          <Ionicons name={p.icon} size={11} color={p.color} />
+          <Text style={[cbar.pillTxt, { color: p.color }]}>{p.label}</Text>
         </View>
+        ))}
+      </View>
       </View>
       <Ionicons name="create-outline" size={24} color={C.teal} />
     </TouchableOpacity>
@@ -1224,12 +1217,7 @@ const SocialHeader = memo(function SocialHeader({ onCompose }: { onCompose: () =
           <Ionicons name="notifications-outline" size={20} color="white" />
           <View style={hdr.dot} />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[hdr.btn, hdr.composeBtn]}
-          onPress={onCompose}
-        >
-          <Ionicons name="create-outline" size={20} color={C.teal} />
-        </TouchableOpacity>
+       
       </View>
     </View>
   );
@@ -1345,11 +1333,11 @@ export default function SocialScreen() {
     <>
       <SocialHeader onCompose={() => setComposeOpen(true)} />
       <View style={{ height: 14 }} />
-      <ComposeBar onPress={() => setComposeOpen(true)} />
+      <ComposeBar onPress={() => setComposeOpen(true)} userId={userId} />
       <View style={{ height: 6 }} />
       <FilterTabs active={tab} set={setTab} />
     </>
-  ), [tab]);
+  ), [tab, userId]);
 
   // ── Skeleton loading ───────────────────────────────────────────────────
   const ListEmpty = useMemo(() => {

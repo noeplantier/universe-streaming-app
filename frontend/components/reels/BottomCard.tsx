@@ -1,119 +1,192 @@
-import React, { memo, useMemo } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity, Image, Platform,
-} from 'react-native';
-import { BlurView }      from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons }      from '@expo/vector-icons';
-import * as Haptics      from 'expo-haptics';
+import React, { memo } from 'react';
+import { View, Text, Animated, StyleSheet } from 'react-native';
 
-import { P } from './types';
-import type { FeedFilm } from './types';
-
-interface BottomCardProps {
-  film:     FeedFilm;
-  progress: number;       // 0 → 1
-  onFollow: (fid: string) => void;
-  insetBot: number;
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔧 HELPERS (Importés depuis Infosheet)
+// ─────────────────────────────────────────────────────────────────────────────
+function formatViews(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M vues`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K vues`;
+  return `${n} vues`;
 }
 
-const BottomCard = memo(function BottomCard({
-  film, progress, onFollow, insetBot,
-}: BottomCardProps) {
-  // Calcul temps affiché
-  const { elMin, elSec, clampedPct } = useMemo(() => {
-    const [min, sec] = film.duration.split(':').map(Number);
-    const totalSec   = (min || 0) * 60 + (sec || 0);
-    const elapsed    = Math.floor(totalSec * Math.min(progress, 1));
-    return {
-      elMin:      String(Math.floor(elapsed / 60)).padStart(2, '0'),
-      elSec:      String(elapsed % 60).padStart(2, '0'),
-      clampedPct: Math.min(progress * 100, 100),
-    };
-  }, [film.duration, progress]);
+function formatLikes(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
+  return `${n}`;
+}
 
-  const unfollowed = useMemo(
-    () => film.liked_by_friends.find(f => !f.followed),
-    [film.liked_by_friends],
-  );
+// ─────────────────────────────────────────────────────────────────────────────
+// 📊 VIDEO PROGRESS BAR — barre réelle, Animated.Value pour 0 GC pression
+// ─────────────────────────────────────────────────────────────────────────────
+interface VideoProgressBarProps {
+  progress: Animated.Value | number;
+}
+
+const VideoProgressBar = memo(({ progress }: VideoProgressBarProps) => {
+  const isAnimated = progress && typeof (progress as any).interpolate === 'function';
+
+  const width = isAnimated
+    ? (progress as Animated.Value).interpolate({
+        inputRange:  [0, 1],
+        outputRange: ['0%', '100%'],
+        extrapolate: 'clamp',
+      })
+    : `${Math.min(Math.max(Number(progress) || 0, 0), 1) * 100}%`;
 
   return (
-    <View style={[s.wrap, { bottom: insetBot + 90 }]}>
-      {/* Caption cinématique */}
-      <View style={s.captionBlock}>
-        {(film.caption || '').split('\n').map((line, i) => (
-          <Text key={i} style={s.captionLine}>{line}</Text>
-        ))}
-      </View>
-
-      {/* Info card glassmorphism */}
-      <View style={s.inner}>
-
-        {/* Header */}
-        <View style={s.topRow}>
-          <View style={{ flex: 1 }}>
-            <View style={s.titleRow}>
-              <Text style={s.seriesName} numberOfLines={1}>{film.series}</Text>
-            </View>
-            <Text style={s.epLabel} numberOfLines={1}>
-              Ép. {film.episode} · {film.episode_title}
-            </Text>
-          </View>
-          <View style={s.tagsRow}>
-          </View>
-        </View>
-
-        {/* Réalisateur */}
-        <Text style={s.directorTxt}>{film.director} · {film.year}</Text>
-
-        {/* Barre de progression */}
-        <View style={s.progressTrack}>
-          <View style={[s.progressFill, { width: `${clampedPct}%`, backgroundColor: '#fff' }]} />
-        </View>
-        <View style={s.timesRow}>
-          <Text style={s.timeText}>{elMin}:{elSec}</Text>
-          <Text style={[s.timeText, { color: P?.t3 || '#fff' }]}>{film.duration}</Text>
-        </View>
-      </View>
+    <View style={pb.track} pointerEvents="none">
+      <Animated.View style={[pb.fill, { width: width as any }]} />
+      {/* Curseur lumineux à l'extrémité */}
+      <Animated.View style={[pb.thumb, { left: width as any }]} />
     </View>
-
   );
 });
+VideoProgressBar.displayName = 'VideoProgressBar';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🌌 BOTTOM VIEW — Informations de la vidéo (Textes Blancs, Mode Galaxie)
+// ─────────────────────────────────────────────────────────────────────────────
+export interface BottomCardProps {
+  title?: string;
+  director?: string;
+  year?: number | string;
+  genre?: string;
+  synopsis?: string;
+  viewsCount?: number;
+  likesCount?: number;
+  progress: Animated.Value | number;
+}
+
+const BottomCard = memo(({ 
+  title, 
+  director, 
+  year, 
+  genre, 
+  synopsis, 
+  viewsCount = 0, 
+  likesCount = 0, 
+  progress 
+}: BottomCardProps) => {
+  return (
+    <View style={styles.container}>
+      <View style={styles.infoContainer}>
+        {/* Titre (Blanc éclatant) */}
+        <Text style={styles.title} numberOfLines={1}>
+          {title || 'Titre inconnu'}
+        </Text>
+        
+        {/* Meta Infos: Réalisateur, Année, Genre */}
+        <Text style={styles.metaText} numberOfLines={1}>
+          {director ? `${director} ` : ''}
+          {year ? `• ${year} ` : ''}
+          {genre ? `• ${genre}` : ''}
+        </Text>
+
+        {/* Synopsis */}
+        {synopsis && (
+          <Text style={styles.synopsis} numberOfLines={2}>
+            {synopsis}
+          </Text>
+        )}
+
+        {/* Stats: Vues et Likes */}
+        <View style={styles.statsContainer}>
+          <Text style={styles.statsText}>👁 {formatViews(viewsCount)}</Text>
+          <Text style={styles.statsText}>♥ {formatLikes(likesCount)}</Text>
+        </View>
+      </View>
+      
+      <VideoProgressBar progress={progress} />
+    </View>
+  );
+});
+BottomCard.displayName = 'BottomCard';
 
 export default BottomCard;
 
-const s = StyleSheet.create({
-  wrap:           { position: 'absolute', left: 14, right: 14 },
-  captionBlock:   { marginBottom: 12, paddingHorizontal: 4 },
-  captionLine:    { color: 'rgba(255,255,255,0.93)', fontSize: 22, fontWeight: '800', lineHeight: 30, textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 10 },
-  blurCard:       { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(146,64,214,0.32)' },
-  inner:          { padding: 15, gap: 9 },
-  topRow:         { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  titleRow:       { flexDirection: 'row', alignItems: 'center' },
-  seriesName:     { color: P?.t1 || '#FFF', fontSize: 15, fontWeight: '900', letterSpacing: 0.1, flexShrink: 1 },
-  epLabel:        { color: P?.t2 || '#FFF', fontSize: 12, marginTop: 2 },
-  directorTxt:    { color: P?.t3 || '#FFF', fontSize: 11, fontWeight: '500' },
-  tagsRow:        { flexDirection: 'row', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' },
-  tag:            { backgroundColor: 'rgba(146,64,214,0.22)', borderRadius: 7, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: P.bord },
-  tagOriginal:    { backgroundColor: 'rgba(192,96,255,0.22)', borderColor: P.primL },
-  tagTxt:         { color: P?.t2 || '#FFF', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  tagTxtOriginal: { color: P.primL },
-  progressTrack:  { height: 3.5, backgroundColor: 'rgb(255, 255, 255)', borderRadius: 2, overflow: 'visible' },
-  progressFill:   { height: '100%', backgroundColor: P.primL, borderRadius: 2, position: 'relative', overflow: 'hidden' },
-  progressGlow:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.30)' },
-  progressThumb:  { position: 'absolute', top: -5, marginLeft: -6, width: 13, height: 13, borderRadius: 7, backgroundColor: '#fff', borderWidth: 2.5, borderColor: P.primL, shadowColor: P.primL, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 4, elevation: 4 },
-  timesRow:       { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
-  timeText:       { color: P?.t2 || '#AAA', fontSize: 11, fontWeight: '600' },
-  friendsRow:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  avatarStack:    { flexDirection: 'row', alignItems: 'center' },
-  friendAvWrap:   { position: 'relative' },
-  friendAv:       { width: 36, height: 36, borderRadius: 18, borderWidth: 2.5, borderColor: 'rgba(8,0,18,0.9)' },
-  followedDot:    { position: 'absolute', bottom: -1, right: -1, width: 10, height: 10, borderRadius: 5, backgroundColor: P.green, borderWidth: 1.5, borderColor: 'rgba(8,0,18,0.9)' },
-  extraCount:     { width: 36, height: 36, borderRadius: 18, backgroundColor: P.surface, alignItems: 'center', justifyContent: 'center', borderWidth: 2.5, borderColor: 'rgba(8,0,18,0.9)' },
-  extraCountTxt:  { color: P?.t2 || '#AAA', fontSize: 10, fontWeight: '800' },
-  followBtn:      { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(146,64,214,0.22)', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7, borderWidth: 1, borderColor: P.bord },
-  allFollowedBadge:{ flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(34,197,94,0.12)', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(34,197,94,0.28)' },
-  followTxt:      { color: P?.t1 || '#FFF', fontSize: 12, fontWeight: '700' },
-  commentRow:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingTop: 4, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.06)' },
-  commentTxt:     { color: P?.t2 || '#AAA', fontSize: 12, fontStyle: 'italic', flex: 1 },
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎨 STYLES
+// ─────────────────────────────────────────────────────────────────────────────
+const pb = StyleSheet.create({
+  track: {
+    height: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Fond semi-transparent étoilé
+    width: '100%',
+    position: 'relative',
+    borderRadius: 2,
+    marginTop: 12,
+  },
+  fill: {
+    height: '100%',
+    backgroundColor: '#FFF', // Cyan brillant (Galaxie)
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    borderRadius: 2,
+  },
+  thumb: {
+    position: 'absolute',
+    top: -2,
+    marginLeft: -3.5, 
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#FFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+    elevation: 4,
+  }
+});
+
+const styles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 40,
+    paddingBottom: 90,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)', // Dégradé sombre pour lisibilité des textes blancs
+  },
+  infoContainer: {
+    marginBottom: 8,
+  },
+  title: {
+    color: '#FFFFFF', // Texte Blanc
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 4,
+    textShadowColor: 'rgba(255, 255, 255, 0.3)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 4,
+  },
+  metaText: {
+    color: '#FFFFFF', // Texte Blanc
+    fontSize: 13,
+    fontWeight: '600',
+    opacity: 0.9,
+    marginBottom: 6,
+  },
+  synopsis: {
+    color: '#FFFFFF', // Texte Blanc
+    fontSize: 14,
+    lineHeight: 20,
+    opacity: 0.8,
+    marginBottom: 8,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  statsText: {
+    color: '#FFFFFF', // Texte Blanc
+    fontSize: 12,
+    fontWeight: '500',
+    opacity: 0.7,
+  },
 });

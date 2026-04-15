@@ -472,13 +472,6 @@ export default function ProfileScreen() {
       <StatusBar style="light" />
       <GalaxyBackground />
 
-      <Animated.View style={[pg.stickyHeader, { opacity: stickyOp }]} pointerEvents="none">
-        <BlurView intensity={50} tint="dark" style={StyleSheet.absoluteFillObject} />
-        <View style={pg.stickyInner}>
-          <Text style={pg.stickyUser}>{user.username}</Text>
-        </View>
-      </Animated.View>
-
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event(
@@ -511,16 +504,12 @@ export default function ProfileScreen() {
 .username}</Text>
 
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="lock-closed" size={12} color="rgba(255,255,255,0.68)" />
-              <Text style={pg.topNavUser}>{user.username}</Text>
               <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.55)" />
             </View>
-
-            <View style={{ flexDirection: 'row', gap: 2 }}>
-              <TouchableOpacity testID="profile-settings-btn" style={pg.navBtn} onPress={() => router.push('/settings')}>
-                <Ionicons name="menu" size={23} color={G.text} />
-              </TouchableOpacity>
-            </View>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity testID="profile-settings-btn" style={pg.navBtn} onPress={() => router.push('/settings')}>
+              <Ionicons name="settings" size={23} color={G.text} />
+            </TouchableOpacity>
           </View>
           </View>
 
@@ -542,33 +531,37 @@ export default function ProfileScreen() {
               />
               <StatColumn
                 value={fmt(user.followers_count ?? 2840)}
-                label="abonnés"
+                label="critiques"
                 onPress={() => router.push('/followers' as any)}
               />
               <StatColumn
                 value={fmt(user.following_count ?? 318)}
-                label="abonnements"
+                label="festivals"
                 onPress={() => router.push('/following' as any)}
               />
             </View>
           </View>
 
-          {/* Bio */}
-          <View style={pg.bioRow}>
-            <Text style={pg.displayName}>{user.username}</Text>
+            {/* Bio */}
+            <View style={pg.bioRow}>
             <BlurView intensity={20} tint="dark" style={pg.rolePill}>
               <Text style={pg.rolePillTxt}>
-                {user.role === 'critic'
-                  ? '✍️ Critique'
-                  : user.role === 'creator'
-                    ? '⭐ Créateur·rice'
-                    : '🎬 Réalisateur·rice'}
+              {user.role === 'critic'
+                ? '✍️ Critique'
+                : user.role === 'creator'
+                ? '⭐ Créateur·rice'
+                : '🎬 Réalisateur·rice'}
               </Text>
             </BlurView>
-          </View>
+            {(user as any).is_industry_contact && (
+              <BlurView intensity={20} tint="dark" style={pg.rolePill}>
+              <Text style={pg.rolePillTxt}>📧 Contactable</Text>
+              </BlurView>
+            )}
+            </View>
 
-          <View style={pg.glowSep} />
-        </SafeAreaView>
+            <View style={pg.glowSep} />
+          </SafeAreaView>
 
         {/* Tab bar */}
         <View style={pg.tabBar}>
@@ -607,15 +600,7 @@ export default function ProfileScreen() {
 const pg = StyleSheet.create({
   root: { flex: 1, backgroundColor: G.bg },
 
-  stickyHeader: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 100,
-    height: 48,
-    overflow: 'hidden',
-  },
+
   stickyInner: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: 8 },
   stickyUser: { color: G.text, fontSize: 15, fontWeight: '700', letterSpacing: 0.1 },
 
@@ -623,11 +608,15 @@ const pg = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: H_PADDING,
+    paddingLeft: H_PADDING, // Garde l'espacement à gauche
+    paddingRight: 0,        // Retire l'espacement à droite
     paddingVertical: 10,
   },
   topNavUser: { fontSize: 17, fontWeight: '800', color: G.text, letterSpacing: -0.2 },
-  navBtn: { padding: 5 },
+  navBtn: { 
+    paddingVertical: 5,
+    paddingLeft: 90,
+  },
 
   avatarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: H_PADDING, marginTop: 6, gap: 16 },
   avatarWrap: { position: 'relative' },

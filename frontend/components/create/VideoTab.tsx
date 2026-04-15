@@ -150,13 +150,7 @@ import React, {
   
     return (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* Back button row */}
-        <View style={s.backRow}>
-          <TouchableOpacity style={s.backBtn} onPress={goPrev}>
-            <Ionicons name="chevron-back" size={20} color={C.textSec} />
-          </TouchableOpacity>
-        </View>
-  
+
         <StepIndicator step={step} />
   
         <Animated.ScrollView

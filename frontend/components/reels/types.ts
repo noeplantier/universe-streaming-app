@@ -6,6 +6,11 @@ export interface Friend {
   }
   
   export interface FeedFilm {
+    liked_by_friends?: Array<{ id: string; username?: string }>;
+    created_at?: string;
+    likes: number;
+    likes_count: number;
+    is_liked: any;
     id:              string;
     title:           string;
     series:          string;
