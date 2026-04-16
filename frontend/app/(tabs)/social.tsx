@@ -1136,7 +1136,7 @@ const PostCard = memo(function PostCard({ post, userId }: { post: Post; userId: 
 });
 
 const pcs = StyleSheet.create({
-  card:         { marginHorizontal: EDGE, marginBottom: 20, borderRadius: 20, overflow: 'hidden', backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.border },
+  card:         { marginHorizontal: EDGE, marginBottom: 20, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: C.textTert },
   img:          { width: '100%', height: 205 },
   imgGrad:      { position: 'absolute', bottom: 0, left: 0, right: 0, height: '60%' },
   toneBadge:    { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(2,8,16,0.70)', borderWidth: 1 },
@@ -1364,5 +1364,5 @@ export default function SocialScreen() {
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg0 },
+  root: { flex: 1},
 });

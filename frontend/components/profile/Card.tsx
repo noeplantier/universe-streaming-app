@@ -386,7 +386,7 @@ export const ReelCard = memo(({ reel, rank, onPress }: ReelCardProps) => {
       </TouchableOpacity>
 
       {/* Rank number (on top) */}
-      <View style={{ position: 'absolute', width: NUM_W, height: CARD_H, justifyContent: 'flex-end', paddingBottom: 6, zIndex: 10, right: -NUM_OVERLAP + 8 }}>
+      <View style={{ position: 'absolute', width: NUM_W, height: CARD_H, justifyContent: 'flex-end', paddingBottom: 24, zIndex: 10, right: -NUM_OVERLAP + 8 }}>
         <Text style={{
           fontSize: numFontSize, fontWeight: '900',
           zIndex: 1000,

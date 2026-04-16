@@ -162,9 +162,7 @@ export default function CategoryScreen() {
         <Text style={styles.categorySubtitle}>{meta.subtitle}</Text>
       </LinearGradient>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
-      ) : (
+     (
         <FlatList
           data={data}
           keyExtractor={(item, i) => item.id || String(i)}
@@ -179,7 +177,7 @@ export default function CategoryScreen() {
             </View>
           }
         />
-      )}
+      )
     </View>
   );
 }

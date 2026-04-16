@@ -161,7 +161,7 @@ import React, {
               onPress={() => setShowComments(true)}
               activeOpacity={0.8}
             >
-              <Ionicons name="chatbubble-outline" size={19} color="rgba(237,232,255,0.45)" />
+              <Ionicons name="chatbubble-outline" size={19} color="rgb(255, 255, 255)" />
               <Text style={s.actTxt}>{post.comments.length}</Text>
             </TouchableOpacity>
   

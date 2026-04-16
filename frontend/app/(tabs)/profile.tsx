@@ -418,7 +418,7 @@ export default function ProfileScreen() {
           label="Films & Séries visionnés"
           subtitle="Classés par note"
           accentColor={G.cyan}
-          onViewAll={() => router.push('/profile/seen')}
+          onViewAll={() => router.push('/profile/seen_films' as any)}
         />
 
         {sortedSeen.length === 0 ? (
@@ -504,12 +504,12 @@ export default function ProfileScreen() {
               <Text style={pg.topNavUser}>{user
 .username}</Text>
 
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
               <Ionicons name="chevron-down" size={12} color="rgba(255,255,255,0.55)" />
             </View>
             <View style={{ flex: 1 }} />
             <TouchableOpacity testID="profile-settings-btn" style={pg.navBtn} onPress={() => router.push('/settings')}>
-              <Ionicons name="settings" size={23} color={C.textTert} />
+              <Ionicons name="settings" size={23} color="white" />
             </TouchableOpacity>
           </View>
           </View>
@@ -609,14 +609,13 @@ const pg = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingLeft: H_PADDING, // Garde l'espacement à gauche
-    paddingRight: 0,        // Retire l'espacement à droite
+    paddingLeft: H_PADDING,
+    paddingRight: H_PADDING,
     paddingVertical: 10,
   },
   topNavUser: { fontSize: 17, fontWeight: '800', color: G.text, letterSpacing: -0.2 },
   navBtn: { 
     paddingVertical: 5,
-    paddingLeft: 90,
   },
 
   avatarRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: H_PADDING, marginTop: 6, gap: 16 },

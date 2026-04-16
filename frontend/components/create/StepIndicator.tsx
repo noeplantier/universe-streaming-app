@@ -47,7 +47,6 @@ const s = StyleSheet.create({
   wrap:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 28, marginBottom: 24 },
   item:        { alignItems: 'center', gap: 5 },
   dot:         { width: 28, height: 28, borderRadius: 14, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  dotActive:   { backgroundColor: C.teal, borderColor: C.teal },
   dotDone:     { backgroundColor: C.green, borderColor: C.green },
   dotTxt:      { color: C.textTert, fontSize: 12, fontWeight: '700' },
   label:       { color: C.textTert, fontSize: 10, fontWeight: '600' },

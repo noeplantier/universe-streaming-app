@@ -1,4 +1,3 @@
-// app/search.tsx  –  Apple TV–inspired redesign
 import React, {
   useState, useEffect, useRef, useMemo,
   useCallback, memo,
@@ -14,6 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons }       from '@expo/vector-icons';
 import { StatusBar }      from 'expo-status-bar';
 import { useRouter }      from 'expo-router';
+import GalaxyBackground   from '@/components/social/GalaxyBackground';
+
 
 import {
   fetchWorks, fetchTrending,
@@ -77,22 +78,27 @@ interface DropdownProps {
 const FilterDropdown = memo(({ visible, onClose, options, selected, onSelect, anchor }: DropdownProps) => {
   if (!visible) return null;
   return (
-    <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <BlurView intensity={40} tint="dark"
-        style={[dd.box, { top: anchor.y + 8, left: anchor.x }]}>
-        {options.map(opt => (
-          <TouchableOpacity key={opt} style={dd.item} onPress={() => { onSelect(opt); onClose(); }}>
-            <Text style={[dd.txt, selected === opt && dd.txtOn]}>{opt}</Text>
-            {selected === opt && (
-              <View style={dd.check}>
-                <Ionicons name="checkmark" size={12} color={T.gold} />
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
-      </BlurView>
-    </Modal>
+    <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+      <View style={[dd.box, { top: anchor.y + 8, left: anchor.x - 75 }]}>
+        {options.map(opt => {
+          const isSelected = opt === selected;
+          return (
+            <TouchableOpacity
+              key={opt}
+              style={dd.item}
+              onPress={() => { onSelect(opt); onClose(); }}
+            >
+              <Text style={[dd.txt, isSelected && dd.txtOn]}>{opt}</Text>
+              {isSelected && (
+                <View style={dd.check}>
+                  <Ionicons name="check" size={12} color={T.gold} />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </Pressable>
   );
 });
 FilterDropdown.displayName = 'FilterDropdown';
@@ -154,27 +160,25 @@ const SearchOverlay = memo(({
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
-    {/* Dropdowns inside overlay */}
-    <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
-    <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}    anchor={dropAnchor} />
-    <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
-    <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
+      {/* Dropdowns inside overlay */}
+      <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}    anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
 
-    <Animated.View style={[so.root, { transform: [{ translateY: slideY }] }]}>
-      <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-      {/* Ajout de la notion de top (ex: top provenant de useSafeAreaInsets ou valeur par défaut) */}
-      <View style={[so.inner, { paddingTop: typeof top !== 'undefined' ? top + 10 : 50 }]}>
-   
+      <Animated.View style={[so.root, { transform: [{ translateY: slideY }] }]}>
+        <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+        <View style={so.inner}>
 
-        {/* Header row */}
-        <View style={so.header}>
-          <View style={so.inputRow}>
-            <Ionicons name="search" size={18} color={T.textSec} style={{ marginRight: 10 }} />
-            <TextInput
-              ref={inputRef}
-              style={so.input}
-              placeholder="Titre, genre, ambiance…"
-              placeholderTextColor={T.textTert}
+          {/* Header row */}
+          <View style={so.header}>
+            <View style={so.inputRow}>
+              <Ionicons name="search" size={18} color={T.textSec} style={{ marginRight: 10 }} />
+              <TextInput
+                ref={inputRef}
+                style={so.input}
+                placeholder="Titre, genre, ambiance…"
+                placeholderTextColor={T.textTert}
                 value={search}
                 onChangeText={setSearch}
                 returnKeyType="search"
@@ -220,7 +224,10 @@ const SearchOverlay = memo(({
             )}
           </ScrollView>
 
-          {/* Results */}
+          {/* Spacing before results */}
+          <View style={so.resultsSpacer} />
+
+          {/* Results
           <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
             {loading
               ? <View style={so.loadRow}><ActivityIndicator color={T.gold} /></View>
@@ -275,7 +282,7 @@ const SearchOverlay = memo(({
                     </>
                   )
             }
-          </ScrollView>
+          </ScrollView> */}
         </View>
       </Animated.View>
     </Modal>
@@ -314,6 +321,7 @@ const so = StyleSheet.create({
   resultTitle:{ color: 'white', fontSize: 14, fontWeight: '700', marginBottom: 4 },
   resultMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   resultMetaTxt: { color: 'rgba(255,255,255,0.6)', fontSize: 11 },
+  resultsSpacer: { height: 12 },
 });
 
 // ─────────────────────────────────────────────────────────────────
@@ -634,7 +642,8 @@ export default function SearchScreen() {
   const [duration,  setDuration]  = useState<DurationBand>('Toutes');
   const [year,      setYear]      = useState('Toutes');
   const [searchOpen, setSearchOpen] = useState(false);
-
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchActive, setIsSearchActive] = useState(false); // Nouvel état
   const [works,    setWorks]    = useState<Work[]>([]);
   const [trending, setTrending] = useState<Work[]>([]);
   const [popular,  setPopular]  = useState<Work[]>([]);
@@ -713,143 +722,141 @@ export default function SearchScreen() {
     <View style={ms.root}>
       <StatusBar style="light" />
 
-      {/* ── STICKY HEADER (appears on scroll) ── */}
-      <Animated.View style={[ms.stickyHeader, { opacity: headerOpac }]} pointerEvents="none">
-        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
-        <View style={ms.stickyInner}>
-          <Text style={ms.stickyTitle}>UNIVERSE</Text>
-        </View>
+      {/* ── STICKY HEADER (visible before scroll, fades on scroll) ── */}
+      <Animated.View style={[ms.stickyHeader, { opacity: scrollY.interpolate({ inputRange: [0, 120], outputRange: [1, 0], extrapolate: 'clamp' }) }]} pointerEvents="none">
+      <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
+      <View style={ms.stickyInner}>
+        <Text style={ms.stickyTitle}>UNIVERSE</Text>
+      </View>
       </Animated.View>
 
       {/* ── SEARCH ICON TOP-RIGHT ── */}
       <View style={ms.topRight} pointerEvents="box-none">
-        <TouchableOpacity style={ms.searchIconBtn} onPress={() => setSearchOpen(true)}>
-          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
-          <Ionicons name="search" size={20} color="white" />
-        </TouchableOpacity>
+      <TouchableOpacity style={ms.searchIconBtn} onPress={() => setSearchOpen(true)}>
+       
+        <Ionicons name="search" size={20} color="white" />
+      </TouchableOpacity>
       </View>
 
       {/* ── SEARCH OVERLAY ── */}
       <SearchOverlay
-        visible={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        search={search} setSearch={setSearch}
-        genre={genre} setGenre={setGenre}
-        sortBy={sortBy} setSortBy={setSortBy}
-        duration={duration} setDuration={setDuration}
-        year={year} setYear={setYear}
-        works={works} loading={loading} error={error} onRetry={loadWorks}
-        activeFilterCount={activeFilterCount} onResetFilters={resetFilters}
-        openDropdown={openDropdown}
-        openDrop={openDrop} setOpenDrop={setOpenDrop}
-        dropAnchor={dropAnchor}
+      visible={searchOpen}
+      onClose={() => setSearchOpen(false)}
+      search={search} setSearch={setSearch}
+      genre={genre} setGenre={setGenre}
+      sortBy={sortBy} setSortBy={setSortBy}
+      duration={duration} setDuration={setDuration}
+      year={year} setYear={setYear}
+      works={works} loading={loading} error={error} onRetry={loadWorks}
+      activeFilterCount={activeFilterCount} onResetFilters={resetFilters}
+      openDropdown={openDropdown}
+      openDrop={openDrop} setOpenDrop={setOpenDrop}
+      dropAnchor={dropAnchor}
       />
 
       {/* ── MAIN SCROLL ── */}
       <Animated.ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={ms.scroll}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
-        scrollEventThrottle={16}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={ms.scroll}
+      onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
+      scrollEventThrottle={16}
       >
-        {/* HERO */}
-        <HeroBanner item={heroItem} />
+      {/* HERO */}
+      <HeroBanner item={heroItem} />
 
-     
+      {/* ── FILTERED MODE ── */}
+      {isFiltered && (
+        <RowSection
+        title={debouncedSearch.trim() ? `"${debouncedSearch}"` : activeTab}
+        subtitle={!loading && !error ? `${works.length} œuvres` : undefined}
+        items={portraitWorks}
+        loading={loading}
+        variant="portrait"
+        />
+      )}
 
-        {/* ── FILTERED MODE ── */}
-        {isFiltered && (
+      {/* ── HOME MODE ── */}
+      {!isFiltered && (
+        <>
+        {/* Trending – portrait */}
+        <RowSection
+          title="Les plus tendances"
+          subtitle="Cette semaine"
+          items={trending}
+          loading={trending.length === 0}
+          variant="portrait"
+          onSeeAll={() => router.push('/popular')}
+        />
+
+        {/* Popular – portrait */}
+        <RowSection
+          title="Les plus populaires"
+          subtitle="Tous les temps"
+          items={popular}
+          loading={popular.length === 0}
+          variant="portrait"
+          onSeeAll={() => router.push('/popular')}
+        />
+
+        {/* Court métrage – landscape */}
+        {(courtMetrage.length > 0 || loading) && (
           <RowSection
-            title={debouncedSearch.trim() ? `"${debouncedSearch}"` : activeTab}
-            subtitle={!loading && !error ? `${works.length} œuvres` : undefined}
-            items={portraitWorks}
-            loading={loading}
-            variant="portrait"
+          title="Courts métrages"
+          subtitle="Moins de 60 min"
+          items={courtMetrage}
+          loading={loading}
+          variant="landscape"
           />
         )}
 
-        {/* ── HOME MODE ── */}
-        {!isFiltered && (
-          <>
-            {/* Trending – portrait */}
-            <RowSection
-              title="Les plus tendances"
-              subtitle="Cette semaine"
-              items={trending}
-              loading={trending.length === 0}
-              variant="portrait"
-              onSeeAll={() => router.push('/popular')}
-            />
-
-            {/* Popular – portrait */}
-            <RowSection
-              title="Les plus populaires"
-              subtitle="Tous les temps"
-              items={popular}
-              loading={popular.length === 0}
-              variant="portrait"
-              onSeeAll={() => router.push('/popular')}
-            />
-
-            {/* Court métrage – landscape */}
-            {(courtMetrage.length > 0 || loading) && (
-              <RowSection
-                title="Courts métrages"
-                subtitle="Moins de 60 min"
-                items={courtMetrage}
-                loading={loading}
-                variant="landscape"
-              />
-            )}
-
-            {/* Moyen métrage – landscape */}
-            {(moyenMetrage.length > 0 || loading) && (
-              <RowSection
-                title="Moyens métrages"
-                subtitle="60 – 100 min"
-                items={moyenMetrage}
-                loading={loading}
-                variant="landscape"
-              />
-            )}
-
-            {/* Long métrage – landscape */}
-            {(longMetrage.length > 0 || loading) && (
-              <RowSection
-                title="Longs métrages"
-                subtitle="Plus de 100 min"
-                items={longMetrage}
-                loading={loading}
-                variant="landscape"
-              />
-            )}
-
-            {/* Popular banner (footer CTA) */}
-            <TouchableOpacity
-              style={ms.banner}
-              activeOpacity={0.85}
-              onPress={() => router.push('/popular')}
-            >
-              <BlurView intensity={25} tint="dark" style={ms.bannerBlur}>
-                <LinearGradient
-                  colors={['rgba(245,166,35,0.12)', 'rgba(245,166,35,0.04)']}
-                  style={StyleSheet.absoluteFill}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                />
-                <View style={ms.bannerLeft}>
-                  <View style={ms.bannerIcon}>
-                    <Ionicons name="flame" size={18} color={T.gold} />
-                  </View>
-                  <View>
-                    <Text style={ms.bannerTitle}>Populaires cette semaine</Text>
-                    <Text style={ms.bannerSub}>Voir tout le classement</Text>
-                  </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={T.gold} />
-              </BlurView>
-            </TouchableOpacity>
-          </>
+        {/* Moyen métrage – landscape */}
+        {(moyenMetrage.length > 0 || loading) && (
+          <RowSection
+          title="Moyens métrages"
+          subtitle="60 – 100 min"
+          items={moyenMetrage}
+          loading={loading}
+          variant="landscape"
+          />
         )}
+
+        {/* Long métrage – landscape */}
+        {(longMetrage.length > 0 || loading) && (
+          <RowSection
+          title="Longs métrages"
+          subtitle="Plus de 100 min"
+          items={longMetrage}
+          loading={loading}
+          variant="landscape"
+          />
+        )}
+
+        {/* Popular banner (footer CTA) */}
+        <TouchableOpacity
+          style={ms.banner}
+          activeOpacity={0.85}
+          onPress={() => router.push('/popular')}
+        >
+          <BlurView intensity={25} tint="dark" style={ms.bannerBlur}>
+          <LinearGradient
+            colors={['rgba(245,166,35,0.12)', 'rgba(245,166,35,0.04)']}
+            style={StyleSheet.absoluteFill}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          />
+          <View style={ms.bannerLeft}>
+            <View style={ms.bannerIcon}>
+            <Ionicons name="flame" size={18} color={T.gold} />
+            </View>
+            <View>
+            <Text style={ms.bannerTitle}>Populaires cette semaine</Text>
+            <Text style={ms.bannerSub}>Voir tout le classement</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={T.gold} />
+          </BlurView>
+        </TouchableOpacity>
+        </>
+      )}
       </Animated.ScrollView>
     </View>
   );

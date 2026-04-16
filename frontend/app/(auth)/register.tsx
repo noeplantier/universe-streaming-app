@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView,
-  Platform, ActivityIndicator, Alert, ScrollView,
+  Platform, Alert, ScrollView,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -116,9 +116,7 @@ export default function RegisterScreen() {
                 activeOpacity={0.85}
                 style={{ marginTop: 8 }}
               >
-                <LinearGradient colors={GRADIENTS.primary} style={styles.submitBtn} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>Créer mon compte</Text>}
-                </LinearGradient>
+           
               </TouchableOpacity>
             </View>
 

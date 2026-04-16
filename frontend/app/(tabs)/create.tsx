@@ -169,12 +169,11 @@ const tb = StyleSheet.create({
   },
 
   pillBlur: {
-    borderRadius:  14,
+    borderRadius:  15,
     overflow:      'hidden',
-    // surcouche sombre supplémentaire pour iOS (BlurView donne du blanc)
-    backgroundColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: C.navyMid,
     borderWidth:    0.5,
-    borderColor:    PALETTE.activeBorder,
+    borderColor:    "white",
   },
 
   // Trait lumineux 1 px en haut du pill actif

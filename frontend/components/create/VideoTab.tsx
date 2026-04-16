@@ -142,7 +142,7 @@ import React, {
       );
       setUploading(false);
       if (result) {
-        router.replace({ pathname: '/(tabs)/reels', params: { newReelId: result.id } });
+        router.replace({ pathname: '/(tabs)/create', params: { newReelId: result.id } });
       } else {
         Alert.alert('Erreur', "L'upload a échoué. Vérifiez votre connexion et réessayez.");
       }
@@ -175,67 +175,61 @@ import React, {
           {step === 2 && (
             <StepPublish
               meta={meta}
-              videoFileName={videoFileName}
               trimStart={trimStart}
               trimEnd={trimEnd}
               uploading={uploading}
               uploadProgress={uploadProgress}
               uploadMsg={uploadMsg}
-              onUpload={handleUpload}
-            />
+              onUpload={handleUpload} videoUri={''}          
+                />
           )}
           <View style={{ height: 40 }} />
         </Animated.ScrollView>
   
         {/* Footer */}
-        {step < 2 && (
-          <View style={s.footer}>
-            <View style={s.footerRow}>
-              {step > 0 && (
-                <TouchableOpacity style={s.footerBack} onPress={goPrev}>
-                  <Ionicons name="chevron-back" size={18} color={C.textSec} />
-                  <Text style={s.footerBackTxt}>Retour</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[s.footerNext, !canContinue && { opacity: 0.45 }, step === 0 && { marginLeft: 'auto' as any }]}
-                onPress={goNext}
-                disabled={!canContinue}
-                activeOpacity={0.85}
-              >
-                <LinearGradient
-                  colors={canContinue ? [C.teal, C.navyMid] : [C.surf, C.surf]}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={s.footerNextGrad}
-                >
-                  <Text style={[s.footerNextTxt, !canContinue && { color: C.textTert }]}>
-                    {step === 0 ? 'Informations' : 'Aperçu'}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={16} color={canContinue ? 'white' : C.textTert} />
-                </LinearGradient>
+        <View style={s.footer}>
+          <View style={s.footerRow}>
+            {step > 0 && (
+              <TouchableOpacity style={s.footerBack} onPress={goPrev}>
+          <Ionicons name="chevron-back" size={18} color={C.textSec} />
+          <Text style={s.footerBackTxt}>Retour</Text>
               </TouchableOpacity>
-            </View>
-            {!canContinue && errorHint.length > 0 && (
-              <Text style={s.footerHint}>{errorHint}</Text>
             )}
+            <TouchableOpacity
+              style={[s.footerNext, !canContinue && { opacity: 0.45 }, step === 0 && { marginLeft: 'auto' as any }]}
+              onPress={goNext}
+              disabled={!canContinue}
+              activeOpacity={0.85}
+            >
+              <View style={[s.footerNextGrad, { backgroundColor: C.navyMid }]}>
+          <Text style={[s.footerNextTxt, !canContinue && { color: C.textTert }]}>
+            {step === 0 ? 'Informations' : 'Aperçu'}
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={canContinue ? 'white' : C.textTert} />
+              </View>
+            </TouchableOpacity>
           </View>
-        )}
-      </KeyboardAvoidingView>
-    );
-  });
-  
-  export default VideoTab;
-  
-  const s = StyleSheet.create({
-    backRow:        { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
-    backBtn:        { width: 38, height: 38, borderRadius: 19, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-    scroll:         { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
-    footer:         { borderTopWidth: 1, borderTopColor: C.border, paddingTop: 14, paddingHorizontal: 20, paddingBottom: 16 },
-    footerRow:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    footerBack:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 14 },
-    footerBackTxt:  { color: C.textSec, fontSize: 14, fontWeight: '600' },
-    footerNext:     { flex: 1, borderRadius: 22, overflow: 'hidden' },
-    footerNextGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15 },
-    footerNextTxt:  { color: 'white', fontSize: 15, fontWeight: '700' },
-    footerHint:     { textAlign: 'center', color: C.textTert, fontSize: 11, marginTop: 8, fontStyle: 'italic' },
-  });
+          {!canContinue && errorHint.length > 0 && (
+            <Text style={s.footerHint}>{errorHint}</Text>
+          )}
+        </View>
+        
+            </KeyboardAvoidingView>
+          );
+        });
+        
+        export default VideoTab;
+        
+        const s = StyleSheet.create({
+          backRow:        { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 },
+          backBtn:        { width: 38, height: 38, borderRadius: 19, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
+          scroll:         { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
+          footer:         { borderTopWidth: 1, borderTopColor: C.border, paddingTop: 14, paddingHorizontal: 20, paddingBottom: 16, marginBottom: 90 },
+          footerRow:      { flexDirection: 'row', alignItems: 'center', gap: 12 },
+          footerBack:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 14 },
+          footerBackTxt:  { color: C.textSec, fontSize: 14, fontWeight: '600' },
+          footerNext:     { flex: 1, borderRadius: 15, overflow: 'hidden', borderColor: C.textTert, borderWidth: 1 },
+          footerNextGrad: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15 },
+          footerNextTxt:  { color: 'white', fontSize: 15, fontWeight: '700' },
+          footerHint:     { textAlign: 'center', color: C.textTert, fontSize: 11, marginTop: 8, fontStyle: 'italic' },
+        });

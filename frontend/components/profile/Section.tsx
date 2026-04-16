@@ -43,7 +43,7 @@ export const SectionHeader = memo(({
     </View>
     {onViewAll && (
       <TouchableOpacity onPress={onViewAll} style={sh.viewAllBtn} activeOpacity={0.7}>
-        <Text style={[sh.viewAllTxt, { color: accentColor }]}>Voir tout</Text>
+        <Text style={[sh.viewAllTxt, { color: "#fff" }]}>Voir tout</Text>
         <Ionicons name="chevron-forward" size={12} color={accentColor} />
       </TouchableOpacity>
     )}

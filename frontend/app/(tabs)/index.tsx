@@ -1,4 +1,3 @@
-
 import React, {
   memo,
   useCallback,
@@ -34,7 +33,7 @@ import type { FeedFilm } from '@/components/reels/types';
 import { supabase } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔑 TYPES
+// TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 interface SupabaseReel {
   id:          string;
@@ -57,7 +56,7 @@ export interface VideoProgress {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🗺️ MAPPER Supabase → FeedFilm
+// MAPPER Supabase → FeedFilm (pur, mémoïsable)
 // ─────────────────────────────────────────────────────────────────────────────
 function mapReelToFeedFilm(reel: SupabaseReel): FeedFilm {
   return {
@@ -81,19 +80,21 @@ function mapReelToFeedFilm(reel: SupabaseReel): FeedFilm {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 📡 HOOK — chargement + realtime Supabase
+// HOOK — chargement + realtime + actions optimistes
 // ─────────────────────────────────────────────────────────────────────────────
 function useReelsFeed(feedKey: MenuKey) {
   const [films,   setFilms]   = useState<FeedFilm[]>(MOCK_FEED);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
 
+  // ── Fetch initial ──────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
     async function loadFeed() {
       setLoading(true);
       setError(null);
+
       try {
         let query = supabase
           .from('reels')
@@ -108,6 +109,7 @@ function useReelsFeed(feedKey: MenuKey) {
               .from('follows')
               .select('following_id')
               .eq('follower_id', user.id);
+
             const ids = (followingIds ?? []).map(
               (f: { following_id: string }) => f.following_id,
             );
@@ -118,6 +120,7 @@ function useReelsFeed(feedKey: MenuKey) {
         const { data, error: fetchError } = await query;
         if (cancelled) return;
         if (fetchError) throw fetchError;
+
         setFilms(data?.length ? data.map(mapReelToFeedFilm) : MOCK_FEED);
       } catch (err) {
         if (!cancelled) {
@@ -134,7 +137,8 @@ function useReelsFeed(feedKey: MenuKey) {
     return () => { cancelled = true; };
   }, [feedKey]);
 
-  // Realtime — channel singleton par session
+  // ── Realtime INSERT — channel singleton par session ────────────────────────
+  // Ce canal reçoit automatiquement les POSTs faits par StepPublish.
   useEffect(() => {
     const ch = supabase
       .channel('reels:insert')
@@ -149,10 +153,11 @@ function useReelsFeed(feedKey: MenuKey) {
         },
       )
       .subscribe();
+
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  // Like optimiste + sync DB
+  // ── Like optimiste + sync DB ───────────────────────────────────────────────
   const toggleLike = useCallback((filmId: string) => {
     setFilms(prev =>
       prev.map(f => {
@@ -168,7 +173,7 @@ function useReelsFeed(feedKey: MenuKey) {
     );
   }, []);
 
-  // Incrément vues fire-and-forget
+  // ── Vues fire-and-forget ───────────────────────────────────────────────────
   const incrementViews = useCallback((filmId: string) => {
     supabase.rpc('increment_views', { reel_id: filmId }).then(() => {});
   }, []);
@@ -176,44 +181,8 @@ function useReelsFeed(feedKey: MenuKey) {
   return { films, setFilms, loading, error, toggleLike, incrementViews };
 }
 
-
-const pb = StyleSheet.create({
-  track: {
-    position:        'absolute',
-    bottom:          0,
-    left:            0,
-    right:           0,
-    height:          2,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    overflow:        'visible',
-    zIndex:          60,
-  },
-  fill: {
-    height:          '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius:    1,
-  },
-  thumb: {
-    position:        'absolute',
-    top:             -3,
-    width:           8,
-    height:          8,
-    borderRadius:    4,
-    backgroundColor: '#FFFFFF',
-    marginLeft:      -4,
-    ...Platform.select({
-      ios: {
-        shadowColor:   '#fff',
-        shadowOpacity: 0.9,
-        shadowRadius:  4,
-        shadowOffset:  { width: 0, height: 0 },
-      },
-    }),
-  },
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
-// ⚠️ BANNIÈRE ERREUR
+// BANNIÈRE ERREUR
 // ─────────────────────────────────────────────────────────────────────────────
 const ErrorBanner = memo(({ message }: { message: string }) => (
   <View style={eb.wrap}>
@@ -224,22 +193,24 @@ ErrorBanner.displayName = 'ErrorBanner';
 
 const eb = StyleSheet.create({
   wrap: {
-    position:        'absolute', bottom: 100, left: 20, right: 20, zIndex: 99,
+    position: 'absolute', bottom: 100, left: 20, right: 20, zIndex: 99,
     backgroundColor: 'rgba(255,59,92,0.18)', borderRadius: 12,
-    borderWidth:      1, borderColor: 'rgba(255,59,92,0.35)',
+    borderWidth: 1, borderColor: 'rgba(255,59,92,0.35)',
     paddingHorizontal: 14, paddingVertical: 10,
   },
   txt: { color: '#FF3B5C', fontSize: 12, textAlign: 'center' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎬 ÉCRAN PRINCIPAL
+// ÉCRAN PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ReelsScreen() {
   const { width: W, height: H } = useWindowDimensions();
   const insets  = useSafeAreaInsets();
   const router  = useRouter();
-  const params  = useLocalSearchParams<{ newReelId?: string }>();
+
+  // newReelId transmis par StepPublish via router.replace(…, { params: { newReelId } })
+  const { newReelId } = useLocalSearchParams<{ newReelId?: string }>();
 
   const ITEM_H = H;
 
@@ -253,58 +224,33 @@ export default function ReelsScreen() {
   const scrollY     = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
 
-  // Animated.Value pour la barre de progression (0 → 1, native driver)
-  const videoProgress = useRef(new Animated.Value(0)).current;
-
   // ── Feed ──────────────────────────────────────────────────────────────────
   const { films, setFilms, loading, error, toggleLike, incrementViews } =
     useReelsFeed(feedKey);
 
-  // ── Reset barre quand on change d'item ────────────────────────────────────
-  useEffect(() => {
-    videoProgress.setValue(0);
-  }, [activeIndex]);
-
-  // ── Callback progression vidéo (remontée depuis FeedItem) ─────────────────
-  // FeedItem doit appeler onProgress({ positionMs, durationMs })
-  // depuis son onPlaybackStatusUpdate
-  const handleProgress = useCallback(
-    ({ positionMs, durationMs }: VideoProgress) => {
-      if (durationMs <= 0) return;
-      const ratio = Math.min(positionMs / durationMs, 1);
-      // setNativeProps-style via Animated : 0 setState, 0 re-render
-      videoProgress.setValue(ratio);
-    },
-    [videoProgress],
-  );
-
-  // ── Callback info ──────────────────────────────────────────────────────────
-  const handleInfoPress = useCallback(
-    (film: FeedFilm) => {
-      if (Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      setInfoFilm(film);
-    },
-    [],
-  );
-  const handleInfoClose = useCallback(() => setInfoFilm(null), []);
-
-  // ── Scroll vers nouveau reel post-upload ──────────────────────────────────
-  const newReelId     = params.newReelId;
+  // ── Scroll automatique vers le reel nouvellement publié ───────────────────
+  // Déclenché dès que newReelId (param router) + films sont dispo.
+  // Le canal realtime garantit que le film est dans la liste avant ce scroll.
   const scrolledToNew = useRef(false);
 
   useEffect(() => {
     if (!newReelId || scrolledToNew.current || !films.length) return;
+
     const idx = films.findIndex(f => f.id === newReelId);
     if (idx === -1) return;
+
     scrolledToNew.current = true;
     InteractionManager.runAfterInteractions(() => {
       flatListRef.current?.scrollToIndex({ index: idx, animated: true });
     });
   }, [newReelId, films]);
 
-  // ── Focus ─────────────────────────────────────────────────────────────────
+  // Reset scrolledToNew quand le param change (navigation vers un autre reel)
+  useEffect(() => {
+    scrolledToNew.current = false;
+  }, [newReelId]);
+
+  // ── Focus screen ──────────────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
       setScreenFocused(true);
@@ -312,7 +258,38 @@ export default function ReelsScreen() {
     }, []),
   );
 
-  // ── Viewability — ref stable, jamais recréée ──────────────────────────────
+  // ── Callbacks info ────────────────────────────────────────────────────────
+  const handleInfoPress = useCallback((film: FeedFilm) => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setInfoFilm(film);
+  }, []);
+
+  const handleInfoClose = useCallback(() => setInfoFilm(null), []);
+
+  // ── Callback progression vidéo ────────────────────────────────────────────
+  const handleProgress = useCallback(
+    ({ positionMs, durationMs }: VideoProgress) => {
+      // Géré localement par FeedItem — pas de state global nécessaire.
+    },
+    [],
+  );
+
+  // ── Follow friend ─────────────────────────────────────────────────────────
+  const handleFollowFriend = useCallback((fid: string) => {
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    setFilms(prev =>
+      prev.map(film => ({
+        ...film,
+        liked_by_friends: film.liked_by_friends.map(f =>
+          f.id === fid ? { ...f, followed: true } : f,
+        ),
+      })),
+    );
+  }, [setFilms]);
+
+  // ── Viewability (refs stables) ────────────────────────────────────────────
   const viewabilityConfig = useRef({
     itemVisiblePercentThreshold: 60,
   }).current;
@@ -324,25 +301,7 @@ export default function ReelsScreen() {
     },
   ).current;
 
-  // ── Follow friend ─────────────────────────────────────────────────────────
-  const handleFollowFriend = useCallback(
-    (fid: string) => {
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-      setFilms(prev =>
-        prev.map(film => ({
-          ...film,
-          liked_by_friends: film.liked_by_friends.map(f =>
-            f.id === fid ? { ...f, followed: true } : f,
-          ),
-        })),
-      );
-    },
-    [setFilms],
-  );
-
-  // ── Render item — aucune closure inline ───────────────────────────────────
+  // ── Render item ───────────────────────────────────────────────────────────
   const renderItem = useCallback(
     ({ item, index }: { item: FeedFilm; index: number }) => (
       <FeedItem
@@ -393,7 +352,7 @@ export default function ReelsScreen() {
     <View style={s.root}>
       <StatusBar style="light" translucent />
 
-      {/* ── Feed plein écran ─────────────────────────────────────────────── */}
+      {/* Feed plein écran */}
       <FlatList
         ref={flatListRef}
         data={films}
@@ -413,7 +372,6 @@ export default function ReelsScreen() {
         onScroll={onScroll}
         scrollEventThrottle={16}
 
-        // windowSize=5 → -2/-1/active/+1/+2 montés simultanément
         windowSize={5}
         maxToRenderPerBatch={2}
         updateCellsBatchingPeriod={50}
@@ -425,9 +383,7 @@ export default function ReelsScreen() {
         directionalLockEnabled
       />
 
-     
-
-      {/* ── Header flottant ───────────────────────────────────────────────── */}
+      {/* Header flottant */}
       <SafeAreaView edges={['top']} style={s.headerSafe} pointerEvents="box-none">
         <TopHeader
           feedKey={feedKey}
@@ -436,10 +392,10 @@ export default function ReelsScreen() {
         />
       </SafeAreaView>
 
-      {/* ── Bannière erreur ───────────────────────────────────────────────── */}
+      {/* Bannière erreur */}
       {error && <ErrorBanner message={error} />}
 
-      {/* ── Sidebar feed ─────────────────────────────────────────────────── */}
+      {/* Sidebar feed */}
       <Modal
         visible={menuOpen}
         transparent
@@ -455,7 +411,7 @@ export default function ReelsScreen() {
         />
       </Modal>
 
-      {/* ── InfoSheet ─────────────────────────────────────────────────────── */}
+      {/* InfoSheet */}
       <InfoSheet film={infoFilm} onClose={handleInfoClose} />
     </View>
   );
