@@ -787,12 +787,6 @@ const VideoTab = memo(function VideoTab() {
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-      {/* Back */}
-      <View style={wiz.backRow}>
-        <TouchableOpacity style={wiz.backBtn} onPress={goPrev} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Ionicons name="chevron-back" size={18} color={P.txtSec} />
-        </TouchableOpacity>
-      </View>
 
       <StepIndicator step={currentStep} />
 
@@ -941,7 +935,7 @@ const tabbar = StyleSheet.create({
     flexDirection:    'row',
     marginHorizontal:  16,
     marginBottom:      16,
-    backgroundColor:   'rgba(10,10,14,0.45)',
+    backgroundColor:   P.edge,
     borderRadius:      18,
     borderWidth:        0.5,
     borderColor:        P.edge,
@@ -995,8 +989,6 @@ const panels = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 const ScreenHeader = memo(() => (
   <View style={hdr.wrap}>
-    <Text style={hdr.title}>Créer</Text>
-    <View style={hdr.rule} />
   </View>
 ));
 

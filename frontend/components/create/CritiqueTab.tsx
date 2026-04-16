@@ -11,6 +11,7 @@ import React, {
   import { supabase }       from '@/lib/supabase';
   import { C }              from './tokens';
   import type { Critique, ReelRef } from './types';
+import { P } from '../reels/types';
   
   // ─────────────────────────────────────────────────────────────────────────────
   // Star rating widget
@@ -51,7 +52,7 @@ import React, {
     return (
       <View style={card.wrap}>
         <LinearGradient
-          colors={['rgba(124,58,237,0.06)', 'transparent']}
+          colors={[C.navyMid, C.navyMid]}
           style={StyleSheet.absoluteFill}
         />
         <View style={card.header}>
@@ -94,7 +95,7 @@ import React, {
   });
   
   const card = StyleSheet.create({
-    wrap:       { backgroundColor: C.surf, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14, overflow: 'hidden' },
+    wrap:       { backgroundColor: 'transparent', borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14, overflow: 'hidden' },
     header:     { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 8 },
     filmTitle:  { color: "white", fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
     titre:      { color: C.text, fontSize: 15, fontWeight: '800' },
