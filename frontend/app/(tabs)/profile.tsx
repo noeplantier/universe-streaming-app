@@ -46,6 +46,8 @@ import {
   DEFAULT_REVIEWS,
   DEFAULT_SEEN,
   OWN_REELS,
+  OWN_EPISODES_MID,
+  OWN_EPISODES_LONG,
   poster, // ✅ important (pas de thumbnail_url -> on génère une image)
   type FilmItem,
   type ReviewItem,
@@ -360,7 +362,7 @@ export default function ProfileScreen() {
           subtitle="Tes œuvres préférées classées"
           count={favFilms.length}
           accentColor={G.gold}
-          onViewAll={() => router.push('/profile/favorites')}
+          onViewAll={() => router.push('/profile/favorites' as any)}
         />
 
         {favFilms.length === 0 ? (
@@ -438,33 +440,78 @@ export default function ProfileScreen() {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // 🎬 TAB 1 — Reels content
-  // ─────────────────────────────────────────────────────────────────────────
-  function renderReelsContent() {
-    return (
-      <View>
-        <SectionHeader
-          icon="videocam"
-          label="Mes courts métrages"
-          subtitle="Sélection festival"
-          accentColor={G.primary}
-          onViewAll={() => router.push('/profile/reels' as any)}
-        />
-        <HScrollRow paddingBottom={8}>
-          {OWN_REELS.map((reel) => (
-            <ReelCard
-              key={reel.id}
-              reel={reel}
-              onPress={() => router.push(`/reel/${reel.id}` as any)}
-            />
-          ))}
-        </HScrollRow>
-        <View style={{ height: 110 }} />
-      </View>
-    );
-  }
+// ─────────────────────────────────────────────────────────────────────────
+// 🎬 TAB 1 — Reels content (+ Mid / Long lignes)
+// ─────────────────────────────────────────────────────────────────────────
+function renderReelsContent() {
+  return (
+    <View>
+      {/* 1) Courts métrages (Reels) */}
+      <SectionHeader
+        icon="videocam"
+        label="Mes courts métrages"
+        subtitle="Sélection festival"
+        accentColor={G.primary}
+        onViewAll={() => router.push('/profile/reels' as any)}
+      />
 
+      <HScrollRow paddingBottom={8}>
+        {OWN_REELS.map((reel) => (
+          <ReelCard
+            key={reel.id}
+            reel={reel}
+            onPress={() => router.push(`/reel/${reel.id}` as any)}
+          />
+        ))}
+      </HScrollRow>
+
+      <View style={pg.divider} />
+
+      {/* 2) Ligne Mid */}
+      <SectionHeader
+        icon="tv"
+        label="Mes moyens métrages"
+        subtitle="Sélection festival"
+        accentColor={G.primary}
+        onViewAll={() => router.push('/profile/episodes-mid' as any)}
+      />
+
+      <HScrollRow paddingBottom={8}>
+        {OWN_EPISODES_MID.map((ep) => (
+          <ReelCard
+            key={ep.id}
+            reel={ep} // <- si ton ReelCard attend un shape différent, remplace par EpisodeCard
+            onPress={() => router.push(`/episode/${ep.id}` as any)}
+          />
+        ))}
+      </HScrollRow>
+
+      <View style={pg.divider} />
+
+      {/* 3) Ligne Long */}
+      <SectionHeader
+        icon="film"
+        label="Mes longs métrages"
+        subtitle="Sélection festival"
+        accentColor={G.primary}
+        onViewAll={() => router.push('/profile/episodes-long' as any)}
+      />
+
+      <HScrollRow paddingBottom={8}>
+        {OWN_EPISODES_LONG.map((ep) => (
+          <ReelCard
+            key={ep.id}
+            reel={ep} // <- idem : adapter selon ReelCard
+            onPress={() => router.push(`/episode/${ep.id}` as any)}
+          />
+        ))}
+      </HScrollRow>
+
+      {/* padding final */}
+      <View style={{ height: 110 }} />
+    </View>
+  );
+}
   // ─────────────────────────────────────────────────────────────────────────
   // 🖼️ RENDER
   // ─────────────────────────────────────────────────────────────────────────
@@ -634,11 +681,8 @@ const pg = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     borderTopWidth: 0.5,
-    borderTopColor: 'rgba(255,255,255,0.07)',
     borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(255,255,255,0.07)',
-    backgroundColor: 'rgba(13,13,18,0.60)',
   },
   tabItem: { flex: 1, alignItems: 'center', paddingVertical: 11, position: 'relative' },
-  tabIndicator: { position: 'absolute', top: 0, left: 0, right: 0, height: 1, backgroundColor: G.text },
+  tabIndicator: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
 });
