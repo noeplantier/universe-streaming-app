@@ -119,17 +119,20 @@ async function uploadReel(
       payload = decode(b64);
     }
 
+    const { data: session } = await supabase.auth.getSession();
+console.log('session?', !!session?.session);
+
     // ── Upload Storage ─────────────────────────────────────────────────────
     onProgress(30, 'Upload vidéo…');
 
     const { data: storageData, error: storageErr } = await supabase.storage
-      .from('social')
-      .upload(`videos/${filename}`, payload as any, {
-        contentType: mime,
-        upsert:      false,
-      });
-
-    if (storageErr) throw storageErr;
+    .from('social')
+    .upload(`videos/${filename}`, payload as any, { contentType: mime, upsert: false });
+  
+  console.log('storageErr=', storageErr);
+  console.log('storageData=', storageData);
+  
+  if (storageErr) throw storageErr;
 
     onProgress(65, 'Métadonnées…');
 
@@ -170,34 +173,32 @@ async function uploadReel(
       // L'API route n'est pas joignable → fallback direct Supabase
     }
 
-    // ── Fallback : insert Supabase si POST API échoue ─────────────────────
-    if (!reelId) {
-      const { data, error } = await supabase
-        .from('reels')
-        .insert({
-          user_id:     userId,
-          video_url:   videoUrl,
-          title:       meta.title.trim(),
-          genre:       meta.genre,
-          director:    meta.director.trim(),
-          year:        meta.year.trim(),
-          synopsis:    meta.synopsis.trim(),
-          duration:    MAX_DURATION,
-          likes_count: 0,
-          views_count: 0,
-          created_at:  new Date().toISOString(),
-        })
-        .select('id')
-        .single();
+    // ── Insert Supabase (Option A) ────────────────────────────────
+    const { data, error } = await supabase
+      .from('reels')
+      .insert({
+        user_id:     userId,
+        video_url:   videoUrl,
+        title:       meta.title.trim(),
+        genre:       meta.genre,
+        director:    meta.director.trim(),
+        year:        meta.year.trim(),
+        synopsis:    meta.synopsis.trim(),
+        duration:    MAX_DURATION,
+        likes_count: 0,
+        views_count: 0,
+        created_at:  new Date().toISOString(),
+      })
+      .select('id')
+      .single();
 
-      if (error) throw error;
-      reelId = data?.id ?? null;
-    }
+    if (error) throw error;
 
-    if (!reelId) throw new Error('No reel ID returned');
+    const finalReelId = data?.id ?? null;
+    if (!finalReelId) throw new Error('No reel ID returned');
 
     onProgress(100, 'Publié !');
-    return { id: reelId, video_url: videoUrl };
+    return { id: finalReelId, video_url: videoUrl };
   } catch (e) {
     console.error('[uploadReel]', e);
     return null;
@@ -779,7 +780,7 @@ const VideoTab = memo(function VideoTab() {
 
     if (result) {
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace({ pathname: '/(tabs)/reels', params: { newReelId: result.id } });
+      router.replace({ pathname: '/(tabs)/index', params: { newReelId: result.id } });
     } else {
       Alert.alert('Erreur', "L'upload a échoué. Vérifiez votre connexion.");
     }

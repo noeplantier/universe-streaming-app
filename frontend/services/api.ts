@@ -79,12 +79,6 @@ export const usersAPI = {
   follow: (id: string) => request(`/users/${id}/follow`, { method: 'POST' }),
 };
 
-// Films Seen
-export const seenAPI = {
-  markSeen: (filmId: string) =>
-    request('/films-seen', { method: 'POST', body: JSON.stringify({ film_id: filmId }) }),
-  getByUser: (userId: string) => request(`/films-seen?user_id=${userId}`),
-};
 
 // Watchlist
 export const watchlistAPI = {

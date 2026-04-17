@@ -1,11 +1,17 @@
-from config.settings import SUPABASE_URL, SUPABASE_KEY
-from supabase_client import supabase
 import logging
+from typing import Optional
+from supabase.client import Client
+from supabase_client import supabase
+from config.settings import SUPABASE_URL, SUPABASE_KEY
 
 logger = logging.getLogger(__name__)
 
-def get_supabase():
-    """Retourne le client Supabase"""
+def get_supabase() -> Optional[Client]:
+    """
+    Retourne le client Supabase.
+    L'utilisation de l'ORM Supabase (ex: supabase.table('...').select('...').eq('...')) 
+    sécurise nativement les appels contre les injections SQL.
+    """
     if not supabase:
         logger.error("❌ Client Supabase non initialisé")
         return None

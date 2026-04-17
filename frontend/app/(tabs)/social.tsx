@@ -995,7 +995,6 @@ const ComposeBar = memo(function ComposeBar({ onPress, userId }: { onPress: () =
 
 const cbar = StyleSheet.create({
   wrap:     { marginHorizontal: EDGE, marginBottom: 14, borderRadius: 18, borderWidth: 1, borderColor: C.border, flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, backgroundColor: C.surf, overflow: 'hidden' },
-  leftAccent:{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: C.navyBright, borderTopLeftRadius: 18, borderBottomLeftRadius: 18 },
   avi:      { width: 42, height: 42, borderRadius: 21, borderWidth: 1.5, borderColor: C.borderHi },
   body:     { flex: 1, gap: 2 },
   title:    { color: C.text, fontSize: 13, fontWeight: '700' },
