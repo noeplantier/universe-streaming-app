@@ -1,63 +1,80 @@
+/* eslint-disable react/display-name */
+/**
+ * create.tsx — Écran de création complet
+ * • Tab Vidéo  : wizard 3 étapes + upload Supabase Storage + POST API
+ * • Tab Critique: composant autonome (CritiqueTab)
+ * • Design     : glass morphism, quasi-transparent, GalaxyBackground visible
+ */
+
 import React, {
-  useState, useRef, useCallback, useMemo, useEffect, memo,
+  useCallback, useEffect, useMemo, useRef, useState, memo,
 } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Animated, KeyboardAvoidingView, Platform, Alert,
-  Dimensions, TextInput, ActivityIndicator,
+  ActivityIndicator, Alert, Animated, Dimensions,
+  KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
+  Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
-import { SafeAreaView }   from 'react-native-safe-area-context';
+import { SafeAreaView }  from 'react-native-safe-area-context';
+import { BlurView }      from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons }       from '@expo/vector-icons';
-import { StatusBar }      from 'expo-status-bar';
-import { useRouter }      from 'expo-router';
-import * as ImagePicker   from 'expo-image-picker';
-import * as FileSystem    from 'expo-file-system';
-import * as Haptics       from 'expo-haptics';
-import { decode }         from 'base64-arraybuffer';
+import { StatusBar }     from 'expo-status-bar';
+import { Ionicons }      from '@expo/vector-icons';
+import { useRouter }     from 'expo-router';
+import * as FileSystem   from 'expo-file-system';
+import * as Haptics      from 'expo-haptics';
+import * as ImagePicker  from 'expo-image-picker';
+import { decode }        from 'base64-arraybuffer';
 
 import GalaxyBackground from '@/components/social/GalaxyBackground';
+import CritiqueTab      from '@/components/create/CritiqueTab';
+import TrimBar          from '@/components/create/TrimBar';
 import { supabase }     from '@/lib/supabase';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
 const { width: W } = Dimensions.get('window');
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DESIGN TOKENS — GALACTIC
-// ─────────────────────────────────────────────────────────────────────────────
-const C = {
-  bg0:        '#03000A',
-  bg1:        '#07001A',
-  surf:       'rgba(255,255,255,0.05)',
-  surfHi:     'rgba(255,255,255,0.09)',
-  border:     'rgba(255,255,255,0.07)',
-  borderHi:   'rgba(255,255,255,0.15)',
-  borderAcc:  'rgba(0,201,255,0.30)',
-  text:       '#EDF6FF',
-  textSec:    '#8BA4BE',
-  textTert:   '#3D5470',
-  gold:       '#F5C842',
-  goldDim:    'rgba(245,200,66,0.12)',
-  teal:       '#00C9FF',
-  tealSoft:   'rgba(0,201,255,0.08)',
-  tealMid:    'rgba(0,201,255,0.20)',
-  tealGlow:   'rgba(0,201,255,0.45)',
-  navy:       '#0A1628',
-  navyMid:    '#0D2240',
-  green:      '#2ECC8A',
-  greenDim:   'rgba(46,204,138,0.14)',
-  red:        '#FF3B5C',
-} as const;
+const MAX_DURATION = 15;
 
 const GENRES = [
   'Drame', 'Thriller', 'Documentaire', 'Sci-Fi',
   'Animation', 'Expérimental', 'Biopic', 'Court métrage',
 ] as const;
 
-const MAX_DURATION = 15;
+// ─────────────────────────────────────────────────────────────────────────────
+// PALETTE — deep-space glass
+// ─────────────────────────────────────────────────────────────────────────────
+const P = {
+  bg:           '#03000A',
+  glass:        'rgba(255,255,255,0.04)',
+  glassMid:     'rgba(255,255,255,0.07)',
+  glassHi:      'rgba(255,255,255,0.11)',
+  edge:         'rgba(255,255,255,0.08)',
+  edgeMid:      'rgba(255,255,255,0.14)',
+  edgeHi:       'rgba(255,255,255,0.22)',
+  white:        '#FFFFFF',
+  txt:          '#EDF6FF',
+  txtSec:       'rgba(255,255,255,0.50)',
+  txtTert:      'rgba(255,255,255,0.24)',
+  teal:         '#00C9FF',
+  tealGlass:    'rgba(0,201,255,0.08)',
+  tealEdge:     'rgba(0,201,255,0.22)',
+  navy:         '#0A1628',
+  navyMid:      '#0D2240',
+  green:        '#2ECC8A',
+  greenGlass:   'rgba(46,204,138,0.10)',
+  greenEdge:    'rgba(46,204,138,0.22)',
+  gold:         '#F5C842',
+  goldGlass:    'rgba(245,200,66,0.08)',
+  goldEdge:     'rgba(245,200,66,0.18)',
+  red:          '#FF3B5C',
+  redGlass:     'rgba(255,59,92,0.10)',
+} as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
+type Tab  = 'video' | 'critique';
 type Step = 0 | 1 | 2;
 
 interface ReelMeta {
@@ -69,59 +86,94 @@ interface ReelMeta {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SUPABASE UPLOAD
+// UPLOAD — Supabase Storage + POST to API route
 // ─────────────────────────────────────────────────────────────────────────────
-async function uploadReelToSupabase(
+async function uploadReel(
   localUri:   string,
   meta:       ReelMeta,
   userId:     string,
   onProgress: (pct: number, msg: string) => void,
 ): Promise<{ id: string; video_url: string } | null> {
   try {
-    onProgress(10, 'Préparation du fichier…');
+    onProgress(5, 'Préparation…');
 
     const isBlob   = localUri.startsWith('blob:');
     const rawExt   = isBlob ? 'mp4' : (localUri.split('.').pop()?.toLowerCase() ?? 'mp4');
-    // Normalise mov -> mp4 (Supabase Storage n'accepte pas video/quicktime sans config)
     const ext      = rawExt === 'mov' ? 'mp4' : rawExt;
-    const mimeType = ext === 'mp4'  ? 'video/mp4'
-                   : ext === 'webm' ? 'video/webm'
-                   : `video/${ext}`;
+    const mime     = ext === 'mp4' ? 'video/mp4' : ext === 'webm' ? 'video/webm' : `video/${ext}`;
     const filename = `reel_${userId}_${Date.now()}.${ext}`;
 
-    // ── Lecture du fichier ────────────────────────────────────────────────
-    // Sur web/blob  : fetch().arrayBuffer() fonctionne normalement.
-    // Sur iOS/Android: fetch().arrayBuffer() envoie un body vide vers Supabase
-    //   → on passe par FileSystem.readAsStringAsync (base64) + decode()
-    let uploadPayload: ArrayBuffer;
+    // ── Lire le fichier ────────────────────────────────────────────────────
+    onProgress(15, 'Lecture du fichier…');
+
+    let payload: ArrayBuffer | Blob;
 
     if (Platform.OS === 'web' || isBlob) {
       const res = await fetch(localUri);
-      uploadPayload = await res.arrayBuffer();
+      payload   = await res.blob();            // Blob natif Web
     } else {
-      const base64 = await FileSystem.readAsStringAsync(localUri, {
-        encoding: FileSystem.EncodingType.Base64,
+      // iOS / Android → base64 + decode ArrayBuffer
+      const b64 = await FileSystem.readAsStringAsync(localUri, {
+        encoding: 'base64',
       });
-      uploadPayload = decode(base64);
+      payload = decode(b64);
     }
 
-    onProgress(30, 'Upload en cours…');
+    const { data: session } = await supabase.auth.getSession();
+console.log('session?', !!session?.session);
 
-    const { data: storageData, error: storageError } = await supabase.storage
-      .from('social')
-      .upload(`videos/${filename}`, uploadPayload, {
-        contentType: mimeType,
-        upsert:      false,
-      });
+    // ── Upload Storage ─────────────────────────────────────────────────────
+    onProgress(30, 'Upload vidéo…');
 
-    if (storageError) throw storageError;
+    const { data: storageData, error: storageErr } = await supabase.storage
+    .from('social')
+    .upload(`videos/${filename}`, payload as any, { contentType: mime, upsert: false });
+  
+  console.log('storageErr=', storageErr);
+  console.log('storageData=', storageData);
+  
+  if (storageErr) throw storageErr;
 
-    onProgress(70, 'Enregistrement des métadonnées…');
+    onProgress(65, 'Métadonnées…');
 
     const videoUrl = supabase.storage
       .from('social')
       .getPublicUrl(storageData.path).data.publicUrl;
 
+    // ── POST to API route (index.tsx / reels endpoint) ─────────────────────
+    // Construit un FormData pour le POST — compatible Expo Router API routes
+    const form = new FormData();
+    form.append('user_id',  userId);
+    form.append('video_url', videoUrl);
+    form.append('title',    meta.title.trim());
+    form.append('genre',    meta.genre);
+    form.append('director', meta.director.trim());
+    form.append('year',     meta.year.trim());
+    form.append('synopsis', meta.synopsis.trim());
+    form.append('duration', String(MAX_DURATION));
+
+    onProgress(80, 'Publication…');
+
+    // Tentative POST vers l'API route
+    // → Ajustez l'URL selon votre endpoint Expo Router (ex: /api/reels)
+    let reelId: string | null = null;
+
+    try {
+      const apiRes = await fetch('/api/reels', {
+        method:  'POST',
+        body:    form,
+        headers: { Accept: 'application/json' },
+      });
+
+      if (apiRes.ok) {
+        const json = await apiRes.json();
+        reelId = json?.id ?? null;
+      }
+    } catch {
+      // L'API route n'est pas joignable → fallback direct Supabase
+    }
+
+    // ── Insert Supabase (Option A) ────────────────────────────────
     const { data, error } = await supabase
       .from('reels')
       .insert({
@@ -137,13 +189,16 @@ async function uploadReelToSupabase(
         views_count: 0,
         created_at:  new Date().toISOString(),
       })
-      .select('id, video_url')
+      .select('id')
       .single();
 
     if (error) throw error;
 
+    const finalReelId = data?.id ?? null;
+    if (!finalReelId) throw new Error('No reel ID returned');
+
     onProgress(100, 'Publié !');
-    return data as { id: string; video_url: string };
+    return { id: finalReelId, video_url: videoUrl };
   } catch (e) {
     console.error('[uploadReel]', e);
     return null;
@@ -151,166 +206,83 @@ async function uploadReelToSupabase(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// GLASS CARD — wrapper semi-transparent
+// ─────────────────────────────────────────────────────────────────────────────
+interface GlassCardProps { children: React.ReactNode; style?: object }
+
+const GlassCard = memo(({ children, style }: GlassCardProps) => (
+  <View style={[gc.wrap, style]}>
+    <BlurView
+      intensity={Platform.OS === 'ios' ? 16 : 10}
+      tint="dark"
+      style={StyleSheet.absoluteFillObject}
+    />
+    {children}
+  </View>
+));
+GlassCard.displayName = 'GlassCard';
+
+const gc = StyleSheet.create({
+  wrap: {
+    borderRadius:    20,
+    borderWidth:      0.5,
+    borderColor:      P.edge,
+    overflow:        'hidden',
+    backgroundColor:  P.glass,
+    marginBottom:     14,
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // STEP INDICATOR
 // ─────────────────────────────────────────────────────────────────────────────
-const STEP_LABELS = ['Import', 'Infos', 'Publication'] as const;
+const STEP_LABELS = ['Import', 'Infos', 'Publier'] as const;
 
-const StepIndicator = memo(function StepIndicator({ step }: { step: Step }) {
-  return (
-    <View style={si.wrap}>
-      {STEP_LABELS.map((label, i) => {
-        const done   = i < step;
-        const active = i === step;
-        return (
-          <React.Fragment key={label}>
-            <View style={si.item}>
-              <View style={[
-                si.dot,
-                done   && si.dotDone,
-                active && si.dotActive,
-                !done && !active && si.dotInactive,
-              ]}>
-                {done
-                  ? <Ionicons name="checkmark" size={11} color="white" />
-                  : <Text style={[si.dotTxt, active && { color: 'white' }]}>{i + 1}</Text>
-                }
-              </View>
-              <Text style={[si.label, active && si.labelActive, done && si.labelDone]}>
-                {label}
-              </Text>
+const StepIndicator = memo(({ step }: { step: Step }) => (
+  <View style={si.wrap}>
+    {STEP_LABELS.map((lbl, i) => {
+      const done   = i < step;
+      const active = i === step;
+      return (
+        <React.Fragment key={lbl}>
+          <View style={si.item}>
+            <View style={[si.dot, done && si.dotDone, active && si.dotActive]}>
+              {done
+                ? <Ionicons name="checkmark" size={10} color="white" />
+                : <Text style={[si.dotNum, active && { color: P.white }]}>{i + 1}</Text>
+              }
             </View>
-            {i < STEP_LABELS.length - 1 && (
-              <View style={[si.line, done && si.lineDone]} />
-            )}
-          </React.Fragment>
-        );
-      })}
-    </View>
-  );
-});
+            <Text style={[si.lbl, active && si.lblActive, done && si.lblDone]}>
+              {lbl}
+            </Text>
+          </View>
+          {i < STEP_LABELS.length - 1 && (
+            <View style={[si.line, done && si.lineDone]} />
+          )}
+        </React.Fragment>
+      );
+    })}
+  </View>
+));
 
 const si = StyleSheet.create({
-  wrap:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 28, marginBottom: 24 },
-  item:        { alignItems: 'center', gap: 5 },
-  dot:         { width: 28, height: 28, borderRadius: 14, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  dotActive:   { backgroundColor: C.teal, borderColor: C.teal },
-  dotDone:     { backgroundColor: C.green, borderColor: C.green },
-  dotInactive: {},
-  dotTxt:      { color: C.textTert, fontSize: 12, fontWeight: '700' },
-  label:       { color: C.textTert, fontSize: 10, fontWeight: '600' },
-  labelActive: { color: C.text },
-  labelDone:   { color: C.green },
-  line:        { flex: 1, height: 1, backgroundColor: C.border, marginBottom: 14, marginHorizontal: 6 },
-  lineDone:    { backgroundColor: C.green },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TRIM BAR
-// ─────────────────────────────────────────────────────────────────────────────
-const TrimBar = memo(function TrimBar({
-  duration, trimStart, trimEnd, onChange,
-}: {
-  duration:  number;
-  trimStart: number;
-  trimEnd:   number;
-  onChange:  (start: number, end: number) => void;
-}) {
-  const trimDur = Math.max(0, trimEnd - trimStart);
-  const overMax = trimDur > MAX_DURATION;
-  const leftPct  = duration > 0 ? trimStart / duration : 0;
-  const rightPct = duration > 0 ? trimEnd   / duration : 1;
-  const fmt = (s: number) => `${Math.floor(s)}s`;
-
-  return (
-    <View style={tb.wrap}>
-      <View style={tb.header}>
-        <Text style={tb.label}>Passage sélectionné</Text>
-        <View style={[tb.durBadge, overMax && tb.durBadgeErr]}>
-          <Ionicons name="time-outline" size={11} color={overMax ? C.red : C.green} />
-          <Text style={[tb.durTxt, overMax && { color: C.red }]}>
-            {fmt(trimDur)} / {MAX_DURATION}s max
-          </Text>
-        </View>
-      </View>
-
-      <View style={tb.track}>
-        <View style={[tb.excluded, { width: `${leftPct * 100}%` as any }]} />
-        <LinearGradient
-          colors={overMax
-            ? ['rgba(255,59,92,0.4)', 'rgba(255,59,92,0.7)']
-            : ['rgba(0,201,255,0.3)', 'rgba(0,201,255,0.7)']}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-          style={[tb.selected, { width: `${(rightPct - leftPct) * 100}%` as any }]}
-        />
-        <View style={[tb.excluded, { flex: 1 }]} />
-      </View>
-
-      <View style={tb.controls}>
-        <View style={tb.ctrl}>
-          <Text style={tb.ctrlLabel}>Début</Text>
-          <View style={tb.ctrlRow}>
-            <TouchableOpacity style={tb.ctrlBtn} onPress={() => onChange(Math.max(0, trimStart - 1), trimEnd)}>
-              <Ionicons name="remove" size={14} color={C.textSec} />
-            </TouchableOpacity>
-            <Text style={tb.ctrlVal}>{fmt(trimStart)}</Text>
-            <TouchableOpacity style={tb.ctrlBtn} onPress={() => onChange(Math.min(trimEnd - 1, trimStart + 1), trimEnd)}>
-              <Ionicons name="add" size={14} color={C.textSec} />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={tb.divider} />
-
-        <View style={tb.ctrl}>
-          <Text style={tb.ctrlLabel}>Fin</Text>
-          <View style={tb.ctrlRow}>
-            <TouchableOpacity style={tb.ctrlBtn} onPress={() => onChange(trimStart, Math.max(trimStart + 1, trimEnd - 1))}>
-              <Ionicons name="remove" size={14} color={C.textSec} />
-            </TouchableOpacity>
-            <Text style={tb.ctrlVal}>{fmt(trimEnd)}</Text>
-            <TouchableOpacity style={tb.ctrlBtn} onPress={() => onChange(trimStart, Math.min(duration, trimEnd + 1))}>
-              <Ionicons name="add" size={14} color={C.textSec} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-
-      {overMax && (
-        <Text style={tb.errTxt}>
-          Réduisez à {MAX_DURATION}s maximum pour le format Réel.
-        </Text>
-      )}
-    </View>
-  );
-});
-
-const tb = StyleSheet.create({
-  wrap:        { backgroundColor: C.surf, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 16 },
-  header:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  label:       { color: C.textSec, fontSize: 13, fontWeight: '700' },
-  durBadge:    { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, backgroundColor: C.greenDim, borderWidth: 1, borderColor: 'rgba(46,204,138,0.25)' },
-  durBadgeErr: { backgroundColor: 'rgba(255,59,92,0.12)', borderColor: 'rgba(255,59,92,0.3)' },
-  durTxt:      { color: C.green, fontSize: 11, fontWeight: '700' },
-  track:       { height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.04)', flexDirection: 'row', overflow: 'hidden', marginBottom: 16 },
-  excluded:    { height: '100%', backgroundColor: 'rgba(255,255,255,0.03)' },
-  selected:    { height: '100%' },
-  controls:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  ctrl:        { flex: 1, alignItems: 'center', gap: 6 },
-  ctrlLabel:   { color: C.textTert, fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
-  ctrlRow:     { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  ctrlBtn:     { width: 28, height: 28, borderRadius: 14, backgroundColor: C.surfHi, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  ctrlVal:     { color: C.text, fontSize: 15, fontWeight: '700', minWidth: 30, textAlign: 'center' },
-  divider:     { width: 1, height: 36, backgroundColor: C.border },
-  errTxt:      { color: C.red, fontSize: 11, marginTop: 10, textAlign: 'center', fontStyle: 'italic' },
+  wrap:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 32, marginBottom: 22 },
+  item:      { alignItems: 'center', gap: 5 },
+  dot:       { width: 26, height: 26, borderRadius: 13, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
+  dotActive: { borderColor: P.edgeHi, backgroundColor: P.glassMid },
+  dotDone:   { borderColor: P.greenEdge, backgroundColor: P.greenGlass },
+  dotNum:    { color: P.txtTert, fontSize: 11, fontWeight: '700' },
+  lbl:       { color: P.txtTert, fontSize: 9, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  lblActive: { color: P.txt },
+  lblDone:   { color: P.green },
+  line:      { flex: 1, height: 0.5, backgroundColor: P.edge, marginBottom: 14, marginHorizontal: 6 },
+  lineDone:  { backgroundColor: P.greenEdge },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 0 — IMPORT
 // ─────────────────────────────────────────────────────────────────────────────
-const StepImport = memo(function StepImport({
-  videoUri, videoFileName, videoDuration,
-  trimStart, trimEnd, onPick, onRemove, onTrimChange,
-}: {
+interface ImportProps {
   videoUri:      string | null;
   videoFileName: string;
   videoDuration: number;
@@ -319,161 +291,173 @@ const StepImport = memo(function StepImport({
   onPick:        () => void;
   onRemove:      () => void;
   onTrimChange:  (s: number, e: number) => void;
-}) {
+}
+
+const StepImport = memo(({
+  videoUri, videoFileName, videoDuration,
+  trimStart, trimEnd, onPick, onRemove, onTrimChange,
+}: ImportProps) => {
   const fmt = (s: number) =>
     `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
   return (
-    <View>
-      <Text style={imp.sectionTitle}>Sélectionnez votre passage</Text>
-      <Text style={imp.hint}>
-        Choisissez le moment le plus fort de votre film — {MAX_DURATION} secondes maximum.
-      </Text>
+    <View style={{ gap: 10 }}>
+      <Text style={step.title}>Votre extrait</Text>
+      <Text style={step.hint}>Le passage le plus fort — {MAX_DURATION}s maximum.</Text>
 
       {!videoUri ? (
-        <TouchableOpacity style={imp.pickZone} onPress={onPick} activeOpacity={0.85}>
-          <LinearGradient
-            colors={['rgba(0,201,255,0.06)', 'rgba(0,30,80,0.04)', 'transparent']}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={imp.pickIconWrap}>
-            <LinearGradient
-              colors={[C.teal, C.navyMid]}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={imp.pickIconBg}
-            >
-              <Ionicons name="film-outline" size={28} color="white" />
-            </LinearGradient>
-          </View>
-          <Text style={imp.pickTitle}>Importer une vidéo</Text>
-          <Text style={imp.pickSub}>Depuis votre galerie</Text>
-          <View style={imp.pickFormatRow}>
-            {['MP4', 'MOV', 'ProRes', 'HEVC'].map(f => (
-              <View key={f} style={imp.pickFormat}>
-                <Text style={imp.pickFormatTxt}>{f}</Text>
+        /* ── Dropzone ── */
+        <TouchableOpacity onPress={onPick} activeOpacity={0.85}>
+          <GlassCard style={{ marginBottom: 0 }}>
+            <View style={imp.zone}>
+              {/* ring */}
+              <View style={imp.ring}>
+                <Ionicons name="film-outline" size={26} color={P.txtSec} />
               </View>
-            ))}
-          </View>
+              <Text style={imp.zoneTitle}>Importer une vidéo</Text>
+              <Text style={imp.zoneSub}>Depuis votre galerie</Text>
+              <View style={imp.formats}>
+                {['MP4', 'MOV', 'HEVC'].map(f => (
+                  <View key={f} style={imp.fmt}>
+                    <Text style={imp.fmtTxt}>{f}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </GlassCard>
         </TouchableOpacity>
       ) : (
         <>
-          <View style={imp.previewCard}>
-            <LinearGradient colors={[C.tealSoft, 'transparent']} style={StyleSheet.absoluteFill} />
-            <View style={imp.previewLeft}>
-              <View style={imp.previewThumb}>
-                <Ionicons name="play-circle" size={28} color={C.teal} />
+          {/* ── File card ── */}
+          <GlassCard>
+            <View style={imp.fileRow}>
+              <View style={imp.fileIcon}>
+                <Ionicons name="play-circle-outline" size={22} color={P.txtSec} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={imp.previewName} numberOfLines={1}>
+                <Text style={imp.fileName} numberOfLines={1}>
                   {videoFileName || 'Vidéo importée'}
                 </Text>
-                <Text style={imp.previewMeta}>Durée totale : {fmt(videoDuration)}</Text>
+                <Text style={imp.fileMeta}>{fmt(videoDuration)}</Text>
               </View>
+              <TouchableOpacity style={imp.removeBtn} onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={14} color={P.txtTert} />
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity style={imp.removeBtn} onPress={onRemove}>
-              <Ionicons name="close" size={16} color={C.textSec} />
-            </TouchableOpacity>
-          </View>
+          </GlassCard>
 
+          {/* ── Trim ── */}
           <TrimBar
+            start={trimStart}
+            end={trimEnd}
             duration={videoDuration}
-            trimStart={trimStart}
-            trimEnd={trimEnd}
-            onChange={onTrimChange}
+            onStartChange={s => onTrimChange(s, trimEnd)}
+            onEndChange={e => onTrimChange(trimStart, e)}
           />
 
-          <View style={imp.tipCard}>
-            <Ionicons name="bulb-outline" size={16} color={C.gold} style={{ marginTop: 1 }} />
-            <Text style={imp.tipTxt}>
-              Choisissez le passage le plus marquant — une scène clé, un plan fort,
-              un moment d'émotion intense. C'est cette fenêtre de {MAX_DURATION}s
-              qui donnera envie de découvrir votre film.
-            </Text>
-          </View>
+          {/* ── Tip ── */}
+          <GlassCard style={{ borderColor: P.goldEdge, backgroundColor: P.goldGlass }}>
+            <View style={imp.tip}>
+              <Ionicons name="bulb-outline" size={13} color={P.gold} style={{ marginTop: 1 }} />
+              <Text style={imp.tipTxt}>
+                Choisissez la scène la plus intense — c'est cette fenêtre de {MAX_DURATION}s
+                qui décide si quelqu'un regarde votre film.
+              </Text>
+            </View>
+          </GlassCard>
         </>
       )}
     </View>
   );
 });
+StepImport.displayName = 'StepImport';
 
 const imp = StyleSheet.create({
-  sectionTitle: { color: C.text, fontSize: 18, fontWeight: '800', marginBottom: 6 },
-  hint:         { color: C.textTert, fontSize: 13, lineHeight: 19, marginBottom: 20, fontStyle: 'italic' },
-  pickZone:     { borderRadius: 22, borderWidth: 1.5, borderColor: C.borderAcc, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', paddingVertical: 48, gap: 12, overflow: 'hidden', marginBottom: 16 },
-  pickIconWrap: { width: 64, height: 64, borderRadius: 32, overflow: 'hidden', marginBottom: 4 },
-  pickIconBg:   { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pickTitle:    { color: C.text, fontSize: 16, fontWeight: '700' },
-  pickSub:      { color: C.textTert, fontSize: 13 },
-  pickFormatRow:{ flexDirection: 'row', gap: 8, marginTop: 4 },
-  pickFormat:   { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border },
-  pickFormatTxt:{ color: C.textSec, fontSize: 11, fontWeight: '600' },
-  previewCard:  { flexDirection: 'row', alignItems: 'center', borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 14, overflow: 'hidden' },
-  previewLeft:  { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  previewThumb: { width: 48, height: 48, borderRadius: 12, backgroundColor: C.tealSoft, borderWidth: 1, borderColor: C.borderAcc, alignItems: 'center', justifyContent: 'center' },
-  previewName:  { color: C.text, fontSize: 14, fontWeight: '700' },
-  previewMeta:  { color: C.textTert, fontSize: 12, marginTop: 2 },
-  removeBtn:    { width: 30, height: 30, borderRadius: 15, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  tipCard:      { flexDirection: 'row', gap: 10, backgroundColor: C.goldDim, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(245,200,66,0.18)', padding: 14 },
-  tipTxt:       { flex: 1, color: C.textSec, fontSize: 12, lineHeight: 18 },
+  zone:       { alignItems: 'center', paddingVertical: 44, gap: 10 },
+  ring:       { width: 60, height: 60, borderRadius: 30, borderWidth: 0.5, borderColor: P.edgeMid, alignItems: 'center', justifyContent: 'center', backgroundColor: P.glass, marginBottom: 6 },
+  zoneTitle:  { color: P.txt, fontSize: 15, fontWeight: '700' },
+  zoneSub:    { color: P.txtTert, fontSize: 12 },
+  formats:    { flexDirection: 'row', gap: 6, marginTop: 6 },
+  fmt:        { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 7, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge },
+  fmtTxt:     { color: P.txtTert, fontSize: 10, fontWeight: '600' },
+  fileRow:    { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
+  fileIcon:   { width: 42, height: 42, borderRadius: 12, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
+  fileName:   { color: P.txt, fontSize: 13, fontWeight: '600' },
+  fileMeta:   { color: P.txtTert, fontSize: 11, marginTop: 2 },
+  removeBtn:  { width: 26, height: 26, borderRadius: 13, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
+  tip:        { flexDirection: 'row', gap: 9, padding: 14 },
+  tipTxt:     { flex: 1, color: P.txtSec, fontSize: 12, lineHeight: 18 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 1 — INFOS
 // ─────────────────────────────────────────────────────────────────────────────
-const StepInfos = memo(function StepInfos({
-  meta, onChange,
-}: {
+interface InfosProps {
   meta:     ReelMeta;
-  onChange: <K extends keyof ReelMeta>(key: K, val: string) => void;
-}) {
-  return (
-    <View>
-      <Text style={inf.sectionTitle}>Présentez votre film</Text>
-      <Text style={inf.hint}>Ces informations apparaîtront sur votre Réel.</Text>
+  onChange: <K extends keyof ReelMeta>(k: K, v: string) => void;
+}
 
-      <View style={inf.field}>
-        <Text style={inf.label}>TITRE DU FILM *</Text>
-        <TextInput
-          style={inf.input}
-          placeholder="Ex : Les Silences du Lac"
-          placeholderTextColor={C.textTert}
+const GlassInput = memo(({ value, onChangeText, placeholder, ...rest }: any) => (
+  <TextInput
+    style={inf.input}
+    value={value}
+    onChangeText={onChangeText}
+    placeholder={placeholder}
+    placeholderTextColor={P.txtTert}
+    {...rest}
+  />
+));
+GlassInput.displayName = 'GlassInput';
+
+// eslint-disable-next-line react/display-name
+const StepInfos = memo(({ meta, onChange }: InfosProps) => (
+  <View style={{ gap: 10 }}>
+    <Text style={step.title}>Votre film</Text>
+    <Text style={step.hint}>Ces infos apparaîtront sur votre Réel.</Text>
+
+    {/* Titre */}
+    <GlassCard>
+      <View style={inf.fieldWrap}>
+        <Text style={inf.label}>TITRE *</Text>
+        <GlassInput
           value={meta.title}
-          onChangeText={v => onChange('title', v)}
+          onChangeText={(v: string) => onChange('title', v)}
+          placeholder="Les Silences du Lac…"
         />
       </View>
+    </GlassCard>
 
-      <View style={inf.row2}>
-        <View style={[inf.field, { flex: 1 }]}>
+    {/* Réalisateur + Année */}
+    <View style={{ flexDirection: 'row', gap: 10 }}>
+      <GlassCard style={{ flex: 1, marginBottom: 0 }}>
+        <View style={inf.fieldWrap}>
           <Text style={inf.label}>RÉALISATEUR</Text>
-          <TextInput
-            style={inf.input}
-            placeholder="Prénom Nom"
-            placeholderTextColor={C.textTert}
+          <GlassInput
             value={meta.director}
-            onChangeText={v => onChange('director', v)}
+            onChangeText={(v: string) => onChange('director', v)}
+            placeholder="Prénom Nom"
           />
         </View>
-        <View style={[inf.field, { width: 88 }]}>
+      </GlassCard>
+      <GlassCard style={{ width: 90, marginBottom: 0 }}>
+        <View style={inf.fieldWrap}>
           <Text style={inf.label}>ANNÉE</Text>
-          <TextInput
-            style={inf.input}
-            placeholder="2025"
-            placeholderTextColor={C.textTert}
+          <GlassInput
             value={meta.year}
-            onChangeText={v => onChange('year', v)}
+            onChangeText={(v: string) => onChange('year', v)}
+            placeholder="2025"
             keyboardType="numeric"
             maxLength={4}
           />
         </View>
-      </View>
+      </GlassCard>
+    </View>
 
-      <View style={inf.field}>
+    {/* Genre chips */}
+    <GlassCard>
+      <View style={inf.fieldWrap}>
         <Text style={inf.label}>GENRE *</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8, paddingVertical: 4 }}
-        >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
           {GENRES.map(g => {
             const on = meta.genre === g;
             return (
@@ -488,268 +472,240 @@ const StepInfos = memo(function StepInfos({
           })}
         </ScrollView>
       </View>
+    </GlassCard>
 
-      <View style={inf.field}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+    {/* Synopsis */}
+    <GlassCard>
+      <View style={inf.fieldWrap}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
           <Text style={inf.label}>ACCROCHE</Text>
-          <Text style={{ color: C.textTert, fontSize: 10 }}>{meta.synopsis.length}/120</Text>
+          <Text style={{ color: P.txtTert, fontSize: 9 }}>{meta.synopsis.length}/120</Text>
         </View>
-        <TextInput
-          style={[inf.input, inf.textarea]}
-          multiline
-          placeholder="Une phrase qui donne envie de découvrir votre film…"
-          placeholderTextColor={C.textTert}
+        <GlassInput
           value={meta.synopsis}
-          onChangeText={v => v.length <= 120 && onChange('synopsis', v)}
+          onChangeText={(v: string) => v.length <= 120 && onChange('synopsis', v)}
+          placeholder="Une phrase qui donne envie…"
+          multiline
+          style={[inf.input, { minHeight: 72, lineHeight: 20 }]}
           textAlignVertical="top"
         />
       </View>
+    </GlassCard>
 
-      <View style={inf.indieBadge}>
-        <Ionicons name="ribbon-outline" size={14} color={C.teal} />
-        <Text style={inf.indieTxt}>
-          Votre Réel sera taggé{' '}
-          <Text style={{ color: C.teal, fontWeight: '700' }}>#CinémaIndépendant</Text>
-          {' '}automatiquement.
+    {/* Auto-tag notice */}
+    <GlassCard style={{ borderColor: P.tealEdge, backgroundColor: P.tealGlass }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
+        <Ionicons name="ribbon-outline" size={13} color={P.teal} />
+        <Text style={{ flex: 1, color: P.txtSec, fontSize: 11, lineHeight: 17 }}>
+          Tagué <Text style={{ color: P.teal, fontWeight: '700' }}>#CinémaIndépendant</Text> automatiquement.
         </Text>
       </View>
-    </View>
-  );
-});
+    </GlassCard>
+  </View>
+));
 
 const inf = StyleSheet.create({
-  sectionTitle: { color: C.text, fontSize: 18, fontWeight: '800', marginBottom: 6 },
-  hint:         { color: C.textTert, fontSize: 13, lineHeight: 19, marginBottom: 20, fontStyle: 'italic' },
-  field:        { marginBottom: 20 },
-  label:        { color: C.textSec, fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8 },
-  input:        { backgroundColor: C.surf, borderRadius: 14, borderWidth: 1, borderColor: C.border, paddingHorizontal: 16, paddingVertical: 13, color: C.text, fontSize: 15 },
-  textarea:     { minHeight: 80, lineHeight: 21 },
-  row2:         { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  chip:         { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border },
-  chipOn:       { backgroundColor: C.tealMid, borderColor: C.teal },
-  chipTxt:      { color: C.textSec, fontSize: 13, fontWeight: '600' },
-  chipTxtOn:    { color: C.teal, fontWeight: '700' },
-  indieBadge:   { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: C.tealSoft, borderRadius: 14, borderWidth: 1, borderColor: C.borderAcc, padding: 14 },
-  indieTxt:     { flex: 1, color: C.textSec, fontSize: 12, lineHeight: 18 },
+  fieldWrap: { padding: 14 },
+  label:     { color: P.txtTert, fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 10 },
+  input:     { color: P.txt, fontSize: 14, fontWeight: '500', padding: 0 },
+  chip:      { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 16, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge },
+  chipOn:    { backgroundColor: P.glassMid, borderColor: P.edgeHi },
+  chipTxt:   { color: P.txtSec, fontSize: 12, fontWeight: '600' },
+  chipTxtOn: { color: P.white, fontWeight: '700' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STEP 2 — PUBLICATION
 // ─────────────────────────────────────────────────────────────────────────────
-const StepPublish = memo(function StepPublish({
-  meta, videoFileName, trimStart, trimEnd,
-  uploading, uploadProgress, uploadMsg, onUpload,
-}: {
+interface PublishProps {
   meta:           ReelMeta;
-  videoFileName:  string;
   trimStart:      number;
   trimEnd:        number;
   uploading:      boolean;
   uploadProgress: number;
   uploadMsg:      string;
   onUpload:       () => void;
-}) {
-  const trimDur = trimEnd - trimStart;
-  const fmt     = (s: number) => `${Math.floor(s)}s`;
+}
 
+const StepPublish = memo(({
+  meta, trimStart, trimEnd,
+  uploading, uploadProgress, uploadMsg, onUpload,
+}: PublishProps) => {
+  const dur    = trimEnd - trimStart;
   const checks = useMemo(() => [
-    { ok: meta.title.trim().length > 0,            txt: 'Titre renseigné' },
-    { ok: meta.genre.length > 0,                   txt: 'Genre sélectionné' },
-    { ok: trimDur > 0 && trimDur <= MAX_DURATION,  txt: `Durée ≤ ${MAX_DURATION}s` },
-    { ok: true,                                    txt: 'Tag #CinémaIndépendant' },
-  ], [meta.title, meta.genre, trimDur]);
-
+    { ok: meta.title.trim().length > 0,          txt: 'Titre renseigné' },
+    { ok: meta.genre.length > 0,                 txt: 'Genre sélectionné' },
+    { ok: dur > 0 && dur <= MAX_DURATION,         txt: `Extrait ≤ ${MAX_DURATION}s` },
+    { ok: true,                                  txt: '#CinémaIndépendant' },
+  ], [meta.title, meta.genre, dur]);
   const allOk = checks.every(c => c.ok);
 
   return (
-    <View>
-      <Text style={pub.sectionTitle}>Aperçu et publication</Text>
-      <Text style={pub.hint}>Vérifiez les informations avant de publier votre Réel.</Text>
+    <View style={{ gap: 10 }}>
+      <Text style={step.title}>Vérification</Text>
+      <Text style={step.hint}>Un dernier regard avant publication.</Text>
 
-      {/* Preview Reel Card */}
-      <View style={pub.reelPreview}>
-        <LinearGradient
-          colors={['rgba(0,201,255,0.12)', 'rgba(3,0,10,0.95)']}
-          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={pub.reelFrame}>
-          <LinearGradient
-            colors={[C.teal, C.navy]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-            style={pub.reelFrameBg}
-          >
-            <View style={pub.reelPlay}>
-              <Ionicons name="play" size={22} color="white" />
+      {/* Preview mini card */}
+      <GlassCard style={{ borderColor: P.edgeMid }}>
+        <View style={{ padding: 14, gap: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={pub.thumb}>
+              <Ionicons name="play" size={16} color={P.txtSec} />
+              <Text style={pub.thumbDur}>{dur}s</Text>
             </View>
-            <View style={pub.reelDurBadge}>
-              <Ionicons name="time-outline" size={10} color="rgba(255,255,255,0.8)" />
-              <Text style={pub.reelDurTxt}>{fmt(trimDur)}</Text>
+            <View style={{ flex: 1 }}>
+              {meta.genre.length > 0 && (
+                <Text style={pub.genre}>{meta.genre}</Text>
+              )}
+              <Text style={pub.filmTitle}>{meta.title || 'Sans titre'}</Text>
+              {meta.director.length > 0 && (
+                <Text style={pub.director}>
+                  {meta.director}{meta.year ? ` · ${meta.year}` : ''}
+                </Text>
+              )}
             </View>
-          </LinearGradient>
-        </View>
-
-        <View style={pub.reelInfo}>
-          <View style={pub.genreTag}>
-            <Text style={pub.genreTagTxt}>{meta.genre || 'Cinéma'}</Text>
           </View>
-          <Text style={pub.reelTitle}>{meta.title || 'Sans titre'}</Text>
-          {meta.director ? (
-            <Text style={pub.reelDir}>
-              par {meta.director}{meta.year ? ` · ${meta.year}` : ''}
-            </Text>
-          ) : null}
           {meta.synopsis.length > 0 && (
-            <Text style={pub.reelSynopsis} numberOfLines={2}>{meta.synopsis}</Text>
+            <Text style={pub.synopsis} numberOfLines={2}>{meta.synopsis}</Text>
           )}
         </View>
-      </View>
+      </GlassCard>
 
       {/* Checklist */}
-      <View style={pub.checkList}>
-        {checks.map(item => (
-          <View key={item.txt} style={pub.checkRow}>
-            <Ionicons
-              name={item.ok ? 'checkmark-circle' : 'close-circle'}
-              size={16}
-              color={item.ok ? C.green : C.red}
-            />
-            <Text style={[pub.checkTxt, !item.ok && { color: C.red }]}>{item.txt}</Text>
-          </View>
-        ))}
-      </View>
-
-      {/* Barre de progression */}
-      {uploading && (
-        <View style={pub.progressWrap}>
-          <View style={pub.progressHeader}>
-            <ActivityIndicator size="small" color={C.teal} />
-            <Text style={pub.progressMsg}>{uploadMsg}</Text>
-          </View>
-          <View style={pub.progressBg}>
-            <View style={[pub.progressFill, { width: `${uploadProgress}%` as any }]} />
-          </View>
-          <Text style={pub.progressPct}>{uploadProgress}%</Text>
+      <GlassCard>
+        <View style={{ padding: 14, gap: 10 }}>
+          {checks.map(c => (
+            <View key={c.txt} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
+              <Ionicons
+                name={c.ok ? 'checkmark-circle-outline' : 'close-circle-outline'}
+                size={14}
+                color={c.ok ? P.green : P.red}
+              />
+              <Text style={{ color: c.ok ? P.txtSec : P.red, fontSize: 12, fontWeight: '500' }}>
+                {c.txt}
+              </Text>
+            </View>
+          ))}
         </View>
+      </GlassCard>
+
+      {/* Upload progress */}
+      {uploading && (
+        <GlassCard>
+          <View style={{ padding: 16, gap: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <ActivityIndicator size="small" color={P.white} />
+              <Text style={{ color: P.txtSec, fontSize: 12 }}>{uploadMsg}</Text>
+            </View>
+            <View style={pub.progressBg}>
+              <Animated.View style={[pub.progressFill, { width: `${uploadProgress}%` as any }]} />
+            </View>
+            <Text style={{ color: P.txtTert, fontSize: 10, textAlign: 'right' }}>
+              {uploadProgress}%
+            </Text>
+          </View>
+        </GlassCard>
       )}
 
       {/* CTA */}
       {!uploading && (
         <TouchableOpacity
-          style={[pub.cta, !allOk && { opacity: 0.4 }]}
+          style={[pub.cta, !allOk && { opacity: 0.35 }]}
           onPress={allOk ? onUpload : undefined}
           activeOpacity={0.88}
           disabled={!allOk}
         >
-          <LinearGradient
-            colors={[C.teal, C.navyMid, C.navy]}
-            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-            style={pub.ctaGrad}
-          >
-            <Ionicons name="cloud-upload-outline" size={20} color="white" />
-            <Text style={pub.ctaTxt}>Publier dans mes Réels</Text>
-          </LinearGradient>
+          <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="light" style={StyleSheet.absoluteFillObject} />
+          <View style={pub.ctaInner}>
+            <Ionicons name="cloud-upload-outline" size={17} color={P.white} />
+            <Text style={pub.ctaTxt}>Publier le Réel</Text>
+          </View>
         </TouchableOpacity>
       )}
 
       <Text style={pub.legal}>
-        En publiant, vous certifiez être l'auteur ou ayant-droits de cette œuvre
-        et acceptez les conditions d'utilisation de la plateforme.
+        En publiant, vous certifiez être l&apos;auteur ou ayant-droits de cette œuvre.
       </Text>
     </View>
   );
 });
 
 const pub = StyleSheet.create({
-  sectionTitle:  { color: C.text, fontSize: 18, fontWeight: '800', marginBottom: 6 },
-  hint:          { color: C.textTert, fontSize: 13, lineHeight: 19, marginBottom: 20, fontStyle: 'italic' },
-  reelPreview:   { borderRadius: 20, borderWidth: 1, borderColor: C.borderAcc, overflow: 'hidden', marginBottom: 20, padding: 16, gap: 14, flexDirection: 'row', alignItems: 'center' },
-  reelFrame:     { width: 80, height: 120, borderRadius: 14, overflow: 'hidden' },
-  reelFrameBg:   { flex: 1, alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  reelPlay:      { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-  reelDurBadge:  { position: 'absolute', bottom: 8, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3 },
-  reelDurTxt:    { color: 'rgba(255,255,255,0.8)', fontSize: 9, fontWeight: '700' },
-  reelInfo:      { flex: 1, gap: 5 },
-  genreTag:      { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: C.tealMid, borderWidth: 1, borderColor: C.borderAcc },
-  genreTagTxt:   { color: C.teal, fontSize: 10, fontWeight: '700' },
-  reelTitle:     { color: C.text, fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
-  reelDir:       { color: C.textSec, fontSize: 12 },
-  reelSynopsis:  { color: C.textTert, fontSize: 11, lineHeight: 16, fontStyle: 'italic' },
-  checkList:     { gap: 10, marginBottom: 24, backgroundColor: C.surf, borderRadius: 16, borderWidth: 1, borderColor: C.border, padding: 16 },
-  checkRow:      { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  checkTxt:      { color: C.textSec, fontSize: 13 },
-  progressWrap:  { marginBottom: 20, gap: 8 },
-  progressHeader:{ flexDirection: 'row', alignItems: 'center', gap: 10 },
-  progressMsg:   { color: C.textSec, fontSize: 13 },
-  progressBg:    { height: 4, borderRadius: 2, backgroundColor: C.surf, overflow: 'hidden' },
-  progressFill:  { height: '100%', borderRadius: 2, backgroundColor: C.teal },
-  progressPct:   { color: C.teal, fontSize: 11, fontWeight: '700', textAlign: 'right' },
-  cta:           { borderRadius: 22, overflow: 'hidden', marginBottom: 14 },
-  ctaGrad:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, paddingVertical: 16 },
-  ctaTxt:        { color: 'white', fontSize: 16, fontWeight: '800' },
-  legal:         { color: C.textTert, fontSize: 10, textAlign: 'center', lineHeight: 15, fontStyle: 'italic' },
+  thumb:       { width: 60, height: 90, borderRadius: 10, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  thumbDur:    { color: P.txtTert, fontSize: 9, fontWeight: '600' },
+  genre:       { color: P.txtTert, fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  filmTitle:   { color: P.txt, fontSize: 14, fontWeight: '800' },
+  director:    { color: P.txtSec, fontSize: 11, marginTop: 2 },
+  synopsis:    { color: P.txtTert, fontSize: 11, lineHeight: 16, fontStyle: 'italic' },
+  progressBg:  { height: 3, borderRadius: 2, backgroundColor: P.glass, overflow: 'hidden' },
+  progressFill:{ height: '100%', backgroundColor: P.white, borderRadius: 2 },
+  cta:         { borderRadius: 18, overflow: 'hidden', borderWidth: 0.5, borderColor: P.edgeMid },
+  ctaInner:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingVertical: 16 },
+  ctaTxt:      { color: P.white, fontSize: 15, fontWeight: '700' },
+  legal:       { color: P.txtTert, fontSize: 10, textAlign: 'center', lineHeight: 15, fontStyle: 'italic' },
+});
+
+const step = StyleSheet.create({
+  title: { color: P.txt, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
+  hint:  { color: P.txtTert, fontSize: 12, marginBottom: 6, fontStyle: 'italic' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ÉCRAN PRINCIPAL
+// VIDEO WIZARD
 // ─────────────────────────────────────────────────────────────────────────────
-export default function CreateScreen() {
+const VideoTab = memo(function VideoTab() {
   const router = useRouter();
 
-  // ── Wizard ────────────────────────────────────────────────────────────────
-  const [step, setStep] = useState<Step>(0);
-  const prevStepRef     = useRef<Step>(0);
-  const slideAnim       = useRef(new Animated.Value(0)).current;
+  const [currentStep,    setCurrentStep]    = useState<Step>(0);
+  const prevStepRef                          = useRef<Step>(0);
+  const slideAnim                            = useRef(new Animated.Value(0)).current;
 
-  // ── Vidéo ─────────────────────────────────────────────────────────────────
-  const [videoUri,      setVideoUri]      = useState<string | null>(null);
-  const [videoFileName, setVideoFileName] = useState('');
-  const [videoDuration, setVideoDuration] = useState(0);
-  const [trimStart,     setTrimStart]     = useState(0);
-  const [trimEnd,       setTrimEnd]       = useState(0);
+  const [videoUri,       setVideoUri]        = useState<string | null>(null);
+  const [videoFileName,  setVideoFileName]   = useState('');
+  const [videoDuration,  setVideoDuration]   = useState(0);
+  const [trimStart,      setTrimStart]       = useState(0);
+  const [trimEnd,        setTrimEnd]         = useState(0);
 
-  // ── Métadonnées ───────────────────────────────────────────────────────────
   const [meta, setMeta] = useState<ReelMeta>({
     title: '', genre: '', director: '',
-    year: String(new Date().getFullYear()), synopsis: '',
+    year:  String(new Date().getFullYear()), synopsis: '',
   });
 
-  // ── Upload ────────────────────────────────────────────────────────────────
-  const [uploading,      setUploading]      = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadMsg,      setUploadMsg]      = useState('');
+  const [uploading,      setUploading]       = useState(false);
+  const [uploadProgress, setUploadProgress]  = useState(0);
+  const [uploadMsg,      setUploadMsg]       = useState('');
 
-  // ── Animation step ────────────────────────────────────────────────────────
+  // ── Step slide animation ─────────────────────────────────────────────────
   useEffect(() => {
-    const dir = step > prevStepRef.current ? 1 : -1;
-    prevStepRef.current = step;
-    slideAnim.setValue(dir * W * 0.08);
+    const dir = currentStep > prevStepRef.current ? 1 : -1;
+    prevStepRef.current = currentStep;
+    slideAnim.setValue(dir * W * 0.06);
     Animated.spring(slideAnim, {
-      toValue: 0, tension: 180, friction: 22, useNativeDriver: true,
+      toValue: 0, tension: 200, friction: 26, useNativeDriver: true,
     }).start();
-  }, [step, slideAnim]);
+  }, [currentStep, slideAnim]);
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
-  const patchMeta = useCallback(<K extends keyof ReelMeta>(key: K, val: string) => {
-    setMeta(m => ({ ...m, [key]: val }));
+  // ── Meta patch ────────────────────────────────────────────────────────────
+  const patchMeta = useCallback(<K extends keyof ReelMeta>(k: K, v: string) => {
+    setMeta(m => ({ ...m, [k]: v }));
   }, []);
 
+  // ── Video pick ────────────────────────────────────────────────────────────
   const pickVideo = useCallback(async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission requise', "Autorisez l'accès à la galerie dans les réglages.");
+      Alert.alert('Permission requise', "Autorisez l'accès à la galerie dans Réglages.");
       return;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
-      quality: 1,
+      mediaTypes:       ImagePicker.MediaTypeOptions.Videos,
+      quality:           1,
       videoMaxDuration: 3600,
-      allowsEditing: false,
+      allowsEditing:    false,
     });
-    if (res.canceled || !res.assets[0]) return;
-    if (Platform.OS !== 'web') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
+    if (res.canceled || !res.assets?.[0]) return;
+    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
     const asset = res.assets[0];
     const dur   = Math.floor(asset.duration ?? 30);
     setVideoUri(asset.uri);
@@ -760,213 +716,313 @@ export default function CreateScreen() {
   }, []);
 
   const removeVideo = useCallback(() => {
-    setVideoUri(null);
-    setVideoFileName('');
-    setVideoDuration(0);
-    setTrimStart(0);
-    setTrimEnd(0);
+    setVideoUri(null); setVideoFileName(''); setVideoDuration(0);
+    setTrimStart(0);   setTrimEnd(0);
   }, []);
 
   const handleTrimChange = useCallback((s: number, e: number) => {
-    setTrimStart(s);
-    setTrimEnd(e);
+    setTrimStart(s); setTrimEnd(e);
   }, []);
 
+  // ── Validation ────────────────────────────────────────────────────────────
   const canContinue = useMemo(() => {
-    if (step === 0) {
-      return !!videoUri
-        && (trimEnd - trimStart) > 0
-        && (trimEnd - trimStart) <= MAX_DURATION;
-    }
-    if (step === 1) {
+    if (currentStep === 0)
+      return !!videoUri && (trimEnd - trimStart) > 0 && (trimEnd - trimStart) <= MAX_DURATION;
+    if (currentStep === 1)
       return meta.title.trim().length > 0 && meta.genre.length > 0;
-    }
     return true;
-  }, [step, videoUri, trimStart, trimEnd, meta.title, meta.genre]);
+  }, [currentStep, videoUri, trimStart, trimEnd, meta.title, meta.genre]);
 
   const errorHint = useMemo(() => {
-    if (step === 0) {
-      if (!videoUri)                           return 'Importez une vidéo pour continuer';
-      if ((trimEnd - trimStart) > MAX_DURATION) return `Réduisez la sélection à ${MAX_DURATION}s max`;
-      if ((trimEnd - trimStart) <= 0)          return 'Sélectionnez une durée valide';
+    if (currentStep === 0) {
+      if (!videoUri)                              return 'Importez une vidéo pour continuer';
+      if ((trimEnd - trimStart) > MAX_DURATION)   return `Réduisez à ${MAX_DURATION}s max`;
+      if ((trimEnd - trimStart) <= 0)             return 'Sélectionnez une durée valide';
     }
-    if (step === 1) {
-      if (!meta.title.trim()) return 'Renseignez le titre du film';
+    if (currentStep === 1) {
+      if (!meta.title.trim()) return 'Renseignez le titre';
       if (!meta.genre)        return 'Sélectionnez un genre';
     }
     return '';
-  }, [step, videoUri, trimStart, trimEnd, meta.title, meta.genre]);
+  }, [currentStep, videoUri, trimStart, trimEnd, meta.title, meta.genre]);
 
+  // ── Navigation ────────────────────────────────────────────────────────────
   const goNext = useCallback(() => {
     if (!canContinue) return;
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setStep(s => Math.min(2, s + 1) as Step);
+    setCurrentStep(s => Math.min(2, s + 1) as Step);
   }, [canContinue]);
 
   const goPrev = useCallback(() => {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (step > 0) setStep(s => (s - 1) as Step);
+    if (currentStep > 0) setCurrentStep(s => (s - 1) as Step);
     else router.back();
-  }, [step, router]);
+  }, [currentStep, router]);
 
+  // ── Upload ────────────────────────────────────────────────────────────────
   const handleUpload = useCallback(async () => {
     if (!videoUri || uploading) return;
 
-    // Récupérer l'userId courant
     const { data: { user } } = await supabase.auth.getUser();
-    const userId = user?.id ?? 'anonymous';
+    const userId = user?.id;
+    if (!userId) { Alert.alert('Non connecté', 'Connectez-vous pour publier.'); return; }
 
     setUploading(true);
     setUploadProgress(0);
+    setUploadMsg('Démarrage…');
 
-    const result = await uploadReelToSupabase(
-      videoUri,
-      meta,
-      userId,
-      (pct, msg) => {
-        setUploadProgress(pct);
-        setUploadMsg(msg);
-      },
+    const result = await uploadReel(
+      videoUri, meta, userId,
+      (pct, msg) => { setUploadProgress(pct); setUploadMsg(msg); },
     );
 
     setUploading(false);
 
     if (result) {
-      // Naviguer vers l'onglet reels en passant l'ID du nouveau reel
-      router.replace({
-        pathname: '/(tabs)/reels',
-        params: { newReelId: result.id },
-      });
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.replace({ pathname: '/(tabs)/index', params: { newReelId: result.id } });
     } else {
-      Alert.alert('Erreur', "L'upload a échoué. Vérifiez votre connexion et réessayez.");
+      Alert.alert('Erreur', "L'upload a échoué. Vérifiez votre connexion.");
     }
   }, [videoUri, meta, uploading, router]);
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
-    <View style={s.root}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+
+      <StepIndicator step={currentStep} />
+
+      {/* Scrollable content */}
+      <Animated.ScrollView
+        style={{ transform: [{ translateX: slideAnim }] }}
+        contentContainerStyle={wiz.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {currentStep === 0 && (
+          <StepImport
+            videoUri={videoUri}
+            videoFileName={videoFileName}
+            videoDuration={videoDuration}
+            trimStart={trimStart}
+            trimEnd={trimEnd}
+            onPick={pickVideo}
+            onRemove={removeVideo}
+            onTrimChange={handleTrimChange}
+          />
+        )}
+        {currentStep === 1 && <StepInfos meta={meta} onChange={patchMeta} />}
+        {currentStep === 2 && (
+          <StepPublish
+            meta={meta}
+            trimStart={trimStart}
+            trimEnd={trimEnd}
+            uploading={uploading}
+            uploadProgress={uploadProgress}
+            uploadMsg={uploadMsg}
+            onUpload={handleUpload}
+          />
+        )}
+        <View style={{ height: 50 }} />
+      </Animated.ScrollView>
+
+      {/* Footer nav */}
+      {currentStep < 2 && (
+        <View style={wiz.footer}>
+          <View style={wiz.footerRow}>
+            {currentStep > 0 && (
+              <TouchableOpacity style={wiz.backFooterBtn} onPress={goPrev}>
+                <Ionicons name="chevron-back" size={15} color={P.txtSec} />
+                <Text style={wiz.backFooterTxt}>Retour</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={[wiz.nextBtn, !canContinue && { opacity: 0.35 }, currentStep === 0 && { marginLeft: 'auto' as any }]}
+              onPress={goNext}
+              disabled={!canContinue}
+              activeOpacity={0.85}
+            >
+              <BlurView intensity={Platform.OS === 'ios' ? 18 : 10} tint="light" style={StyleSheet.absoluteFillObject} />
+              <View style={wiz.nextInner}>
+                <Text style={wiz.nextTxt}>
+                  {currentStep === 0 ? 'Informations' : 'Aperçu'}
+                </Text>
+                <Ionicons name="chevron-forward" size={14} color={P.white} />
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {!canContinue && errorHint.length > 0 && (
+            <Text style={wiz.hint}>{errorHint}</Text>
+          )}
+        </View>
+      )}
+    </KeyboardAvoidingView>
+  );
+});
+
+const wiz = StyleSheet.create({
+  backRow:       { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 6, paddingBottom: 4 },
+  backBtn:       { width: 34, height: 34, borderRadius: 17, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
+  scroll:        { paddingHorizontal: 20, paddingTop: 2, paddingBottom: 120 },
+  footer:        { borderTopWidth: 0.5, borderTopColor: P.edge, paddingTop: 12, paddingHorizontal: 20, paddingBottom: 20, marginBottom: 80 },
+  footerRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  backFooterBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 14, paddingHorizontal: 8 },
+  backFooterTxt: { color: P.txtSec, fontSize: 13, fontWeight: '600' },
+  nextBtn:       { flex: 1, borderRadius: 16, overflow: 'hidden', borderWidth: 0.5, borderColor: P.edgeMid },
+  nextInner:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 14 },
+  nextTxt:       { color: P.white, fontSize: 14, fontWeight: '700' },
+  hint:          { textAlign: 'center', color: P.txtTert, fontSize: 10, marginTop: 8, fontStyle: 'italic' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB BAR
+// ─────────────────────────────────────────────────────────────────────────────
+const TAB_CONFIG = [
+  { id: 'video' as Tab,    label: 'Vidéo',    icon: 'videocam-outline' as const },
+  { id: 'critique' as Tab, label: 'Critique', icon: 'document-text-outline' as const },
+];
+
+const HIT = { top: 4, bottom: 4, left: 4, right: 4 } as const;
+
+const TabItem = memo(({ cfg, active, onPress }: {
+  cfg:     (typeof TAB_CONFIG)[0];
+  active:  boolean;
+  onPress: (t: Tab) => void;
+}) => {
+  const press = useCallback(() => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress(cfg.id);
+  }, [cfg.id, onPress]);
+
+  return (
+    <TouchableOpacity
+      style={[tabbar.tab, active && tabbar.tabActive]}
+      onPress={press}
+      activeOpacity={0.8}
+      hitSlop={HIT}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+    >
+      {active && (
+        <BlurView
+          intensity={Platform.OS === 'ios' ? 24 : 14}
+          tint="light"
+          style={[StyleSheet.absoluteFillObject, tabbar.pill]}
+        />
+      )}
+      <Ionicons
+        name={cfg.icon}
+        size={14}
+        color={active ? P.white : P.txtTert}
+      />
+      <Text style={[tabbar.label, active ? tabbar.labelOn : tabbar.labelOff]}>
+        {cfg.label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+const TabBar = memo(({ active, onSwitch }: { active: Tab; onSwitch: (t: Tab) => void }) => (
+  <View style={tabbar.wrap}>
+    {TAB_CONFIG.map(cfg => (
+      <TabItem key={cfg.id} cfg={cfg} active={active === cfg.id} onPress={onSwitch} />
+    ))}
+  </View>
+));
+
+const tabbar = StyleSheet.create({
+  wrap:     {
+    flexDirection:    'row',
+    marginHorizontal:  16,
+    marginBottom:      16,
+    backgroundColor:   P.edge,
+    borderRadius:      18,
+    borderWidth:        0.5,
+    borderColor:        P.edge,
+    padding:            4,
+    overflow:          'hidden',
+    ...Platform.select({
+      ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10 },
+      android: { elevation: 5 },
+    }),
+  },
+  tab:      { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 14, overflow: 'hidden' },
+  tabActive:{},
+  pill:     { borderRadius: 14, overflow: 'hidden', backgroundColor: P.navyMid, borderWidth: 0.5, borderColor: P.edgeMid },
+  label:    { fontSize: 13, fontWeight: '600' },
+  labelOn:  { color: P.white, fontWeight: '700' },
+  labelOff: { color: P.txtTert },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB PANELS — montés une fois, masqués via position absolute + opacity 0
+// → Aucun reset d'état au switch d'onglet
+// ─────────────────────────────────────────────────────────────────────────────
+const TabPanels = memo(({ active }: { active: Tab }) => {
+  const videoStyle    = useMemo(
+    () => [panels.panel, active !== 'video'    && panels.hidden],
+    [active],
+  );
+  const critiqueStyle = useMemo(
+    () => [panels.panel, active !== 'critique' && panels.hidden],
+    [active],
+  );
+  return (
+    <>
+      <View style={videoStyle}    pointerEvents={active === 'video'    ? 'auto' : 'none'}>
+        <VideoTab />
+      </View>
+      <View style={critiqueStyle} pointerEvents={active === 'critique' ? 'auto' : 'none'}>
+        <CritiqueTab />
+      </View>
+    </>
+  );
+});
+
+const panels = StyleSheet.create({
+  panel:  { flex: 1 },
+  hidden: { position: 'absolute', opacity: 0, width: 0, height: 0, overflow: 'hidden' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SCREEN HEADER
+// ─────────────────────────────────────────────────────────────────────────────
+const ScreenHeader = memo(() => (
+  <View style={hdr.wrap}>
+  </View>
+));
+
+const hdr = StyleSheet.create({
+  wrap:  { alignItems: 'center', paddingTop: 8, paddingBottom: 14 },
+  title: { color: P.white, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  rule:  { marginTop: 8, width: 28, height: 0.5, backgroundColor: P.edgeMid, borderRadius: 1 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+export default function CreateScreen() {
+  const [activeTab, setActiveTab] = useState<Tab>('video');
+  const handleSwitch = useCallback((t: Tab) => setActiveTab(t), []);
+
+  return (
+    <View style={root.container}>
       <StatusBar style="light" />
       <GalaxyBackground />
 
-      <SafeAreaView style={{ flex: 1 }}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          {/* Header */}
-          <View style={s.header}>
-            <TouchableOpacity style={s.backBtn} onPress={goPrev}>
-              <Ionicons name="chevron-back" size={20} color={C.textSec} />
-            </TouchableOpacity>
-            <View style={{ flex: 1 }}>
-              <Text style={s.headerTitle}>Nouveau Réel</Text>
-              <Text style={s.headerSub}>Universe App · Cinéma indépendant</Text>
-            </View>
-          </View>
-
-          {/* Step indicator */}
-          <StepIndicator step={step} />
-
-          {/* Contenu */}
-          <Animated.ScrollView
-            style={{ flex: 1, transform: [{ translateX: slideAnim }] }}
-            contentContainerStyle={s.scroll}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {step === 0 && (
-              <StepImport
-                videoUri={videoUri}
-                videoFileName={videoFileName}
-                videoDuration={videoDuration}
-                trimStart={trimStart}
-                trimEnd={trimEnd}
-                onPick={pickVideo}
-                onRemove={removeVideo}
-                onTrimChange={handleTrimChange}
-              />
-            )}
-            {step === 1 && (
-              <StepInfos meta={meta} onChange={patchMeta} />
-            )}
-            {step === 2 && (
-              <StepPublish
-                meta={meta}
-                videoFileName={videoFileName}
-                trimStart={trimStart}
-                trimEnd={trimEnd}
-                uploading={uploading}
-                uploadProgress={uploadProgress}
-                uploadMsg={uploadMsg}
-                onUpload={handleUpload}
-              />
-            )}
-            <View style={{ height: 40 }} />
-          </Animated.ScrollView>
-
-          {/* Footer navigation */}
-          {step < 2 && (
-            <View style={s.footer}>
-              <View style={s.footerRow}>
-                {step > 0 && (
-                  <TouchableOpacity style={s.footerBack} onPress={goPrev}>
-                    <Ionicons name="chevron-back" size={18} color={C.textSec} />
-                    <Text style={s.footerBackTxt}>Retour</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                  style={[
-                    s.footerNext,
-                    !canContinue && s.footerNextDisabled,
-                    step === 0 && { marginLeft: 'auto' as any },
-                  ]}
-                  onPress={goNext}
-                  disabled={!canContinue}
-                  activeOpacity={0.85}
-                >
-                  <LinearGradient
-                    colors={canContinue ? [C.teal, C.navyMid] : [C.surf, C.surf]}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                    style={s.footerNextGrad}
-                  >
-                    <Text style={[s.footerNextTxt, !canContinue && { color: C.textTert }]}>
-                      {step === 0 ? 'Informations' : 'Aperçu'}
-                    </Text>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={16}
-                      color={canContinue ? 'white' : C.textTert}
-                    />
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-
-              {!canContinue && errorHint.length > 0 && (
-                <Text style={s.footerHint}>{errorHint}</Text>
-              )}
-            </View>
-          )}
-        </KeyboardAvoidingView>
+      <SafeAreaView style={root.safe}>
+        <ScreenHeader />
+        <TabBar active={activeTab} onSwitch={handleSwitch} />
+        <View style={{ flex: 1 }}>
+          <TabPanels active={activeTab} />
+        </View>
       </SafeAreaView>
     </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  root:               { flex: 1, backgroundColor: C.bg0 },
-  header:             { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16, gap: 12 },
-  backBtn:            { width: 38, height: 38, borderRadius: 19, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  headerTitle:        { color: C.text, fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
-  headerSub:          { color: C.textTert, fontSize: 11, marginTop: 1 },
-  scroll:             { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 100 },
-  footer:             { position: 'absolute', bottom: 80, left: 0, right: 0, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 14, paddingHorizontal: 20, paddingBottom: 16, zIndex: 10 },
-  footerRow:          { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  footerBack:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 14 },
-  footerBackTxt:      { color: C.textSec, fontSize: 14, fontWeight: '600' },
-  footerNext:         { flex: 1, borderRadius: 22, overflow: 'hidden' },
-  footerNextDisabled: { opacity: 0.45 },
-  footerNextGrad:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15 },
-  footerNextTxt:      { color: 'white', fontSize: 15, fontWeight: '700' },
-  footerHint:         { textAlign: 'center', color: C.textTert, fontSize: 11, marginTop: 8, fontStyle: 'italic' },
+const root = StyleSheet.create({
+  container: { flex: 1, backgroundColor: P.bg },
+  safe:      { flex: 1 },
 });

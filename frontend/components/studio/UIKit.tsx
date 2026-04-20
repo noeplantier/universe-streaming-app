@@ -278,19 +278,7 @@ export const CTAButton = memo(function CTAButton({
         disabled={disabled || loading}
         activeOpacity={1}
       >
-        <LinearGradient
-          colors={CTA_COLORS[variant]}
-          start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-          style={[ctab.base, small && ctab.small, variant === 'ghost' && ctab.ghostBorder]}
-        >
-          {loading
-            ? <ActivityIndicator color={textColor} size="small" />
-            : <>
-                {icon && <Ionicons name={icon as any} size={small ? 15 : 18} color={textColor} style={{ marginRight: 7 }} />}
-                <Text style={[ctab.label, { color: textColor }, small && ctab.labelSmall]}>{label}</Text>
-              </>
-          }
-        </LinearGradient>
+        
       </TouchableOpacity>
     </Animated.View>
   );

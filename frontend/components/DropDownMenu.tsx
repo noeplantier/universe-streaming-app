@@ -1,408 +1,372 @@
-
+// components/reels/DropdownMenu.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+//  Menu latéral gauche — C.navyMid dominant · icônes blanches · transparent
+// ─────────────────────────────────────────────────────────────────────────────
 import React, {
-    memo, useEffect, useRef, useCallback, useMemo,
-  } from 'react';
-  import {
-    View, Text, StyleSheet, TouchableOpacity, Image,
-    Animated, Easing, Dimensions, ScrollView, PanResponder,
-    Platform,
-  } from 'react-native';
-  import { SafeAreaView }  from 'react-native-safe-area-context';
-  import { BlurView }      from 'expo-blur';
-  import { Ionicons }      from '@expo/vector-icons';
-  import { LinearGradient } from 'expo-linear-gradient';
-  import * as Haptics      from 'expo-haptics';
-  
-  // ─── Types ────────────────────────────────────────────────────────
-  
-  export const MENU_ITEMS = [
-    { icon: '🎬', label: 'Pour vous',        key: 'foryou',   badge: null,   hot: false  },
-    { icon: '🌟', label: 'Courts métrages',  key: 'short',    badge: null,  hot: false },
-    { icon: '🎭', label: 'Drame',            key: 'drama',    badge: null,   hot: false },
-    { icon: '🚀', label: 'Science-Fiction',  key: 'scifi',    badge: null,   hot: false },
-    { icon: '💜', label: 'Romance',          key: 'romance',  badge: null,   hot: false },
-    { icon: '🔪', label: 'Thriller',         key: 'thriller', badge: null,   hot: false  },
-    { icon: '✨', label: 'Films ORIGINAL',   key: 'original', badge: null,   hot: false },
-    { icon: '🏆', label: 'Sélection Cannes', key: 'cannes',   badge: null,   hot: false },
-    { icon: '🎪', label: 'Fantasy',          key: 'fantasy',  badge: null,   hot: false },
-    { icon: '📽',  label: 'Documentaire',    key: 'docu',     badge: null,   hot: false },
-    { icon: '🎨', label: 'Animation',        key: 'anim',     badge: null,  hot: false },
-    { icon: '🔥', label: 'Tendances',        key: 'trend',    badge: null,   hot: false  },
-  ] as const;
-  
-  export type MenuKey = typeof MENU_ITEMS[number]['key'];
-  
-  interface DropdownMenuProps {
-    visible: boolean;
-    onClose: () => void;
-    onSelect: (key: MenuKey) => void;
-    activeKey: MenuKey;
-  }
-  
-  
-  const P = {
-    bg:      '#07000F',
-    surface: '#130025',
-    glass:   'rgba(255,255,255,0.06)',
-    primary: '#0a2f63',
-    primL:   '##0a2f63',
-    primGl:  '#0a2f63',
-    t1:      '#FFFFFF', 
-    t2:      'rgba(240,232,255,0.62)',
-    t3:      'rgba(240,232,255,0.36)',
-    bord:    '#0a2f63',
-    bordL:   'rgba(255,255,255,0.08)',
-    gold:    '#FFD60A',
-    red:     '#EF4444',
-    hot:     '#FF6B35',
-  } as const;
-  
-  const { width: W } = Dimensions.get('window');
-  const PANEL_W = Math.min(W * 0.82, 340);
-  
-  // ─── Constante profil mock ────────────────────────────────────────
-  
-  const USER_PROFILE = {
-    name:     'Hugo Chassaing',
-    handle:   '@hugo.chassaing',
-    avatar:   'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',
-    films:    247,
-    watchlist: 38,
-    niveau:   'Cinéphile Confirmé',
-    stars:    5,
-  };
-  
-  // ─── Animated Star Row ────────────────────────────────────────────
-  
-  const StarRow = memo(function StarRow({ count }: { count: number }) {
-    return (
-      <View style={{ flexDirection: 'row', gap: 3, marginTop: 4 }}>
-        {Array.from({ length: 5 }).map((_, i) => (
+  memo, useEffect, useRef, useCallback,
+} from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, Image,
+  Animated, Easing, Dimensions, ScrollView, PanResponder, Platform,
+} from 'react-native';
+import { SafeAreaView }   from 'react-native-safe-area-context';
+import { BlurView }       from 'expo-blur';
+import { Ionicons }       from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics       from 'expo-haptics';
+
+import { C } from '@/components/create/tokens';
+import { supabase } from '@/lib/supabase';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFIL MOCK (avatar conservé)
+// ─────────────────────────────────────────────────────────────────────────────
+const USER_PROFILE = {
+  name:      'Hugo Chassaing',
+  handle:    '@hugo.chassaing',
+  avatar:    'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',
+  films:     247,
+  watchlist: 38,
+  niveau:    'Cinéphile',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🎨 TOKENS — blanc pur sur navyMid, aucune couleur vive
+// ─────────────────────────────────────────────────────────────────────────────
+const T = {
+  bg:       C.navyMid,
+  text:     'rgba(255,255,255,0.88)',
+  textSec:  'rgba(255,255,255,0.45)',
+  textTert: 'rgba(255,255,255,0.22)',
+  surf:     'rgba(255,255,255,0.05)',
+  surfHi:   'rgba(255,255,255,0.09)',
+  border:   'rgba(255,255,255,0.07)',
+  borderHi: 'rgba(255,255,255,0.13)',
+  active:   'rgba(255,255,255,0.07)',
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CATALOGUE GENRES
+// ─────────────────────────────────────────────────────────────────────────────
+export const MENU_ITEMS = [
+  { icon: 'play-circle-outline',   label: 'Pour vous',        key: 'foryou'   },
+  { icon: 'film-outline',          label: 'Courts métrages',  key: 'short'    },
+  { icon: 'heart-outline',         label: 'Drame',            key: 'drama'    },
+  { icon: 'planet-outline',        label: 'Science-Fiction',  key: 'scifi'    },
+  { icon: 'rose-outline',          label: 'Romance',          key: 'romance'  },
+  { icon: 'skull-outline',         label: 'Thriller',         key: 'thriller' },
+  { icon: 'sparkles-outline',      label: 'Films ORIGINAL',   key: 'original' },
+  { icon: 'trophy-outline',        label: 'Sélection Cannes', key: 'cannes'   },
+  { icon: 'color-wand-outline',    label: 'Fantasy',          key: 'fantasy'  },
+  { icon: 'camera-outline',        label: 'Documentaire',     key: 'docu'     },
+  { icon: 'brush-outline',         label: 'Animation',        key: 'anim'     },
+  { icon: 'flame-outline',         label: 'Tendances',        key: 'trend'    },
+] as const;
+
+export type MenuKey = typeof MENU_ITEMS[number]['key'];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DIMENSIONS
+// ─────────────────────────────────────────────────────────────────────────────
+const { width: W } = Dimensions.get('window');
+const PANEL_W = Math.min(W * 0.80, 320);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+interface DropdownMenuProps {
+  visible:   boolean;
+  onClose:   () => void;
+  onSelect:  (key: MenuKey) => void;
+  activeKey: MenuKey;
+}
+
+interface UserProfile {
+  display_name: string;
+  username:     string;
+  avatar_url:   string;
+  films_seen?:  number;
+  watchlist?:   number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MENU ITEM ROW
+// ─────────────────────────────────────────────────────────────────────────────
+interface MenuItemRowProps {
+  item:      typeof MENU_ITEMS[number];
+  isActive:  boolean;
+  onPress:   () => void;
+  slideAnim: Animated.Value;
+}
+
+const MenuItemRow = memo(function MenuItemRow({ item, isActive, onPress, slideAnim }: MenuItemRowProps) {
+  const tx = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [-24, 0] });
+  const op = slideAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+
+  return (
+    <Animated.View style={{ transform: [{ translateX: tx }], opacity: op }}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.65}
+        style={[s.item, isActive && s.itemActive]}
+      >
+        {/* Barre active gauche */}
+        {isActive && <View style={s.accentBar} />}
+
+        {/* Icône */}
+        <View style={[s.iconWrap, isActive && s.iconWrapActive]}>
           <Ionicons
-            key={i}
-            name={i < count ? 'star' : 'star-outline'}
-            size={12}
-            color={i < count ? P.gold : P?.t3 || '#888'}
+            name={item.icon as any}
+            size={18}
+            color={isActive ? T.text : T.textSec}
           />
-        ))}
+        </View>
+
+        {/* Label */}
+        <Text style={[s.itemLabel, isActive && s.itemLabelActive]} numberOfLines={1}>
+          {item.label}
+        </Text>
+
+        {/* Chevron si actif */}
+        {isActive && (
+          <Ionicons name="chevron-forward" size={13} color={T.textTert} />
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+});
+MenuItemRow.displayName = 'MenuItemRow';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE HEADER — avatar conservé, stats row, textes blancs
+// ─────────────────────────────────────────────────────────────────────────────
+const ProfileHeader = memo(function ProfileHeader({ statsAnim }: { statsAnim: Animated.Value }) {
+  const ty = statsAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] });
+
+  return (
+    <Animated.View style={[s.profileSection, { opacity: statsAnim, transform: [{ translateY: ty }] }]}>
+      {/* Avatar + identité */}
+      <View style={s.profileRow}>
+        <View style={s.avatarWrap}>
+          <Image source={{ uri: USER_PROFILE.avatar }} style={s.avatar} />
+          <View style={s.onlineDot} />
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text style={s.profileName}>{USER_PROFILE.name}</Text>
+          <Text style={s.profileHandle}>{USER_PROFILE.handle}</Text>
+          <Text style={s.profileNiveau}>{USER_PROFILE.niveau}</Text>
+        </View>
       </View>
-    );
-  });
-  
-  // ─── Menu Item ────────────────────────────────────────────────────
-  
-  interface MenuItemRowProps {
-    item: typeof MENU_ITEMS[number];
-    isActive: boolean;
-    onPress: () => void;
-    delay: number;
-    slideAnim: Animated.Value;
-  }
-  
-  const MenuItemRow = memo(function MenuItemRow({
-    item, isActive, onPress, delay, slideAnim,
-  }: MenuItemRowProps) {
-    const translateX = slideAnim.interpolate({
-      inputRange:  [0, 1],
-      outputRange: [-30, 0],
-    });
-    const opacity = slideAnim.interpolate({
-      inputRange:  [0, 1],
-      outputRange: [0, 1],
-    });
-  
-    return (
-      <Animated.View style={{ transform: [{ translateX }], opacity }}>
-        <TouchableOpacity
-          onPress={onPress}
-          activeOpacity={0.72}
-          style={[s.item, isActive && s.itemActive]}
-        >
-          {isActive && (
-            <LinearGradient
-              colors={['#0a2f63', '#0a2f63']}
-              start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-              style={StyleSheet.absoluteFill}
-            />
-          )}
-          {isActive && <View style={s.accentBar} />}
-  
-          <Text style={s.icon}>{item.icon}</Text>
-          <Text style={[s.label, isActive && s.labelActive]} numberOfLines={1}>
-            {item.label}
-          </Text>
-  
-          <View style={s.rightGroup}>
-            {item.hot && !isActive && (
-              <View style={s.hotDot}>
-                <Text style={s.hotTxt}>🔥</Text>
-              </View>
-            )}
-            {item.badge && (
-              <View style={[s.badge, item.badge === 'NEW' && s.badgeNew]}>
-                <Text style={s.badgeTxt}>{item.badge}</Text>
-              </View>
-            )}
-            {isActive && (
-              <Ionicons name="play" size={12} color={P.primL} />
-            )}
-          </View>
-        </TouchableOpacity>
+
+      {/* Stats row */}
+      <View style={s.statsRow}>
+        <View style={s.statBlock}>
+          <Text style={s.statVal}>{USER_PROFILE.films}</Text>
+          <Text style={s.statLbl}>Films vus</Text>
+        </View>
+        <View style={s.statDivider} />
+        <View style={s.statBlock}>
+          <Text style={s.statVal}>{USER_PROFILE.watchlist}</Text>
+          <Text style={s.statLbl}>Watchlist</Text>
+        </View>
+        <View style={s.statDivider} />
+        <View style={s.statBlock}>
+          <Text style={s.statVal}>★</Text>
+          <Text style={s.statLbl}>{USER_PROFILE.niveau}</Text>
+        </View>
+      </View>
+    </Animated.View>
+  );
+});
+ProfileHeader.displayName = 'ProfileHeader';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DROPDOWN MENU
+// ─────────────────────────────────────────────────────────────────────────────
+const DropdownMenu = memo(function DropdownMenu({
+  visible, onClose, onSelect, activeKey,
+}: DropdownMenuProps) {
+  const slideX    = useRef(new Animated.Value(-PANEL_W)).current;
+  const bgOpacity = useRef(new Animated.Value(0)).current;
+  const statsAnim = useRef(new Animated.Value(0)).current;
+  const itemAnims = useRef(MENU_ITEMS.map(() => new Animated.Value(0))).current;
+
+  // ── Swipe-to-close ──────────────────────────────────────────────────────
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, g) => g.dx < -15 && Math.abs(g.dy) < 40,
+      onPanResponderMove: (_, g) => {
+        if (g.dx < 0) slideX.setValue(Math.max(g.dx, -PANEL_W));
+      },
+      onPanResponderRelease: (_, g) => {
+        if (g.dx < -60 || g.vx < -0.6) {
+          onClose();
+        } else {
+          Animated.spring(slideX, { toValue: 0, useNativeDriver: true, speed: 22, bounciness: 4 }).start();
+        }
+      },
+    }),
+  ).current;
+
+  // ── Animations ouverture/fermeture ──────────────────────────────────────
+  useEffect(() => {
+    if (visible) {
+      itemAnims.forEach(a => a.setValue(0));
+      statsAnim.setValue(0);
+      slideX.setValue(0);
+      bgOpacity.setValue(0.55);
+
+      Animated.parallel([
+        Animated.stagger(12, itemAnims.map(a =>
+          Animated.timing(a, { toValue: 1, duration: 150, useNativeDriver: true }),
+        )),
+        Animated.timing(statsAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+      ]).start();
+    } else {
+      slideX.setValue(-PANEL_W);
+      bgOpacity.setValue(0);
+    }
+  }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSelect = useCallback((key: MenuKey) => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onSelect(key);
+    onClose();
+  }, [onSelect, onClose]);
+
+  if (!visible) return null;
+
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+
+      {/* Backdrop */}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, s.backdrop, { opacity: bgOpacity }]}
+        pointerEvents={visible ? 'auto' : 'none'}
+      >
+        <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} activeOpacity={1} />
       </Animated.View>
-    );
-  });
-  
-  // ─── Main Component ───────────────────────────────────────────────
-  
-  const DropdownMenu = memo(function DropdownMenu({
-    visible, onClose, onSelect, activeKey,
-  }: DropdownMenuProps) {
-    const slideX    = useRef(new Animated.Value(-PANEL_W)).current;
-    const bgOpacity = useRef(new Animated.Value(0)).current;
-    const itemAnims = useRef(MENU_ITEMS.map(() => new Animated.Value(0))).current;
-  
-    // ── Swipe-to-close PanResponder ──────────────────────────────
-    const panResponder = useRef(
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, g) => g.dx < -15 && Math.abs(g.dy) < 40,
-        onPanResponderMove: (_, g) => {
-          if (g.dx < 0) {
-            slideX.setValue(Math.max(g.dx, -PANEL_W));
-          }
-        },
-        onPanResponderRelease: (_, g) => {
-          if (g.dx < -60 || g.vx < -0.6) {
-            onClose();
-          } else {
-            Animated.spring(slideX, {
-              toValue: 0, useNativeDriver: true, speed: 22, bounciness: 4,
-            }).start();
-          }
-        },
-      }),
-    ).current;
-  
-    // ── Ouverture / fermeture animée ──────────────────────────────
-    useEffect(() => {
-      if (visible) {
-        // Reset item anims
-        itemAnims.forEach(a => a.setValue(0));
-  
-        Animated.parallel([
-          Animated.spring(slideX, {
-            toValue: 0, useNativeDriver: true, speed: 20, bounciness: 6,
-          }),
-          Animated.timing(bgOpacity, {
-            toValue: 1, duration: 220, useNativeDriver: true,
-          }),
-        ]).start(() => {
-          // Cascade d'entrée des items
-          Animated.stagger(
-            28,
-            itemAnims.map(a =>
-              Animated.spring(a, {
-                toValue: 1, useNativeDriver: true, speed: 24, bounciness: 5,
-              }),
-            ),
-          ).start();
-        });
-      } else {
-        Animated.parallel([
-          Animated.timing(slideX, {
-            toValue: -PANEL_W,
-            duration: 240,
-            easing: Easing.in(Easing.cubic),
-            useNativeDriver: true,
-          }),
-          Animated.timing(bgOpacity, {
-            toValue: 0, duration: 200, useNativeDriver: true,
-          }),
-        ]).start();
-      }
-    }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
-  
-    // ── Handler item ─────────────────────────────────────────────
-    const handleSelect = useCallback((key: MenuKey) => {
-      if (Platform.OS !== 'web') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      onSelect(key);
-      onClose();
-    }, [onSelect, onClose]);
-  
-    // ── Stats user animées ────────────────────────────────────────
-    const statsAnim = useRef(new Animated.Value(0)).current;
-    useEffect(() => {
-      if (visible) {
-        Animated.spring(statsAnim, {
-          toValue: 1, delay: 180, useNativeDriver: true, speed: 18, bounciness: 8,
-        }).start();
-      } else {
-        statsAnim.setValue(0);
-      }
-    }, [visible]); // eslint-disable-line react-hooks/exhaustive-deps
-  
-    if (!visible) return null;
-  
-    return (
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-        {/* Backdrop */}
-        <Animated.View
-          style={[StyleSheet.absoluteFill, s.backdrop, { opacity: bgOpacity }]}
-          pointerEvents={visible ? 'auto' : 'none'}
-        >
-          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} activeOpacity={1} />
-        </Animated.View>
-  
-        {/* Panel */}
-        <Animated.View
-          style={[s.panel, { transform: [{ translateX: slideX }] }]}
-          {...panResponder.panHandlers}
-        >
-          {/* Glow border droit */}
-          <View style={s.glowEdge} />
-          <LinearGradient
-            colors={['#0a2f63', 'transparent', '#0a2f63']}
-            locations={[0, 0.5, 1]}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-  
-          <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
-            {/* ── Profil ── */}
-            <Animated.View
-              style={[s.profileSection, {
-                opacity: statsAnim,
-                transform: [{ translateY: statsAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
-              }]}
-            >
-              <View style={s.profileRow}>
-                <View style={s.avatarWrap}>
-                  <Image source={{ uri: USER_PROFILE.avatar }} style={s.profileAvatar} />
-                  <View style={s.onlineDot} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.profileName}>{USER_PROFILE.name}</Text>
-                  <Text style={s.profileHandle}>{USER_PROFILE.handle}</Text>
-                  <StarRow count={USER_PROFILE.stars} />
-                </View>
-              </View>
-  
-              <View style={s.statsRow}>
-                <View style={s.statBlock}>
-                  <Text style={s.statVal}>{USER_PROFILE.films}</Text>
-                  <Text style={s.statLbl}>Films vus</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.statBlock}>
-                  <Text style={s.statVal}>{USER_PROFILE.watchlist}</Text>
-                  <Text style={s.statLbl}>Watchlist</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.statBlock}>
-                  <Text style={[s.statVal, { color: P.gold }]}>★</Text>
-                  <Text style={s.statLbl}>{USER_PROFILE.niveau}</Text>
-                </View>
-              </View>
-            </Animated.View>
-  
-            {/* ── Séparateur ── */}
-            <View style={s.sep} />
-  
-            {/* ── Titre section ── */}
-            <Text style={s.sectionTitle}>MON UNIVERS</Text>
-  
-            {/* ── Items scrollables ── */}
-            <ScrollView
-              style={{ flex: 1 }}
-              showsVerticalScrollIndicator={false}
-              bounces={false}
-            >
-              {MENU_ITEMS.map((item, idx) => (
-                <MenuItemRow
-                  key={item.key}
-                  item={item}
-                  isActive={activeKey === item.key}
-                  onPress={() => handleSelect(item.key as MenuKey)}
-                  delay={idx * 30}
-                  slideAnim={itemAnims[idx]}
-                />
-              ))}
-              <View style={{ height: 20 }} />
-            </ScrollView>
-  
-            {/* ── Footer ── */}
-            <View style={s.footer}>
-              <LinearGradient
-                colors={['transparent', 'rgba(7,0,15,0.95)']}
-                style={StyleSheet.absoluteFill}
-                pointerEvents="none"
+
+      {/* Panel */}
+      <Animated.View
+        style={[s.panel, { transform: [{ translateX: slideX }] }]}
+        {...panResponder.panHandlers}
+      >
+        {/* Fond blur + navyMid */}
+        <BlurView intensity={Platform.OS === 'ios' ? 50 : 20} tint="dark" style={StyleSheet.absoluteFill} />
+        <LinearGradient
+          colors={[C.navyMid, `${C.navyMid}F2`]}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
+
+        {/* Bord droit décoratif */}
+        <View style={s.edgeLine} />
+
+        <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1 }}>
+
+          {/* ── Profil ── */}
+          <ProfileHeader statsAnim={statsAnim} />
+
+          {/* ── Séparateur ── */}
+          <View style={s.sep} />
+
+          {/* ── Label section ── */}
+          <Text style={s.sectionLabel}>MON UNIVERS</Text>
+
+          {/* ── Items ── */}
+          <ScrollView
+            style={{ flex: 1 }}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            contentContainerStyle={{ paddingBottom: 12 }}
+          >
+            {MENU_ITEMS.map((item, idx) => (
+              <MenuItemRow
+                key={item.key}
+                item={item}
+                isActive={activeKey === item.key}
+                onPress={() => handleSelect(item.key as MenuKey)}
+                slideAnim={itemAnims[idx]}
               />
-              <Text style={s.footerBrand}>UNIVERSE</Text>
-              <Text style={s.footerSub}>Films indépendants · Beta</Text>
-            </View>
-          </SafeAreaView>
-        </Animated.View>
-      </View>
-    );
-  });
-  
-  export default DropdownMenu;
-  
-  // ─── Styles ───────────────────────────────────────────────────────
-  
-  const s = StyleSheet.create({
-    backdrop:      { backgroundColor: 'rgba(0,0,0,0.65)' },
-    panel: {
-      position:          'absolute',
-      left:              0, top: 0, bottom: 0,
-      width:             PANEL_W,
-      backgroundColor:   'rgba(8,0,18,0.97)',
-      borderRightWidth:  1,
-      borderRightColor:  P.bord,
-      shadowColor:       P.primary,
-      shadowOffset:      { width: 8, height: 0 },
-      shadowOpacity:     0.35,
-      shadowRadius:      24,
-      elevation:         20,
-      overflow:          'hidden',
-    },
-    glowEdge:      { position: 'absolute', right: 0, top: 0, bottom: 0, width: 2, backgroundColor: P.primL, opacity: 0.5 },
-  
-    // Profile
-    profileSection: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 16 },
-    profileRow:     { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 },
-    avatarWrap:     { position: 'relative' },
-    profileAvatar:  { width: 56, height: 56, borderRadius: 28, borderWidth: 2.5, borderColor: P.primL },
-    onlineDot:      { position: 'absolute', bottom: 2, right: 2, width: 12, height: 12, borderRadius: 6, backgroundColor: '#22C55E', borderWidth: 2, borderColor: 'rgba(8,0,18,0.97)' },
-    profileName:    { color: P?.t2 || '#AAA', fontSize: 16, fontWeight: '800', letterSpacing: 0.2 },
-    profileHandle:  { color: P?.t3 || '#888', fontSize: 12, marginTop: 1 },
-  
-    statsRow:     { flexDirection: 'row', backgroundColor: 'rgba(146,64,214,0.12)', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: P.bord },
-    statBlock:    { flex: 1, alignItems: 'center', gap: 3 },
-    statVal:      { color: P?.t2 || '#AAA', fontSize: 17, fontWeight: '900' },
-    statLbl:      { color: P?.t3 || '#888', fontSize: 9, fontWeight: '600', textAlign: 'center', letterSpacing: 0.5 },
-    statDivider:  { width: 1, backgroundColor: P.bord, marginVertical: 4 },
-  
-    sep:          { height: 1, backgroundColor: 'rgba(146,64,214,0.20)', marginHorizontal: 20, marginBottom: 8 },
-    sectionTitle: { color: P?.t3 || '#888', fontSize: 10, fontWeight: '800', letterSpacing: 2.5, paddingHorizontal: 20, marginBottom: 8 },
-  
-    // Items
-    item:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, gap: 14, overflow: 'hidden' },
-    itemActive: { backgroundColor: 'transparent' },
-    accentBar:  { position: 'absolute', left: 0, top: 4, bottom: 4, width: 3.5, backgroundColor: P?.primL || '#9240d6', borderRadius: 2 },
-    icon:       { fontSize: 20, width: 30, textAlign: 'center' },
-    label:      { flex: 1, color: P?.t2 || '#888', fontSize: 15, fontWeight: '500' },
-    labelActive:{ color: P?.t2 || '#fff', fontWeight: '800' },
-    rightGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    hotDot:     { width: 18, height: 18, alignItems: 'center', justifyContent: 'center' },
-    hotTxt:     { fontSize: 11 },
-    badge:      { backgroundColor: 'rgba(146,64,214,0.35)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: P?.bord || '#333' },
-    badgeNew:   { backgroundColor: 'rgba(34,197,94,0.22)', borderColor: 'rgba(34,197,94,0.45)' },
-    badgeTxt:   { color: P?.t2 || '#fff', fontSize: 9, fontWeight: '800' },
-  
-   // Footer
-   footer:      { paddingHorizontal: 20, paddingBottom: 8, paddingTop: 14, position: 'relative' },
-   footerBrand: { color: P?.primL || '#9240d6', fontSize: 13, fontWeight: '900', letterSpacing: 3 },
-   footerSub:   { color: P?.primL || '#9240d6', fontSize: 10, marginTop: 2 },
-  });
+            ))}
+          </ScrollView>
+
+          {/* ── Footer ── */}
+          <View style={s.footer}>
+            <View style={s.footerLine} />
+            <Text style={s.footerBrand}>UNIVERSE</Text>
+            <Text style={s.footerSub}>Cinéma Indépendant · Beta</Text>
+          </View>
+
+        </SafeAreaView>
+      </Animated.View>
+    </View>
+  );
+});
+
+export default DropdownMenu;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  backdrop: { backgroundColor: 'rgba(0,0,0,0.55)' },
+
+  panel: {
+    position:         'absolute',
+    left: 0, top: 0, bottom: 0,
+    width:            PANEL_W,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderRightColor: T.border,
+    overflow:         'hidden',
+    shadowColor:      '#000',
+    shadowOffset:     { width: 6, height: 0 },
+    shadowOpacity:    0.25,
+    shadowRadius:     20,
+    elevation:        18,
+  },
+
+  edgeLine: {
+    position:        'absolute',
+    right:            0, top: 0, bottom: 0,
+    width:            StyleSheet.hairlineWidth,
+    backgroundColor: T.borderHi,
+  },
+
+  // Profil
+  profileSection: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 18 },
+  profileRow:     { flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 14 },
+  avatarWrap:     { position: 'relative' },
+  avatar:         { width: 52, height: 52, borderRadius: 26, borderWidth: 1.5, borderColor: T.borderHi },
+  avatarFallback: { backgroundColor: T.surf, alignItems: 'center', justifyContent: 'center' },
+  onlineDot:      { position: 'absolute', bottom: 1, right: 1, width: 10, height: 10, borderRadius: 5, backgroundColor: 'rgba(255,255,255,0.55)', borderWidth: 2, borderColor: C.navyMid },
+  profileName:    { color: '#FFFFFF', fontSize: 15, fontWeight: '800', letterSpacing: -0.2 },
+  profileHandle:  { color: 'rgba(255,255,255,0.50)', fontSize: 12, fontWeight: '500' },
+  profileNiveau:  { color: 'rgba(255,255,255,0.30)', fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
+
+  statsRow:    { flexDirection: 'row', backgroundColor: T.surf, borderRadius: 14, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: T.border },
+  statBlock:   { flex: 1, alignItems: 'center', gap: 3 },
+  statVal:     { color: '#FFFFFF', fontSize: 16, fontWeight: '900' },
+  statLbl:     { color: 'rgba(255,255,255,0.30)', fontSize: 9, fontWeight: '600', textAlign: 'center', letterSpacing: 0.5 },
+  statDivider: { width: StyleSheet.hairlineWidth, backgroundColor: T.border, marginVertical: 4 },
+
+  // Section
+  sep:          { height: StyleSheet.hairlineWidth, backgroundColor: T.border, marginHorizontal: 20, marginBottom: 10 },
+  sectionLabel: { color: T.textTert, fontSize: 9, fontWeight: '700', letterSpacing: 2.2, paddingHorizontal: 20, marginBottom: 4 },
+
+  // Items
+  item:           { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 12, overflow: 'hidden' },
+  itemActive:     { backgroundColor: T.active },
+  accentBar:      { position: 'absolute', left: 0, top: 6, bottom: 6, width: 3, backgroundColor: 'rgba(255,255,255,0.45)', borderRadius: 2 },
+  iconWrap:       { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: T.surf, borderWidth: StyleSheet.hairlineWidth, borderColor: T.border },
+  iconWrapActive: { backgroundColor: T.surfHi, borderColor: T.borderHi },
+  itemLabel:      { flex: 1, color: T.textSec, fontSize: 14, fontWeight: '500' },
+  itemLabelActive:{ color: T.text, fontWeight: '700' },
+
+  // Footer
+  footer:      { paddingHorizontal: 20, paddingBottom: 10, paddingTop: 14, gap: 3, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.border },
+  footerLine:  { width: 20, height: StyleSheet.hairlineWidth, backgroundColor: T.border, marginBottom: 6 },
+  footerBrand: { color: T.textSec, fontSize: 11, fontWeight: '900', letterSpacing: 3 },
+  footerSub:   { color: T.textTert, fontSize: 9, letterSpacing: 0.5 },
+});

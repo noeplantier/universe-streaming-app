@@ -27,13 +27,11 @@ const NOTIF_ICONS: Record<string, { icon: string; color: string }> = {
 export default function NotificationsScreen() {
   const router = useRouter();
   const [notifs, setNotifs] = useState<Notif[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     notificationsAPI.getAll()
       .then(setNotifs)
       .catch(() => {})
-      .finally(() => setLoading(false));
   }, []);
 
   const unread = notifs.filter(n => !n.read).length;
@@ -55,11 +53,8 @@ export default function NotificationsScreen() {
         </View>
       </SafeAreaView>
 
-      {loading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      ) : (
+     
+       : (
         <FlatList
           data={notifs}
           keyExtractor={item => item.id}
@@ -106,7 +101,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary },
   headerSub: { fontSize: 11, color: COLORS.primary, marginTop: 2 },
   clearBtn: { paddingHorizontal: 12, paddingVertical: 6 },
-  clearText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
+  clearText: { color: "#fff", fontSize: 13, fontWeight: '900' },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   notifCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

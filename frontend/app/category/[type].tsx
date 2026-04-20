@@ -10,6 +10,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { COLORS, SPACING, RADIUS, GRADIENTS, GENRE_COLORS, DURATION_LABELS } from '../../constants/theme';
 import { reviewsAPI, seenAPI } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { C } from '@/components/create/tokens';
 
 const { width } = Dimensions.get('window');
 
@@ -151,7 +152,7 @@ export default function CategoryScreen() {
 
       {/* Category Hero */}
       <LinearGradient
-        colors={['rgba(140,46,186,0.15)', 'transparent']}
+        colors={[C.navyMid, 'transparent']}
         style={styles.categoryHero}
       >
         <View style={[styles.categoryIconWrap, { backgroundColor: `${meta.color}20` }]}>
@@ -161,9 +162,7 @@ export default function CategoryScreen() {
         <Text style={styles.categorySubtitle}>{meta.subtitle}</Text>
       </LinearGradient>
 
-      {loading ? (
-        <ActivityIndicator color={COLORS.primary} style={{ marginTop: 40 }} />
-      ) : (
+     (
         <FlatList
           data={data}
           keyExtractor={(item, i) => item.id || String(i)}
@@ -178,7 +177,7 @@ export default function CategoryScreen() {
             </View>
           }
         />
-      )}
+      )
     </View>
   );
 }
@@ -205,7 +204,7 @@ const styles = StyleSheet.create({
   reviewMetaText: { color: COLORS.textTertiary, fontSize: 11 },
   // Film card
   filmCard: { height: 180, borderRadius: RADIUS.lg, overflow: 'hidden', backgroundColor: COLORS.surface, flexDirection: 'row', alignItems: 'flex-end', position: 'relative' },
-  rankNumber: { position: 'absolute', left: 12, top: 12, fontSize: 36, fontWeight: '900', color: 'rgba(140,46,186,0.8)', zIndex: 2 },
+  rankNumber: { position: 'absolute', left: 12, top: 12, fontSize: 36, fontWeight: '900', color: C.navyMid, zIndex: 2 },
   filmPoster: { ...StyleSheet.absoluteFillObject, width: undefined, height: undefined },
   filmInfo: { flex: 1, padding: 14, gap: 4 },
   genreBadge: { alignSelf: 'flex-start', borderRadius: RADIUS.full, paddingHorizontal: 8, paddingVertical: 3, marginBottom: 4 },

@@ -72,9 +72,9 @@ import React, {
         author:   ME,
         content,
         time:     'À l\'instant',
-        liked:    false,
-        saved:    false,
-        likes:    0,
+        liked:    true,
+        saved:    true,
+        likes:    20,
         comments: [],
         film:     filmEmbed,
       };

@@ -1,16 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// app/settings.tsx  —  Paramètres UNIVERSE
-//
-// Orchestrateur fin : toutes les actions modifient directement le context
-// (optimiste, persisté AsyncStorage, appliqué à l'app en temps réel).
+// app/settings.tsx — Paramètres UNIVERSE
+// Couleur dominante : C.navyMid · Background : GalaxyBackground
 // ─────────────────────────────────────────────────────────────────────────────
-
 import React, {
-  useCallback, useRef, memo,
+  useState, useEffect, useCallback, useRef, memo,
 } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Alert, Animated, Platform, Easing, Dimensions,
+  TextInput, Alert, Animated, Platform, ActivityIndicator,
+  Image, Switch,
 } from 'react-native';
 import { SafeAreaView }   from 'react-native-safe-area-context';
 import { StatusBar }      from 'expo-status-bar';
@@ -18,441 +16,672 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView }       from 'expo-blur';
 import { Ionicons }       from '@expo/vector-icons';
 import { useRouter }      from 'expo-router';
+import * as ImagePicker   from 'expo-image-picker';
+import * as FileSystem    from 'expo-file-system';
 import * as Haptics       from 'expo-haptics';
+import { decode }         from 'base64-arraybuffer';
 
-// Context
-import { SettingsProvider, useSettings } from '@/components/settings/SettingsContext';
-
-// Components
-import ProfileCard   from '@/components/settings/ProfileCard';
-import {
-  SectionHeader, SettingsGroup,
-  SettingsRow, SettingsToggle, SettingsPicker,
-} from '@/components/settings/SettingsGroup';
-
-// Galaxy background (même que social)
-import GalaxyBackground from '@/components/social/GalaxyBackground';
-
-// Types
-import {
-  G,
-  LANGUAGE_LABELS, QUALITY_LABELS, SUBTITLE_SIZE_LABELS, FEED_SORT_LABELS,
-  type AppLanguage, type VideoQuality, type SubtitleSize, type FeedSort,
-} from '@/components/settings/types';
-
-const { width: W, height: H } = Dimensions.get('window');
+import { supabase }       from '@/lib/supabase';
+import { C }              from '@/components/create/tokens';
+import GalaxyBackground   from '@/components/social/GalaxyBackground';
+import { isEnabled } from 'react-native/Libraries/Performance/Systrace';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Options des pickers (memoïsées à module-level)
+// 🎨 TOKENS — C.navyMid dominant, surfaces ultra-transparentes
 // ─────────────────────────────────────────────────────────────────────────────
+const T = {
+  bg:         C.navyMid,
+  surf:       'rgba(255,255,255,0.04)',
+  surfHi:     'rgba(255,255,255,0.07)',
+  border:     'rgba(255,255,255,0.07)',
+  borderHi:   'rgba(255,255,255,0.13)',
+  text:       '#FFFFFF',
+  textSec:    'rgba(255,255,255,0.52)',
+  textTert:   'rgba(255,255,255,0.25)',
+  accent:     C.navyMid,          // teinte pour les badges/pills
+  dim:        'rgba(255,255,255,0.06)',
+} as const;
 
-const LANG_OPTIONS: { value: AppLanguage; label: string }[] = [
-  { value: 'fr', label: 'Français' },
-  { value: 'en', label: 'English'  },
-  { value: 'es', label: 'Español'  },
-  { value: 'de', label: 'Deutsch'  },
-];
-
-const QUALITY_OPTIONS: { value: VideoQuality; label: string; description?: string }[] = [
-  { value: 'auto',  label: 'Automatique', description: 'Adapte selon votre réseau' },
-  { value: '4k',    label: '4K Ultra HD',  description: 'Meilleure qualité · +données mobiles' },
-  { value: '1080p', label: '1080p HD',     description: 'Recommandé pour la plupart des écrans' },
-  { value: '720p',  label: '720p',         description: 'Bon équilibre qualité/données' },
-  { value: '480p',  label: '480p',         description: 'Économise les données mobiles' },
-];
-
-const SUB_LANG_OPTIONS: { value: AppLanguage; label: string }[] = LANG_OPTIONS;
-
-const SUB_SIZE_OPTIONS: { value: SubtitleSize; label: string }[] = [
-  { value: 'small',  label: 'Petit'  },
-  { value: 'medium', label: 'Moyen'  },
-  { value: 'large',  label: 'Grand'  },
-];
-
-const FEED_SORT_OPTIONS: { value: FeedSort; label: string; description?: string }[] = [
-  { value: 'recommended', label: 'Recommandé',  description: 'Personnalisé selon vos goûts' },
-  { value: 'recent',      label: 'Plus récent', description: 'Chronologique inverse' },
-  { value: 'trending',    label: 'Tendances',   description: 'Ce qui buzz cette semaine' },
-];
+const EDGE = 16;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Header
+// TYPES
 // ─────────────────────────────────────────────────────────────────────────────
+interface Profile {
+  id:           string;
+  display_name: string;
+  username:     string;
+  bio:          string;
+  avatar_url:   string;
+  email:        string;
+  role:         string;
+  plan:         'free' | 'pro' | 'cinephile';
+  created_at:   string;
+}
 
-const SettingsHeader = memo(function SettingsHeader() {
-  const router   = useRouter();
-  const { settings, resetSettings } = useSettings();
+interface Prefs {
+  autoplay:         boolean;
+  data_saver:       boolean;
+  notif_releases:   boolean;
+  notif_social:     boolean;
+  notif_festivals:  boolean;
+  private_profile:  boolean;
+  public_watchlist: boolean;
+}
 
-  const handleReset = useCallback(() => {
+const DEFAULT_PREFS: Prefs = {
+  autoplay: true,         data_saver: false,
+  notif_releases: true,   notif_social: true,  notif_festivals: false,
+  private_profile: false, public_watchlist: true,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SUPABASE HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+async function uploadAvatar(uri: string, userId: string): Promise<string | null> {
+  try {
+    const isBlob = uri.startsWith('blob:');
+    const rawExt = isBlob ? 'jpg' : (uri.split('.').pop()?.toLowerCase() ?? 'jpg');
+    const ext    = ['jpg', 'jpeg', 'png', 'webp'].includes(rawExt) ? rawExt : 'jpg';
+    const mime   = ext === 'png' ? 'image/png' : 'image/jpeg';
+    const path   = `avatars/${userId}.${ext}`;
+    let payload: ArrayBuffer;
+    if (Platform.OS === 'web' || isBlob) {
+      payload = await (await fetch(uri)).arrayBuffer();
+    } else {
+      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      payload = decode(b64);
+    }
+    const { error } = await supabase.storage.from('avatars').upload(path, payload, { contentType: mime, upsert: true });
+    if (error) throw error;
+    return supabase.storage.from('avatars').getPublicUrl(path).data.publicUrl + `?t=${Date.now()}`;
+  } catch { return null; }
+}
+
+async function fetchProfile(userId: string): Promise<Profile | null> {
+  const [{ data }, { data: authData }] = await Promise.all([
+    supabase.from('profiles').select('*').eq('id', userId).single(),
+    supabase.auth.getUser(),
+  ]);
+  if (!data) return null;
+  return { ...(data as Profile), email: authData.user?.email ?? '' };
+}
+
+async function fetchPrefs(userId: string): Promise<Prefs> {
+  const { data } = await supabase.from('user_preferences').select('*').eq('user_id', userId).single();
+  return data ? { ...DEFAULT_PREFS, ...data } as Prefs : DEFAULT_PREFS;
+}
+
+async function upsertPref<K extends keyof Prefs>(userId: string, key: K, value: Prefs[K]) {
+  await supabase.from('user_preferences').upsert({ user_id: userId, [key]: value }, { onConflict: 'user_id' });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔤 SECTION TITLE
+// ─────────────────────────────────────────────────────────────────────────────
+const SectionTitle = memo(({ label }: { label: string }) => (
+  <View style={sct.row}>
+    <View style={sct.line} />
+    <Text style={sct.txt}>{label.toUpperCase()}</Text>
+    <View style={sct.line} />
+  </View>
+));
+SectionTitle.displayName = 'SectionTitle';
+const sct = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginHorizontal: EDGE, marginTop: 28, marginBottom: 10 },
+  line:{ flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: T.border },
+  txt: { color: T.textTert, fontSize: 9, fontWeight: '700', letterSpacing: 2 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📦 GROUP CONTAINER
+// ─────────────────────────────────────────────────────────────────────────────
+const Group = memo(({ children }: { children: React.ReactNode }) => (
+  <View style={grp.outer}>
+    <BlurView intensity={10} tint="dark" style={StyleSheet.absoluteFill} />
+    <View style={grp.inner}>{children}</View>
+  </View>
+));
+Group.displayName = 'Group';
+const grp = StyleSheet.create({
+  outer: { marginHorizontal: EDGE, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: T.border, overflow: 'hidden' },
+  inner: { backgroundColor: T.surf },
+});
+
+const RowDivider = () => (
+  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: T.border, marginLeft: 54 }} />
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROW — ligne générique
+// ─────────────────────────────────────────────────────────────────────────────
+function Row({
+  icon, title, subtitle, right, onPress, danger = false, last = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  onPress?: () => void;
+  danger?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <>
+      <TouchableOpacity
+        style={rw.wrap}
+        onPress={onPress}
+        activeOpacity={onPress ? 0.6 : 1}
+        disabled={!onPress}
+      >
+        <View style={[rw.iconBox, danger && rw.iconBoxDanger]}>
+          <Ionicons name={icon} size={15} color={danger ? 'rgba(255,80,80,0.9)' : T.textSec} />
+        </View>
+        <View style={rw.body}>
+          <Text style={[rw.title, danger && { color: 'rgba(255,80,80,0.9)' }]}>{title}</Text>
+          {subtitle ? <Text style={rw.sub} numberOfLines={1}>{subtitle}</Text> : null}
+        </View>
+        {right !== undefined
+          ? right
+          : onPress
+            ? <Ionicons name="chevron-forward" size={13} color={T.textTert} />
+            : null
+        }
+      </TouchableOpacity>
+      {!last && <RowDivider />}
+    </>
+  );
+}
+const rw = StyleSheet.create({
+  wrap:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 14, gap: 13 },
+  iconBox:     { width: 32, height: 32, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: T.surfHi },
+  iconBoxDanger:{ backgroundColor: 'rgba(255,80,80,0.08)' },
+  body:        { flex: 1, gap: 2 },
+  title:       { color: T.text, fontSize: 14, fontWeight: '600' },
+  sub:         { color: T.textTert, fontSize: 11 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOGGLE ROW
+// ─────────────────────────────────────────────────────────────────────────────
+function ToggleRow({
+  icon, title, subtitle, value, onChange, saving = false, last = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle?: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
+  saving?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <Row
+      icon={icon} title={title} subtitle={subtitle} last={last}
+      right={
+        saving
+          ? <ActivityIndicator size="small" color={T.textSec} />
+          : (
+            <Switch
+              value={value}
+              onValueChange={onChange}
+              trackColor={{ false: T.border, true: 'rgba(255,255,255,0.35)' }}
+              thumbColor='#f4f3f4'
+            />
+          )
+      }
+    />
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🪪 PROFILE CARD
+// ─────────────────────────────────────────────────────────────────────────────
+const PLAN_LABEL: Record<string, string> = {
+  free:      'Gratuit',
+  pro:       'Universe Pro',
+  cinephile: 'Cinéphile Ultimate',
+};
+const ROLE_LABEL: Record<string, string> = {
+  critic:   'Critique',
+  creator:  'Créateur·rice',
+  director: 'Réalisateur·rice',
+};
+
+const ProfileCard = memo(function ProfileCard({
+  profile, onUpdate,
+}: { profile: Profile; onUpdate: (p: Partial<Profile>) => void }) {
+  const [editing,   setEditing]   = useState(false);
+  const [name,      setName]      = useState(profile.display_name);
+  const [bio,       setBio]       = useState(profile.bio ?? '');
+  const [saving,    setSaving]    = useState(false);
+  const [avatarUri, setAvatarUri] = useState(profile.avatar_url);
+  const [uploading, setUploading] = useState(false);
+
+  const save = useCallback(async () => {
+    if (!name.trim()) { Alert.alert('Nom requis'); return; }
+    setSaving(true);
+    const { error } = await supabase.from('profiles')
+      .update({ display_name: name.trim(), bio: bio.trim() })
+      .eq('id', profile.id);
+    setSaving(false);
+    if (error) { Alert.alert('Erreur', error.message); return; }
+    onUpdate({ display_name: name.trim(), bio: bio.trim() });
+    setEditing(false);
+    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [name, bio, profile.id, onUpdate]);
+
+  const pickAvatar = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) { Alert.alert('Permission requise'); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true, aspect: [1, 1], quality: 0.85,
+    });
+    if (res.canceled || !res.assets?.[0]) return;
+    const uri = res.assets[0].uri;
+    setAvatarUri(uri);
+    setUploading(true);
+    const url = await uploadAvatar(uri, profile.id);
+    if (!url) { Alert.alert('Erreur upload'); setUploading(false); return; }
+    await supabase.from('profiles').update({ avatar_url: url }).eq('id', profile.id);
+    setAvatarUri(url);
+    onUpdate({ avatar_url: url });
+    setUploading(false);
+    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, [profile.id, onUpdate]);
+
+  return (
+    <View style={pc.wrap}>
+      <BlurView intensity={12} tint="dark" style={StyleSheet.absoluteFill} />
+
+      <View style={pc.header}>
+        {/* Avatar */}
+        <TouchableOpacity onPress={pickAvatar} style={pc.avatarWrap} activeOpacity={0.8}>
+          {avatarUri
+            ? <Image source={{ uri: avatarUri }} style={pc.avatar} />
+            : <View style={[pc.avatar, pc.avatarFallback]}>
+                <Ionicons name="person" size={28} color={T.textTert} />
+              </View>
+          }
+          <View style={pc.avatarRing} pointerEvents="none" />
+          <View style={pc.avatarBadge}>
+            {uploading
+              ? <ActivityIndicator size="small" color={T.text} />
+              : <Ionicons name="camera" size={10} color={T.text} />
+            }
+          </View>
+        </TouchableOpacity>
+
+        {/* Identité */}
+        <View style={pc.identity}>
+          <Text style={pc.name} numberOfLines={1}>{profile.display_name || 'Cinéphile'}</Text>
+          <Text style={pc.username}>@{profile.username}</Text>
+          <Text style={pc.email} numberOfLines={1}>{profile.email}</Text>
+          <View style={pc.pills}>
+            <View style={pc.pill}>
+              <Text style={pc.pillTxt}>{PLAN_LABEL[profile.plan ?? 'free']}</Text>
+            </View>
+            <View style={pc.pill}>
+              <Text style={pc.pillTxt}>{ROLE_LABEL[profile.role] ?? 'Cinéphile'}</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Bio / Édition */}
+      {editing ? (
+        <View style={pc.editBlock}>
+          <TextInput
+            style={pc.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Nom affiché"
+            placeholderTextColor={T.textTert}
+            maxLength={40}
+          />
+          <TextInput
+            style={[pc.input, pc.bioInput]}
+            value={bio}
+            onChangeText={setBio}
+            placeholder="Une courte bio..."
+            placeholderTextColor={T.textTert}
+            multiline
+            maxLength={120}
+          />
+          <View style={pc.editBtns}>
+            <TouchableOpacity
+              style={pc.cancelBtn}
+              onPress={() => { setName(profile.display_name); setBio(profile.bio ?? ''); setEditing(false); }}
+            >
+              <Text style={pc.cancelTxt}>Annuler</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={pc.saveBtn} onPress={save} disabled={saving}>
+              {saving
+                ? <ActivityIndicator size="small" color={T.text} />
+                : <Text style={pc.saveTxt}>Enregistrer</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={pc.bioRow}>
+          {profile.bio ? <Text style={pc.bio} numberOfLines={2}>{profile.bio}</Text> : null}
+          <TouchableOpacity style={pc.editChip} onPress={() => setEditing(true)}>
+            <Ionicons name="create-outline" size={12} color={T.textSec} />
+            <Text style={pc.editChipTxt}>Modifier</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+});
+ProfileCard.displayName = 'ProfileCard';
+
+const pc = StyleSheet.create({
+  wrap:          { marginHorizontal: EDGE, borderRadius: 20, borderWidth: StyleSheet.hairlineWidth, borderColor: T.borderHi, overflow: 'hidden', padding: 16, gap: 12 },
+  header:        { flexDirection: 'row', gap: 14, alignItems: 'center' },
+  avatarWrap:    { position: 'relative', alignSelf: 'flex-start' },
+  avatar:        { width: 68, height: 68, borderRadius: 34 },
+  avatarFallback:{ backgroundColor: T.surfHi, alignItems: 'center', justifyContent: 'center' },
+  avatarRing:    { position: 'absolute', top: -2, left: -2, right: -2, bottom: -2, borderRadius: 36, borderWidth: 1.5, borderColor: T.borderHi },
+  avatarBadge:   { position: 'absolute', bottom: 0, right: 0, width: 20, height: 20, borderRadius: 10, backgroundColor: T.surfHi, borderWidth: 1, borderColor: T.border, alignItems: 'center', justifyContent: 'center' },
+  identity:      { flex: 1, gap: 3 },
+  name:          { color: T.text, fontSize: 16, fontWeight: '800', letterSpacing: -0.3 },
+  username:      { color: T.textSec, fontSize: 12, fontWeight: '600' },
+  email:         { color: T.textTert, fontSize: 11 },
+  pills:         { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 4 },
+  pill:          { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: T.border, backgroundColor: T.surf },
+  pillTxt:       { color: T.textTert, fontSize: 10, fontWeight: '600' },
+  bioRow:        { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  bio:           { flex: 1, color: T.textSec, fontSize: 12, lineHeight: 17 },
+  editChip:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: T.border, backgroundColor: T.surf },
+  editChipTxt:   { color: T.textSec, fontSize: 11, fontWeight: '600' },
+  editBlock:     { gap: 8 },
+  input:         { backgroundColor: T.surfHi, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: T.border, paddingHorizontal: 13, paddingVertical: 10, color: T.text, fontSize: 14 },
+  bioInput:      { minHeight: 60, textAlignVertical: 'top', lineHeight: 19 },
+  editBtns:      { flexDirection: 'row', gap: 8 },
+  cancelBtn:     { flex: 1, alignItems: 'center', paddingVertical: 11, borderRadius: 12, backgroundColor: T.surf, borderWidth: StyleSheet.hairlineWidth, borderColor: T.border },
+  cancelTxt:     { color: T.textSec, fontSize: 13, fontWeight: '600' },
+  saveBtn:       { flex: 2, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, borderRadius: 12, backgroundColor: T.surfHi, borderWidth: StyleSheet.hairlineWidth, borderColor: T.borderHi },
+  saveTxt:       { color: T.text, fontSize: 13, fontWeight: '700' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🚀 MAIN SCREEN
+// ─────────────────────────────────────────────────────────────────────────────
+export default function SettingsScreen() {
+  const router = useRouter();
+
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [prefs,   setPrefs]   = useState<Prefs>(DEFAULT_PREFS);
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState<Partial<Record<keyof Prefs, boolean>>>({});
+
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const stickyOp = scrollY.interpolate({ inputRange: [0, 70], outputRange: [0, 1], extrapolate: 'clamp' });
+
+  // ── Init ────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user || cancelled) return;
+      const [prof, pref] = await Promise.all([
+        fetchProfile(user.id),
+        fetchPrefs(user.id),
+      ]);
+      if (cancelled) return;
+      if (prof) setProfile(prof);
+      setPrefs(pref);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const userId = profile?.id ?? '';
+
+  // ── Toggle pref ──────────────────────────────────────────────────────────────
+  const setPref = useCallback(async <K extends keyof Prefs>(key: K, value: Prefs[K]) => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setPrefs(p => ({ ...p, [key]: value }));
+    setSaving(s => ({ ...s, [key]: true }));
+    await upsertPref(userId, key, value);
+    setSaving(s => ({ ...s, [key]: false }));
+  }, [userId]);
+
+  // ── Actions compte ───────────────────────────────────────────────────────────
+  const handlePasswordReset = useCallback(() => {
     Alert.alert(
-      'Réinitialiser',
-      'Tous vos paramètres seront remis à zéro. Continuer ?',
+      'Réinitialiser le mot de passe',
+      `Un lien sera envoyé à ${profile?.email ?? '—'}`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Réinitialiser',
-          style: 'destructive',
-          onPress: () => {
-            if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            resetSettings();
+          text: 'Envoyer', onPress: async () => {
+            const { error } = await supabase.auth.resetPasswordForEmail(profile?.email ?? '');
+            Alert.alert(error ? 'Erreur' : 'Email envoyé', error?.message ?? `Lien envoyé à ${profile?.email}`);
           },
         },
       ],
     );
-  }, [resetSettings]);
+  }, [profile?.email]);
 
-  return (
-    <View style={hdr.row}>
-      <TouchableOpacity onPress={() => router.back()} style={hdr.backBtn} activeOpacity={0.7}>
-        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-        <Ionicons name="chevron-back" size={22} color="rgba(237,232,255,0.7)" />
-      </TouchableOpacity>
-
-      <View style={hdr.center}>
-        <Text style={hdr.title}>Paramètres</Text>
-        <Text style={hdr.sub}>UNIVERSE · Cinéma Indé</Text>
-      </View>
-
-      <TouchableOpacity onPress={handleReset} style={hdr.resetBtn} activeOpacity={0.7}>
-        <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-        <Ionicons name="refresh-outline" size={18} color="rgba(237,232,255,0.4)" />
-      </TouchableOpacity>
-    </View>
-  );
-});
-
-const hdr = StyleSheet.create({
-  row:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 14 },
-  backBtn:  { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: G.glassBorder },
-  resetBtn: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: G.glassBorder },
-  center:   { alignItems: 'center', flex: 1 },
-  title:    { color: G.sW, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
-  sub:      { color: 'rgba(237,232,255,0.30)', fontSize: 10, fontWeight: '600', letterSpacing: 1.5, marginTop: 2 },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Corps (consomme le context)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function SettingsBody() {
-  const router = useRouter();
-  const { settings, setSetting, logout } = useSettings();
-
-  // ── Déconnexion ───────────────────────────────────────────────────────────
   const handleLogout = useCallback(() => {
+    Alert.alert('Déconnexion', 'Quitter votre session Universe ?', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Déconnecter', style: 'destructive',
+        onPress: async () => {
+          if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          await supabase.auth.signOut();
+          router.replace('/(auth)/welcome');
+        },
+      },
+    ]);
+  }, [router]);
+
+  const handleDelete = useCallback(() => {
     Alert.alert(
-      'Déconnexion',
-      'Êtes-vous sûr de vouloir vous déconnecter ?',
+      'Supprimer mon compte',
+      'Action irréversible. Profil, critiques et watchlist seront effacés.',
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Déconnecter',
-          style: 'destructive',
-          onPress: () => {
-            if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-            logout();
+          text: 'Supprimer', style: 'destructive',
+          onPress: async () => {
+            await Promise.all([
+              supabase.from('user_preferences').delete().eq('user_id', userId),
+              supabase.from('profiles').delete().eq('id', userId),
+            ]);
+            await supabase.auth.signOut();
             router.replace('/(auth)/welcome');
           },
         },
       ],
     );
-  }, [logout, router]);
+  }, [userId, router]);
 
-  // ── Suppression de compte ─────────────────────────────────────────────────
-  const handleDeleteAccount = useCallback(() => {
-    Alert.alert(
-      'Supprimer le compte',
-      'Cette action est irréversible. Toutes vos données seront perdues.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        { text: 'Supprimer', style: 'destructive', onPress: () => {} },
-      ],
-    );
-  }, []);
+  // ── Loading ─────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <View style={s.root}>
+      <StatusBar style="light" />
+      <GalaxyBackground />
+      <ActivityIndicator color={T.textSec} size="large" style={{ flex: 1 }} />
+    </View>
+  );
 
+  // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={sc.listContent}
-    >
-      {/* ── Profil héro ── */}
-      <ProfileCard />
+    <View style={s.root}>
+      <StatusBar style="light" />
+      <GalaxyBackground />
 
+      {/* Sticky bar transparente */}
+      <Animated.View pointerEvents="none" style={[s.stickyBar, { opacity: stickyOp }]}>
+        <BlurView intensity={24} tint="dark" style={StyleSheet.absoluteFill} />
+        <SafeAreaView edges={['top']} style={s.stickyInner}>
+          <Text style={s.stickyTitle}>Paramètres</Text>
+        </SafeAreaView>
+      </Animated.View>
 
+      <Animated.ScrollView
+        showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: true },
+        )}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: 110 }}
+      >
+        <SafeAreaView edges={['top']}>
+          {/* Nav */}
+          <View style={s.topNav}>
+            <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+              <BlurView intensity={12} tint="dark" style={StyleSheet.absoluteFill} />
+              <Ionicons name="chevron-back" size={19} color={T.textSec} />
+            </TouchableOpacity>
+            <Text style={s.topNavTitle}>Paramètres</Text>
+            <View style={{ width: 40 }} />
+          </View>
+        </SafeAreaView>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          LECTURE
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Lecture" icon="play-circle-outline" />
-      <SettingsGroup>
-        <SettingsToggle
-          icon="play-circle-outline"
-          title="Lecture automatique"
-          subtitle="Lance la vidéo sans appuyer sur Play"
-          value={settings.autoPlay}
-          onChange={v => setSetting('autoPlay', v)}
-        />
-        <SettingsToggle
-          icon="arrow-forward-circle-outline"
-          title="Épisode suivant automatique"
-          subtitle="Passe à l'épisode suivant en fin de lecture"
-          value={settings.autoNextEpisode}
-          onChange={v => setSetting('autoNextEpisode', v)}
-        />
-        <SettingsPicker<VideoQuality>
-          icon="videocam-outline"
-          title="Qualité vidéo"
-          value={settings.videoQuality}
-          options={QUALITY_OPTIONS}
-          onChange={v => setSetting('videoQuality', v)}
-        />
-        <SettingsToggle
-          icon="cellular-outline"
-          title="Économiseur de données"
-          subtitle="Réduit la qualité sur réseau mobile"
-          value={settings.dataSaver}
-          onChange={v => setSetting('dataSaver', v)}
-          last
-        />
-      </SettingsGroup>
+        {/* ── LECTURE ── */}
+        <SectionTitle label="Lecture" />
+        <Group>
+          <ToggleRow
+            icon="play-circle-outline"
+            title="Lecture automatique"
+            subtitle="Lance la vidéo sans appuyer sur Play"
+            value={prefs.autoplay}
+            onChange={v => setPref('autoplay', v)}
+            saving={!!saving.autoplay}
+          />
+          <ToggleRow
+            icon="cellular-outline"
+            title="Économiseur de données"
+            subtitle="Réduit la qualité sur réseau mobile"
+            value={prefs.data_saver}
+            onChange={v => setPref('data_saver', v)}
+            saving={!!saving.data_saver}
+            last
+          />
+        </Group>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          SOUS-TITRES
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Sous-titres" icon="closed-captioning-outline" />
-      <SettingsGroup>
-        <SettingsToggle
-          icon="closed-captioning-outline"
-          title="Sous-titres activés"
-          value={settings.subtitlesEnabled}
-          onChange={v => setSetting('subtitlesEnabled', v)}
-        />
-        <SettingsPicker<AppLanguage>
-          icon="language-outline"
-          title="Langue des sous-titres"
-          value={settings.subtitleLanguage}
-          options={SUB_LANG_OPTIONS}
-          onChange={v => setSetting('subtitleLanguage', v)}
-        />
-        <SettingsPicker<SubtitleSize>
-          icon="text-outline"
-          title="Taille des sous-titres"
-          value={settings.subtitleSize}
-          options={SUB_SIZE_OPTIONS}
-          onChange={v => setSetting('subtitleSize', v)}
-          last
-        />
-      </SettingsGroup>
+        {/* ── NOTIFICATIONS ── */}
+        <SectionTitle label="Notifications" />
+        <Group>
+          <ToggleRow
+            icon="film-outline"
+            title="Nouvelles sorties"
+            subtitle="Films & séries indépendants ajoutés"
+            value={prefs.notif_releases}
+            onChange={v => setPref('notif_releases', v)}
+            saving={!!saving.notif_releases}
+          />
+          <ToggleRow
+            icon="people-outline"
+            title="Activité sociale"
+            subtitle="Likes & commentaires sur vos critiques"
+            value={prefs.notif_social}
+            onChange={v => setPref('notif_social', v)}
+            saving={!!saving.notif_social}
+          />
+          <ToggleRow
+            icon="calendar-outline"
+            title="Festivals"
+            subtitle="Cannes, Sundance et avant-premières"
+            value={prefs.notif_festivals}
+            onChange={v => setPref('notif_festivals', v)}
+            saving={!!saving.notif_festivals}
+            last
+          />
+        </Group>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          NOTIFICATIONS
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Notifications" icon="notifications-outline" />
-      <SettingsGroup>
-        <SettingsToggle
-          icon="film-outline"
-          title="Nouveaux épisodes"
-          subtitle="Alertes quand une série se met à jour"
-          value={settings.notifNewEpisode}
-          onChange={v => setSetting('notifNewEpisode', v)}
-        />
-        <SettingsToggle
-          icon="people-outline"
-          title="Activité sociale"
-          subtitle="Likes, commentaires, abonnements"
-          value={settings.notifSocial}
-          onChange={v => setSetting('notifSocial', v)}
-        />
-        <SettingsToggle
-          icon="trophy-outline"
-          title="Festivals & Sorties"
-          subtitle="Infos festivals, avant-premières"
-          value={settings.notifFestival}
-          onChange={v => setSetting('notifFestival', v)}
-        />
-        <SettingsToggle
-          icon="mail-outline"
-          title="Newsletter mensuelle"
-          value={settings.notifNewsletter}
-          onChange={v => setSetting('notifNewsletter', v)}
-          last
-        />
-      </SettingsGroup>
+        {/* ── CONFIDENTIALITÉ ── */}
+        <SectionTitle label="Confidentialité" />
+        <Group>
+          <ToggleRow
+            icon="eye-off-outline"
+            title="Profil privé"
+            subtitle="Seuls vos abonnés voient vos critiques"
+            value={prefs.private_profile}
+            onChange={v => setPref('private_profile', v)}
+            saving={!!saving.private_profile}
+          />
+          <ToggleRow
+            icon="bookmark-outline"
+            title="Watchlist publique"
+            subtitle="Visible par votre communauté"
+            value={prefs.public_watchlist}
+            onChange={v => setPref('public_watchlist', v)}
+            saving={!!saving.public_watchlist}
+            last
+          />
+        </Group>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          VIE PRIVÉE
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Vie privée" icon="shield-checkmark-outline" />
-      <SettingsGroup>
-        <SettingsToggle
-          icon="eye-off-outline"
-          title="Profil privé"
-          subtitle="Seuls vos abonnés vous voient"
-          value={settings.privateProfile}
-          onChange={v => setSetting('privateProfile', v)}
-        />
-        <SettingsToggle
-          icon="bookmark-outline"
-          title="Watchlist publique"
-          subtitle="Visible par votre communauté"
-          value={settings.publicWatchlist}
-          onChange={v => setSetting('publicWatchlist', v)}
-        />
-        <SettingsToggle
-          icon="bar-chart-outline"
-          title="Analytics & Amélioration"
-          subtitle="Aide à améliorer l'app anonymement"
-          value={settings.analyticsOpt}
-          onChange={v => setSetting('analyticsOpt', v)}
-          last
-        />
-      </SettingsGroup>
+        {/* ── COMPTE ── */}
+        <SectionTitle label="Compte" />
+        <Group>
+          <Row
+            icon="lock-closed-outline"
+            title="Mot de passe"
+            subtitle="Envoyer un lien de réinitialisation"
+            onPress={handlePasswordReset}
+          />
+          <Row
+            icon="card-outline"
+            title="Abonnement"
+            subtitle={PLAN_LABEL[profile?.plan ?? 'free']}
+            onPress={() => router.push('/subscription' as any)}
+            last
+          />
+        </Group>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          COMMUNAUTÉ & FEED
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Communauté" icon="people-outline" />
-      <SettingsGroup>
-        <SettingsPicker<FeedSort>
-          icon="funnel-outline"
-          title="Tri du feed"
-          value={settings.feedSort}
-          options={FEED_SORT_OPTIONS}
-          onChange={v => setSetting('feedSort', v)}
-        />
-        <SettingsRow
-          icon="people-outline"
-          title="Gérer les abonnements"
-          onPress={() => {}}
-        />
-        <SettingsRow
-          icon="bookmark-outline"
-          title="Ma Watchlist"
-          onPress={() => router.push('/watchlist')}
-        />
-        <SettingsRow
-          icon="trophy-outline"
-          title="Mes badges"
-          subtitle="Voir vos accomplissements"
-          onPress={() => {}}
-          badge="Nouveau"
-          last
-        />
-      </SettingsGroup>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          APP
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Application" icon="phone-portrait-outline" />
-      <SettingsGroup>
-        <SettingsPicker<AppLanguage>
-          icon="language-outline"
-          title="Langue de l'app"
-          value={settings.language}
-          options={LANG_OPTIONS}
-          onChange={v => setSetting('language', v)}
-        />
-        <SettingsToggle
-          icon="phone-portrait-outline"
-          title="Retour haptique"
-          subtitle="Vibrations lors des interactions"
-          value={settings.haptics}
-          onChange={v => setSetting('haptics', v)}
-          last
-        />
-      </SettingsGroup>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          COMPTE
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Compte" icon="person-outline" />
-      <SettingsGroup>
-        <SettingsRow icon="lock-closed-outline"     title="Changer le mot de passe" onPress={() => {}} />
-        <SettingsRow icon="card-outline"             title="Abonnement & Facturation" onPress={() => {}} />
-        <SettingsRow icon="download-outline"         title="Exporter mes données"     onPress={() => {}} last />
-      </SettingsGroup>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          À PROPOS
-      ══════════════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="À propos" icon="information-circle-outline" />
-      <SettingsGroup>
-        <SettingsRow icon="document-text-outline"     title="Conditions d'utilisation" onPress={() => {}} />
-        <SettingsRow icon="shield-checkmark-outline"  title="Politique de confidentialité" onPress={() => {}} />
-        <SettingsRow icon="help-circle-outline"       title="Centre d'aide"            onPress={() => {}} />
-        <SettingsRow icon="star-outline"              title="Évaluer l'app"            onPress={() => {}} />
-        <SettingsRow
-          icon="information-circle-outline"
-          title="Version"
-          subtitle="UNIVERSE v2.0.0 · Build 420"
-          last
-        />
-      </SettingsGroup>
-
-      {/* ═══════════════════════════════════════════════════════════════════
-          ACTIONS DESTRUCTIVES
-      ══════════════════════════════════════════════════════════════════════ */}
-      <View style={{ marginTop: 8 }}>
-        <SettingsGroup>
-          <SettingsRow
+        {/* ── ZONE SENSIBLE ── */}
+        <SectionTitle label="Session" />
+        <Group>
+          <Row
             icon="log-out-outline"
             title="Se déconnecter"
             onPress={handleLogout}
             danger
           />
-          <SettingsRow
+          <Row
             icon="trash-outline"
             title="Supprimer mon compte"
-            onPress={handleDeleteAccount}
+            subtitle="Action irréversible"
+            onPress={handleDelete}
             danger
             last
           />
-        </SettingsGroup>
-      </View>
+        </Group>
 
-      {/* ═══════════════════════════════════════════════════════════════════
-          FOOTER
-      ══════════════════════════════════════════════════════════════════════ */}
-      <View style={sc.footer}>
-        <Text style={sc.footerTitle}>UNIVERSE</Text>
-        <Text style={sc.footerSub}>Cinéma Indépendant · Fait avec 💜</Text>
-        <View style={sc.footerDots}>
-          {[0, 1, 2].map(i => (
-            <View key={i} style={[sc.dot, i === 1 && sc.dotActive]} />
-          ))}
+        {/* Footer */}
+        <View style={s.footer}>
+          <View style={s.footerLine} />
+          <Text style={s.footerTxt}>UNIVERSE · v2.0</Text>
         </View>
-      </View>
-    </ScrollView>
+      </Animated.ScrollView>
+    </View>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Écran principal — enveloppe dans SettingsProvider
-// ─────────────────────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  root:       { flex: 1, backgroundColor: C.navyMid },
 
-export default function SettingsScreen() {
-  return (
-    <SettingsProvider>
-      <View style={sc.root}>
-        <StatusBar style="light" />
-        <GalaxyBackground />
+  stickyBar:  { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 },
+  stickyInner:{ alignItems: 'center', paddingBottom: 10, paddingTop: 6 },
+  stickyTitle:{ color: T.text, fontSize: 14, fontWeight: '700' },
 
-        <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-          <SettingsHeader />
-          <SettingsBody />
-        </SafeAreaView>
-      </View>
-    </SettingsProvider>
-  );
-}
+  topNav:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: EDGE, paddingVertical: 10 },
+  backBtn:    { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: T.border },
+  topNavTitle:{ color: T.text, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
 
-const sc = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: G.bg0 },
-  listContent: { paddingBottom: 120, paddingTop: 4 },
-  footer:      { alignItems: 'center', paddingTop: 36, paddingBottom: 12, gap: 6 },
-  footerTitle: { color: G.primary, fontSize: 14, fontWeight: '900', letterSpacing: 3 },
-  footerSub:   { color: G.textTert, fontSize: 11, letterSpacing: 0.5 },
-  footerDots:  { flexDirection: 'row', gap: 6, marginTop: 8 },
-  dot:         { width: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.12)' },
-  dotActive:   { backgroundColor: G.primary, width: 14 },
+  sep:        { height: StyleSheet.hairlineWidth, backgroundColor: T.border, marginHorizontal: EDGE, marginTop: 6 },
+
+  footer:     { alignItems: 'center', paddingTop: 40, gap: 8 },
+  footerLine: { width: 24, height: StyleSheet.hairlineWidth, backgroundColor: T.border },
+  footerTxt:  { color: T.textTert, fontSize: 9, fontWeight: '700', letterSpacing: 2.5 },
 });

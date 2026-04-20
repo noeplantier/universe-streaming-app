@@ -62,20 +62,43 @@ export default function UserProfileScreen() {
   const [seenFilms, setSeenFilms] = useState<Film[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
+  
   const fetchData = useCallback(async () => {
     if (!id) return;
+  
     try {
-      const [userData, revData, seenData] = await Promise.all([
-        usersAPI.getById(id),
-        reviewsAPI.getByUser(id),
-        seenAPI.getByUser(id),
+      setLoading(true);
+  
+      // 1) Récupère le user cible (id métier = "cr2")
+      const userData = await usersAPI.getById(id);
+      console.log(userData);
+      // 2) Déduis l'UUID à utiliser (à adapter selon ton payload)
+      const userUuid =
+        userData.auth_user_id ??
+        userData.user_id ??
+        userData.uuid ??
+        userData.id;
+  
+      if (!userUuid) {
+        throw new Error("Impossible de trouver l'UUID du user dans usersAPI.getById()");
+      }
+  
+      // (optionnel mais conseillé) log rapide pour vérifier que ce n'est plus "cr2"
+      console.log("route id =", id, "userUuid =", userUuid);
+  
+      // 3) Appelle reviews/seen avec l'UUID
+      const [revData, seenData] = await Promise.all([
+        reviewsAPI.getByUser(userUuid),
+        seenAPI.getByUser(userUuid),
       ]);
+  
       setUser(userData);
-      setFollowing(userData.is_following || false);
+      setFollowing(!!userData.is_following);
       setReviews(revData || []);
       setSeenFilms(seenData || []);
     } catch (e) {
-      console.error('Error fetching user:', e);
+      console.error("Error fetching user:", e);
+      Alert.alert("Erreur", (e as any)?.message ?? "Fetch impossible");
     } finally {
       setLoading(false);
       setRefreshing(false);

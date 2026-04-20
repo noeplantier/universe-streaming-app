@@ -157,17 +157,7 @@ export default function LoginScreen() {
                 style={[styles.btnContainer, { marginTop: 10 }]}
                 activeOpacity={0.8}
               >
-                <LinearGradient
-                  colors={GRADIENTS?.primary || [COLORS.primary, COLORS.primaryDark || '#555']}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                  style={styles.gradientBtn}
-                >
-                  {loading ? (
-                    <ActivityIndicator color="#FFF" />
-                  ) : (
-                    <Text style={styles.btnText}>Se connecter</Text>
-                  )}
-                </LinearGradient>
+            
               </TouchableOpacity>
 
               {/* Bouton Démo Spécial */}

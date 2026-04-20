@@ -1,18 +1,22 @@
+import { G } from './theme';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 📐 SHARED TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 export interface FilmItem {
-    id: string;
-    title: string;
-    posterUrl: string;
-    genre: string;
-    type: 'film' | 'série';
-    rating: number;
-    director?: string;
-    year?: number;
-    episodes?: number;
-    status?: string;
-  }
+  id: string; // UI key (fav1, fav2...) — uniquement pour React keys
+  title: string;
+  posterUrl: string;
+  genre: string;
+  type: 'film' | 'série';
+  rating: number;
+  director?: string;
+  year?: number;
+  episodes?: number;
+  status?: string;
+
+  workId?: number; // résolu depuis Supabase
+}
   
   export interface ReviewItem {
     id: string;
@@ -48,14 +52,14 @@ export interface FilmItem {
   // 🏆 FILMS FAVORIS (top 8, ranked 1→8)
   // ─────────────────────────────────────────────────────────────────────────────
   export const ALL_FAVS: FilmItem[] = [
-    { id:'fav1', title:'Mulholland Drive',     posterUrl:poster('mulholland-drive-lynch'),      genre:'Néo-Noir',   type:'film',  rating:5, director:'David Lynch',    year:2001 },
-    { id:'fav2', title:'La Haine',             posterUrl:poster('la-haine-kassovitz-1995'),     genre:'Drame',      type:'film',  rating:5, director:'M. Kassovitz',  year:1995 },
-    { id:'fav3', title:'Parasite',             posterUrl:poster('parasite-bong-joon-ho'),       genre:'Thriller',   type:'film',  rating:5, director:'Bong Joon-ho',  year:2019 },
-    { id:'fav4', title:'Moonlight',            posterUrl:poster('moonlight-2016-barry'),        genre:'Drame',      type:'film',  rating:5, director:'B. Jenkins',    year:2016 },
-    { id:'fav5', title:'Mad Max: Fury Road',   posterUrl:poster('mad-max-fury-road-2015'),      genre:'Action',     type:'film',  rating:5, director:'G. Miller',     year:2015 },
-    { id:'fav6', title:'2001: A Space Odyssey',posterUrl:poster('2001-kubrick-space'),          genre:'Sci-Fi',     type:'film',  rating:5, director:'S. Kubrick',    year:1968 },
-    { id:'fav7', title:'Grand Budapest Hotel', posterUrl:poster('grand-budapest-wes'),          genre:'Comédie',    type:'film',  rating:5, director:'Wes Anderson',  year:2014 },
-    { id:'fav8', title:'Roma',                 posterUrl:poster('roma-alfonso-cuaron'),         genre:'Drame',      type:'film',  rating:5, director:'A. Cuarón',     year:2018 },
+    { id:'fav1', workId: undefined, title:'Mulholland Drive', posterUrl:poster('mulholland-drive-lynch'), genre:'Néo-Noir', type:'film', rating:5, director:'David Lynch', year:2001 },
+    { id:'fav2', workId: undefined, title:'La Haine', posterUrl:poster('la-haine-kassovitz-1995'), genre:'Drame', type:'film', rating:5, director:'M. Kassovitz', year:1995 },
+    { id:'fav3', workId: undefined, title:'Parasite', posterUrl:poster('parasite-bong-joon-ho'), genre:'Thriller', type:'film', rating:5, director:'Bong Joon-ho', year:2019 },
+    { id:'fav4', workId: undefined, title:'Moonlight', posterUrl:poster('moonlight-2016-barry'), genre:'Drame', type:'film', rating:5, director:'B. Jenkins', year:2016 },
+    { id:'fav5', workId: undefined, title:'Mad Max: Fury Road', posterUrl:poster('mad-max-fury-road-2015'), genre:'Action', type:'film', rating:5, director:'G. Miller', year:2015 },
+    { id:'fav6', workId: undefined, title:'2001: A Space Odyssey', posterUrl:poster('2001-kubrick-space'), genre:'Sci-Fi', type:'film', rating:5, director:'S. Kubrick', year:1968 },
+    { id:'fav7', workId: undefined, title:'Grand Budapest Hotel', posterUrl:poster('grand-budapest-wes'), genre:'Comédie', type:'film', rating:5, director:'Wes Anderson', year:2014 },
+    { id:'fav8', workId: undefined, title:'Roma', posterUrl:poster('roma-alfonso-cuaron'), genre:'Drame', type:'film', rating:5, director:'A. Cuarón', year:2018 },
   ];
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -116,18 +120,210 @@ export interface FilmItem {
   // 🎞️ COURTS MÉTRAGES
   // ─────────────────────────────────────────────────────────────────────────────
   export const OWN_REELS: ReelItem[] = [
-    { id:'rl1', title:'Fragmenta',   duration:"12'", posterUrl:still('reel-fragmenta-cm'),  views:'2.4K', festival:'Clermont-Ferrand 2024' },
-    { id:'rl2', title:'Ekho',        duration:"8'",  posterUrl:still('reel-ekho-cm'),       views:'1.1K', festival:'SXSW 2024' },
-    { id:'rl3', title:'La Fenêtre',  duration:"18'", posterUrl:still('reel-lafenetre-cm'),  views:'890',  festival:'Sundance 2023' },
-    { id:'rl4', title:'Nox',         duration:"6'",  posterUrl:still('reel-nox-cm'),        views:'3.2K', festival:'Cannes 2023' },
-    { id:'rl5', title:'Seuil',       duration:"22'", posterUrl:still('reel-seuil-cm'),      views:'670',  festival:'Berlin 2024' },
-    { id:'rl6', title:'Miroir Noir', duration:"15'", posterUrl:still('reel-miroirnoir-cm'), views:'1.8K', festival:'Tribeca 2024' },
+    {
+      id: 'e1',
+      title: 'Reprends là où tu t\'es arrêté',
+      posterUrl:
+        'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
+      duration: '9:56',
+      views: '1324 likes',
+      festival: 'Puffers',
+    },
+    {
+      id: 'e2',
+      title: 'La première fracture',
+      posterUrl:
+        'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=800&q=80',
+      duration: '10:54',
+      views: '872 likes',
+      festival: 'Nuit de Verre',
+    },
+    {
+      id: 'e3',
+      title: 'Le dernier signal',
+      posterUrl:
+        'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800&q=80',
+      duration: '0:15',
+      views: '2100 likes',
+      festival: 'Horizon Brisé',
+    },
+    {
+      id: 'e4',
+      title: 'Masques',
+      posterUrl:
+        'https://images.unsplash.com/photo-1518998053901-5348d3961a04?w=800&q=80',
+      duration: '0:15',
+      views: '3400 likes',
+      festival: 'Velours Rouge',
+    },
+    {
+      id: 'e5',
+      title: 'Avant le tremblement',
+      posterUrl:
+        'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=800&q=80',
+      duration: '14:48',
+      views: '2750 likes',
+      festival: 'Fractures',
+    },
+    {
+      id: 'e6',
+      title: 'Les voix oubliées',
+      posterUrl:
+        'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
+      duration: '12:30',
+      views: '1980 likes',
+      festival: 'Échos du Passé',
+    },
+    {
+      id: 'e7',
+      title: 'La rencontre',
+      posterUrl:
+        'https://images.unsplash.com/photo-1491895200222-0fc4a4c35e18?w=800&q=80',
+      duration: '9:20',
+      views: '2560 likes',
+      festival: 'Lumières Fugitives',
+    },
   ];
-  
+
+// ─────────────────────────────────────────────────────────────────────────────
+  // 🎞️ MOYENS ET LONGS MÉTRAGES
+  // ─────────────────────────────────────────────────────────────────────────────
+  export const OWN_EPISODES_MID: ReelItem[] = [
+    {
+      id: 'e1',
+      title: 'Reprends là où tu t\'es arrêté',
+      posterUrl:
+        'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
+      duration: '9:56',
+      views: '1324 likes',
+      festival: 'Puffers',
+    },
+    {
+      id: 'e2',
+      title: 'La première fracture',
+      posterUrl:
+        'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=800&q=80',
+      duration: '10:54',
+      views: '872 likes',
+      festival: 'Nuit de Verre',
+    },
+    {
+      id: 'e3',
+      title: 'Le dernier signal',
+      posterUrl:
+        'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800&q=80',
+      duration: '0:15',
+      views: '2100 likes',
+      festival: 'Horizon Brisé',
+    },
+    {
+      id: 'e4',
+      title: 'Masques',
+      posterUrl:
+        'https://images.unsplash.com/photo-1518998053901-5348d3961a04?w=800&q=80',
+      duration: '0:15',
+      views: '3400 likes',
+      festival: 'Velours Rouge',
+    },
+    {
+      id: 'e5',
+      title: 'Avant le tremblement',
+      posterUrl:
+        'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=800&q=80',
+      duration: '14:48',
+      views: '2750 likes',
+      festival: 'Fractures',
+    },
+    {
+      id: 'e6',
+      title: 'Les voix oubliées',
+      posterUrl:
+        'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
+      duration: '12:30',
+      views: '1980 likes',
+      festival: 'Échos du Passé',
+    },
+    {
+      id: 'e7',
+      title: 'La rencontre',
+      posterUrl:
+        'https://images.unsplash.com/photo-1491895200222-0fc4a4c35e18?w=800&q=80',
+      duration: '9:20',
+      views: '2560 likes',
+      festival: 'Lumières Fugitives',
+    },
+  ];  // Sélections 60 min+
+
+
+  export const OWN_EPISODES_LONG: ReelItem[] = [
+    {
+      id: 'e1',
+      title: 'Reprends là où tu t\'es arrêté',
+      posterUrl:
+        'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=800&q=80',
+      duration: '9:56',
+      views: '1324 likes',
+      festival: 'Puffers',
+    },
+    {
+      id: 'e2',
+      title: 'La première fracture',
+      posterUrl:
+        'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?w=800&q=80',
+      duration: '10:54',
+      views: '872 likes',
+      festival: 'Nuit de Verre',
+    },
+    {
+      id: 'e3',
+      title: 'Le dernier signal',
+      posterUrl:
+        'https://images.unsplash.com/photo-1485846234645-a62644f84728?w=800&q=80',
+      duration: '0:15',
+      views: '2100 likes',
+      festival: 'Horizon Brisé',
+    },
+    {
+      id: 'e4',
+      title: 'Masques',
+      posterUrl:
+        'https://images.unsplash.com/photo-1518998053901-5348d3961a04?w=800&q=80',
+      duration: '0:15',
+      views: '3400 likes',
+      festival: 'Velours Rouge',
+    },
+    {
+      id: 'e5',
+      title: 'Avant le tremblement',
+      posterUrl:
+        'https://images.unsplash.com/photo-1594909122845-11baa439b7bf?w=800&q=80',
+      duration: '14:48',
+      views: '2750 likes',
+      festival: 'Fractures',
+    },
+    {
+      id: 'e6',
+      title: 'Les voix oubliées',
+      posterUrl:
+        'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
+      duration: '12:30',
+      views: '1980 likes',
+      festival: 'Échos du Passé',
+    },
+    {
+      id: 'e7',
+      title: 'La rencontre',
+      posterUrl:
+        'https://images.unsplash.com/photo-1491895200222-0fc4a4c35e18?w=800&q=80',
+      duration: '9:20',
+      views: '2560 likes',
+      festival: 'Lumières Fugitives',
+    },
+  ]; 
+
   // ─────────────────────────────────────────────────────────────────────────────
   // 🎨 EXPORT / GENERATION CONSTANTS (shared with VideoGenModal)
   // ─────────────────────────────────────────────────────────────────────────────
-  import { G } from './theme';
   
   export const EXPORT_FORMATS = [
     { id:'prores', label:'ProRes 4K',   ext:'mov',  desc:'Festival / DCP',  icon:'diamond-outline',  color:G.gold,    badge:'FESTIVAL' },

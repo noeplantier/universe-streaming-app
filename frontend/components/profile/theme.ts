@@ -15,6 +15,7 @@ export const NUM_W       = 60;    // px reserved for the rank digit area
 export const NUM_OVERLAP = 50;    // px the card overlaps the number
 // Total item slot width (number area + card - overlap):
 export const NUM_ITEM_W  = NUM_W + CARD_W - NUM_OVERLAP; // = 162
+export const NUM_TOP_OFFSET = -10; // Décalage vers le haut (négatif = plus haut)
 
 // ─── Scroll / header ────────────────────────────────────────────────────────
 export const HEADER_SCROLL_DISTANCE = 90;

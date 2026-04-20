@@ -1,4 +1,3 @@
-// app/search.tsx  –  Apple TV–inspired redesign
 import React, {
   useState, useEffect, useRef, useMemo,
   useCallback, memo,
@@ -14,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons }       from '@expo/vector-icons';
 import { StatusBar }      from 'expo-status-bar';
 import { useRouter }      from 'expo-router';
+import GalaxyBackground   from '@/components/social/GalaxyBackground';
 
 import {
   fetchWorks, fetchTrending,
@@ -23,26 +23,21 @@ import {
 const { width: W, height: H } = Dimensions.get('window');
 
 // ─────────────────────────────────────────────────────────────────
-// 🎨 DESIGN TOKENS  (Apple TV dark cinema palette)
+// 🎨 DESIGN TOKENS
 // ─────────────────────────────────────────────────────────────────
 const T = {
-  // backgrounds
-  bg:       '#0A0A0F',
-  bg1:      '#111118',
-  bg2:      '#16161F',
-  // surfaces
-  surf:     'rgba(255,255,255,0.055)',
+  bg:        '#0A0A0F',
+  bg1:       '#111118',
+  bg2:       '#16161F',
+  surf:      'rgba(255,255,255,0.055)',
   surfBorder:'rgba(255,255,255,0.08)',
-  // text
-  textPrim: '#F2F2F7',
-  textSec:  '#8E8E93',
-  textTert: '#636366',
-  // accent – warm gold like Apple TV highlight
-  gold:     '#F5A623',
-  goldSoft: 'rgba(245,166,35,0.18)',
-  blue:     '#0A84FF',
-  blueSoft: 'rgba(10,132,255,0.18)',
-  // badges
+  textPrim:  '#F2F2F7',
+  textSec:   '#8E8E93',
+  textTert:  '#636366',
+  gold:      '#F5A623',
+  goldSoft:  'rgba(245,166,35,0.18)',
+  blue:      '#0A84FF',
+  blueSoft:  'rgba(10,132,255,0.18)',
   badgePink: '#FF375F',
   badgePurp: '#5E5CE6',
   badgeTeal: '#30D158',
@@ -51,11 +46,11 @@ const T = {
 // ─────────────────────────────────────────────────────────────────
 // CARD DIMENSIONS
 // ─────────────────────────────────────────────────────────────────
-const PORT_W  = 130;  // portrait  (mini-série / film)
-const PORT_H  = 195;
-const LAND_W  = 240;  // landscape (court/moyen/long métrage)
-const LAND_H  = 135;
-const HERO_H  = H * 0.52;
+const PORT_W = 130;
+const PORT_H = 195;
+const LAND_W = 240;
+const LAND_H = 135;
+const HERO_H = H * 0.52;
 
 // ─────────────────────────────────────────────────────────────────
 // HELPERS
@@ -66,7 +61,7 @@ const DURATIONS: DurationBand[] = ['Toutes', '< 60 min', '60–100 min', '> 100 
 const YEARS     = ['Toutes', '2024', '2023', '2022'];
 
 // ─────────────────────────────────────────────────────────────────
-// ── FILTER DROPDOWN  (identical logic, new look)
+// ── FILTER DROPDOWN
 // ─────────────────────────────────────────────────────────────────
 interface DropdownProps {
   visible: boolean; onClose: () => void;
@@ -77,27 +72,32 @@ interface DropdownProps {
 const FilterDropdown = memo(({ visible, onClose, options, selected, onSelect, anchor }: DropdownProps) => {
   if (!visible) return null;
   return (
-    <Modal transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <BlurView intensity={40} tint="dark"
-        style={[dd.box, { top: anchor.y + 8, left: anchor.x }]}>
-        {options.map(opt => (
-          <TouchableOpacity key={opt} style={dd.item} onPress={() => { onSelect(opt); onClose(); }}>
-            <Text style={[dd.txt, selected === opt && dd.txtOn]}>{opt}</Text>
-            {selected === opt && (
-              <View style={dd.check}>
-                <Ionicons name="checkmark" size={12} color={T.gold} />
-              </View>
-            )}
-          </TouchableOpacity>
-        ))}
-      </BlurView>
-    </Modal>
+    <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
+      <View style={[dd.box, { top: anchor.y + 8, left: anchor.x - 75 }]}>
+        {options.map(opt => {
+          const isSelected = opt === selected;
+          return (
+            <TouchableOpacity
+              key={opt}
+              style={dd.item}
+              onPress={() => { onSelect(opt); onClose(); }}
+            >
+              <Text style={[dd.txt, isSelected && dd.txtOn]}>{opt}</Text>
+              {isSelected && (
+                <View style={dd.check}>
+                  <Ionicons name="check" size={12} color={T.gold} />
+                </View>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    </Pressable>
   );
 });
 FilterDropdown.displayName = 'FilterDropdown';
 const dd = StyleSheet.create({
-  box:   { position: 'absolute', minWidth: 150, backgroundColor: 'rgba(22,22,32,0.95)', borderRadius: 14, borderWidth: 1, borderColor: T.surfBorder, overflow: 'hidden', zIndex: 999, elevation: 10 },
+  box:   { position: 'absolute', minWidth: 150, backgroundColor: 'rgba(22,22,32,0.97)', borderRadius: 14, borderWidth: 1, borderColor: T.surfBorder, overflow: 'hidden', zIndex: 999, elevation: 10 },
   item:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 11 },
   txt:   { color: T.textSec, fontSize: 14, fontWeight: '500' },
   txtOn: { color: T.textPrim, fontWeight: '700' },
@@ -105,7 +105,8 @@ const dd = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────
-// ── SEARCH OVERLAY  (full-screen, triggered by 🔍 icon)
+// ── SEARCH OVERLAY
+//    Filtre compacts en rectangles discrets remplaçant la barre
 // ─────────────────────────────────────────────────────────────────
 interface SearchOverlayProps {
   visible: boolean;
@@ -126,6 +127,13 @@ interface SearchOverlayProps {
   dropAnchor: { x: number; y: number };
 }
 
+const FILTER_DEFS = [
+  { key: 'genre',    label: 'Genre',  def: 'Tous'        },
+  { key: 'sort',     label: 'Tri',    def: 'Popularité'  },
+  { key: 'duration', label: 'Durée',  def: 'Toutes'      },
+  { key: 'year',     label: 'Année',  def: 'Toutes'      },
+] as const;
+
 const SearchOverlay = memo(({
   visible, onClose,
   search, setSearch,
@@ -137,144 +145,205 @@ const SearchOverlay = memo(({
   activeFilterCount, onResetFilters,
   openDropdown, openDrop, setOpenDrop, dropAnchor,
 }: SearchOverlayProps) => {
-  const router = useRouter();
-  const slideY = useRef(new Animated.Value(H)).current;
-  const inputRef = useRef<TextInput>(null);
+  const router    = useRouter();
+  const slideY    = useRef(new Animated.Value(H)).current;
+  const inputRef  = useRef<TextInput>(null);
+
+  // Phase : 'search' → barre active | 'filter' → rectangles filtres
+  const [phase, setPhase] = useState<'search' | 'filter'>('search');
 
   useEffect(() => {
     if (visible) {
+      setPhase('search');
       Animated.spring(slideY, { toValue: 0, useNativeDriver: true, tension: 65, friction: 10 }).start();
       setTimeout(() => inputRef.current?.focus(), 350);
     } else {
+      setPhase('search');
       Animated.timing(slideY, { toValue: H, duration: 260, easing: Easing.in(Easing.cubic), useNativeDriver: true }).start();
     }
   }, [visible]);
+
+  const filterValues: Record<string, string> = {
+    genre, sort: sortBy, duration, year,
+  };
+
+  const getLabel = (key: string): string => {
+    const val = filterValues[key];
+    const def = FILTER_DEFS.find(f => f.key === key)?.def ?? '';
+    return val !== def ? val : FILTER_DEFS.find(f => f.key === key)?.label ?? '';
+  };
+
+  const isActive = (key: string): boolean => {
+    const def = FILTER_DEFS.find(f => f.key === key)?.def ?? '';
+    return filterValues[key] !== def;
+  };
 
   if (!visible) return null;
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
-    {/* Dropdowns inside overlay */}
-    <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
-    <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}    anchor={dropAnchor} />
-    <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
-    <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
+      {/* Dropdowns */}
+      <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}    anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
+      <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
 
-    <Animated.View style={[so.root, { transform: [{ translateY: slideY }] }]}>
-      <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-      {/* Ajout de la notion de top (ex: top provenant de useSafeAreaInsets ou valeur par défaut) */}
-      <View style={[so.inner, { paddingTop: typeof top !== 'undefined' ? top + 10 : 50 }]}>
-   
+      <Animated.View style={[so.root, { transform: [{ translateY: slideY }] }]}>
+        <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
 
-        {/* Header row */}
-        <View style={so.header}>
-          <View style={so.inputRow}>
-            <Ionicons name="search" size={18} color={T.textSec} style={{ marginRight: 10 }} />
-            <TextInput
-              ref={inputRef}
-              style={so.input}
-              placeholder="Titre, genre, ambiance…"
-              placeholderTextColor={T.textTert}
-                value={search}
-                onChangeText={setSearch}
-                returnKeyType="search"
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-              />
-              {search.length > 0 && (
-                <TouchableOpacity onPress={() => setSearch('')} style={so.clearBtn}>
-                  <Ionicons name="close-circle" size={16} color={T.textSec} />
+        <View style={so.inner}>
+
+          {/* ── TOPBAR : barre de recherche OU rectangles filtres ── */}
+          <View style={so.topBar}>
+
+            {phase === 'search' ? (
+              /* ── MODE RECHERCHE ── */
+              <>
+                <View style={so.inputRow}>
+                  <Ionicons name="search" size={16} color={T.textSec} style={{ marginRight: 8 }} />
+                  <TextInput
+                    ref={inputRef}
+                    style={so.input}
+                    placeholder="Titre, genre, ambiance…"
+                    placeholderTextColor={T.textTert}
+                    value={search}
+                    onChangeText={setSearch}
+                    returnKeyType="search"
+                    autoCorrect={false}
+                    clearButtonMode="while-editing"
+                  />
+                  {search.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearch('')} style={so.clearBtn}>
+                      <Ionicons name="close-circle" size={15} color={T.textSec} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* Bouton "Filtrer" → bascule en phase filter */}
+                <TouchableOpacity
+                  style={so.filterToggleBtn}
+                  onPress={() => setPhase('filter')}
+                >
+                  <Ionicons name="options-outline" size={15} color={activeFilterCount > 0 ? T.gold : T.textSec} />
+                  {activeFilterCount > 0 && (
+                    <View style={so.filterBadge}>
+                      <Text style={so.filterBadgeTxt}>{activeFilterCount}</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
-              )}
-            </View>
-            <TouchableOpacity onPress={onClose} style={so.cancelBtn}>
-              <Text style={so.cancelTxt}>Annuler</Text>
-            </TouchableOpacity>
+
+                <TouchableOpacity onPress={onClose} style={so.cancelBtn}>
+                  <Text style={so.cancelTxt}>Annuler</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* ── MODE FILTRES — rectangles discrets ── */
+              <>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ flex: 1 }}
+                  contentContainerStyle={so.filterRectRow}
+                >
+                  {FILTER_DEFS.map(f => {
+                    const active = isActive(f.key);
+                    return (
+                      <TouchableOpacity
+                        key={f.key}
+                        style={[so.filterRect, active && so.filterRectOn]}
+                        onPress={e => openDropdown(f.key, e)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={[so.filterRectTxt, active && so.filterRectTxtOn]} numberOfLines={1}>
+                          {getLabel(f.key)}
+                        </Text>
+                        <Ionicons
+                          name="chevron-down"
+                          size={10}
+                          color={active ? T.gold : T.textTert}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
+
+                  {activeFilterCount > 0 && (
+                    <TouchableOpacity style={so.resetRect} onPress={onResetFilters}>
+                      <Ionicons name="close" size={11} color={T.textSec} />
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+
+                {/* Retour à la recherche */}
+                <TouchableOpacity
+                  style={so.backSearchBtn}
+                  onPress={() => setPhase('search')}
+                >
+                  <Ionicons name="search-outline" size={15} color={T.textSec} />
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={onClose} style={so.cancelBtn}>
+                  <Text style={so.cancelTxt}>Annuler</Text>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
 
-          {/* Filter chips */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={so.filterRow} contentContainerStyle={{ paddingHorizontal: 16 }}>
-            {([
-              { key: 'genre',    label: 'Genre',  val: genre,    def: 'Tous' },
-              { key: 'sort',     label: 'Tri',    val: sortBy,   def: 'Popularité' },
-              { key: 'duration', label: 'Durée',  val: duration, def: 'Toutes' },
-              { key: 'year',     label: 'Année',  val: year,     def: 'Toutes' },
-            ] as const).map(f => {
-              const active = f.val !== f.def;
-              return (
-                <TouchableOpacity
-                  key={f.key}
-                  style={[so.chip, active && so.chipOn]}
-                  onPress={e => openDropdown(f.key, e)}
-                >
-                  <Text style={[so.chipTxt, active && so.chipTxtOn]}>{f.label}: {f.val}</Text>
-                  <Ionicons name="chevron-down" size={11} color={active ? T.gold : T.textTert} style={{ marginLeft: 3 }} />
+          {/* ── RÉSULTATS ── */}
+          <ScrollView
+            contentContainerStyle={so.resultsContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {loading ? (
+              <View style={so.loadRow}>
+                <ActivityIndicator color={T.gold} />
+              </View>
+            ) : error ? (
+              <View style={so.emptyWrap}>
+                <Ionicons name="cloud-offline-outline" size={44} color={T.textTert} />
+                <Text style={so.emptyTxt}>Erreur de chargement</Text>
+                <TouchableOpacity onPress={onRetry} style={so.retryBtn}>
+                  <Text style={{ color: T.gold, fontWeight: '700', fontSize: 14 }}>Réessayer</Text>
                 </TouchableOpacity>
-              );
-            })}
-            {activeFilterCount > 0 && (
-              <TouchableOpacity style={so.resetChip} onPress={onResetFilters}>
-                <Ionicons name="refresh" size={12} color={T.gold} />
-                <Text style={so.resetTxt}>Réinitialiser</Text>
-              </TouchableOpacity>
-            )}
-          </ScrollView>
-
-          {/* Results */}
-          <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-            {loading
-              ? <View style={so.loadRow}><ActivityIndicator color={T.gold} /></View>
-              : error
-                ? (
-                  <View style={so.emptyWrap}>
-                    <Ionicons name="cloud-offline-outline" size={44} color={T.textTert} />
-                    <Text style={so.emptyTxt}>Erreur de chargement</Text>
-                    <TouchableOpacity onPress={onRetry} style={so.retryBtn}>
-                      <Text style={{ color: T.gold, fontWeight: '700', fontSize: 14 }}>Réessayer</Text>
-                    </TouchableOpacity>
-                  </View>
-                )
-                : works.length === 0
-                  ? (
-                    <View style={so.emptyWrap}>
-                      <Ionicons name="film-outline" size={44} color={T.textTert} />
-                      <Text style={so.emptyTxt}>Aucun résultat</Text>
-                      <Text style={so.emptySub}>Essayez d'autres mots-clés ou filtres</Text>
-                    </View>
-                  )
-                  : (
-                    <>
-                      <Text style={so.resultCount}>{works.length} œuvre{works.length > 1 ? 's' : ''}</Text>
-                      <View style={so.grid}>
-                        {works.map(item => (
-                          <TouchableOpacity
-                            key={item.id}
-                            style={so.resultCard}
-                            onPress={() => { onClose(); router.push(`/film/${item.id}`); }}
-                            activeOpacity={0.8}
-                          >
-                            <Image
-                              source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id}/300/450` }}
-                              style={so.resultImg}
-                            />
-                            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={StyleSheet.absoluteFillObject} />
-                            <View style={[so.resultBadge, { backgroundColor: item.is_original ? T.badgePurp : T.badgePink }]}>
-                              <Text style={so.resultBadgeTxt}>{item.category.toUpperCase()}</Text>
-                            </View>
-                            <View style={so.resultInfo}>
-                              <Text style={so.resultTitle} numberOfLines={2}>{item.title}</Text>
-                              <View style={so.resultMeta}>
-                                <Ionicons name="heart" size={10} color={T.gold} />
-                                <Text style={so.resultMetaTxt}>{item.likes}</Text>
-                                <Text style={[so.resultMetaTxt, { color: T.textTert }]}>· {item.duration}m</Text>
-                              </View>
-                            </View>
-                          </TouchableOpacity>
-                        ))}
+              </View>
+            ) : works.length === 0 ? (
+              <View style={so.emptyWrap}>
+                <Ionicons name="film-outline" size={44} color={T.textTert} />
+                <Text style={so.emptyTxt}>Aucun résultat</Text>
+                <Text style={so.emptySub}>Essayez d'autres mots-clés ou filtres</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={so.resultCount}>{works.length} œuvre{works.length > 1 ? 's' : ''}</Text>
+                <View style={so.grid}>
+                  {works.map(item => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={so.resultCard}
+                      onPress={() => { onClose(); router.push(`/film/${item.id}`); }}
+                      activeOpacity={0.8}
+                    >
+                      <Image
+                        source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id}/300/450` }}
+                        style={so.resultImg}
+                      />
+                      <LinearGradient colors={['transparent', 'rgba(0,0,0,0.9)']} style={StyleSheet.absoluteFillObject} />
+                      <View style={[so.resultBadge, { backgroundColor: item.is_original ? T.badgePurp : T.badgePink }]}>
+                        <Text style={so.resultBadgeTxt}>{item.category.toUpperCase()}</Text>
                       </View>
-                    </>
-                  )
-            }
+                      <View style={so.resultInfo}>
+                        <Text style={so.resultTitle} numberOfLines={2}>{item.title}</Text>
+                        <View style={so.resultMeta}>
+                          <Ionicons name="heart" size={10} color={T.gold} />
+                          <Text style={so.resultMetaTxt}>{item.likes}</Text>
+                          <Text style={[so.resultMetaTxt, { color: T.textTert }]}>· {item.duration}m</Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            )}
           </ScrollView>
         </View>
       </Animated.View>
@@ -284,75 +353,77 @@ const SearchOverlay = memo(({
 SearchOverlay.displayName = 'SearchOverlay';
 
 const so = StyleSheet.create({
-  root:       { flex: 1, backgroundColor: 'transparent' },
-  inner:      { flex: 1, paddingTop: Platform.OS === 'ios' ? 54 : 24 },
-  header:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12, gap: 10 },
-  inputRow:   { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, paddingHorizontal: 12, height: 44, borderWidth: 1, borderColor: T.surfBorder },
-  input:      { flex: 1, color: T.textPrim, fontSize: 15, fontWeight: '500' },
-  clearBtn:   { padding: 4 },
-  cancelBtn:  { paddingHorizontal: 6 },
-  cancelTxt:  { color: T.gold, fontSize: 15, fontWeight: '600' },
-  filterRow:  { marginBottom: 14 },
-  chip:       { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, marginRight: 8, borderRadius: 20, backgroundColor: T.surf, borderWidth: 1, borderColor: T.surfBorder },
-  chipOn:     { borderColor: T.gold, backgroundColor: T.goldSoft },
-  chipTxt:    { color: T.textSec, fontSize: 13 },
-  chipTxtOn:  { color: T.gold },
-  resetChip:  { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 7, marginRight: 8, borderRadius: 20, borderWidth: 1, borderColor: T.gold, backgroundColor: T.goldSoft },
-  resetTxt:   { color: T.gold, fontSize: 13, fontWeight: '600' },
-  loadRow:    { paddingTop: 60, alignItems: 'center' },
-  emptyWrap:  { alignItems: 'center', paddingTop: 70 },
-  emptyTxt:   { color: T.textSec, fontSize: 17, fontWeight: '600', marginTop: 14 },
-  emptySub:   { color: T.textTert, fontSize: 13, marginTop: 6 },
-  retryBtn:   { marginTop: 16, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: T.gold },
-  resultCount:{ color: T.textTert, fontSize: 13, marginBottom: 14 },
-  grid:       { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  resultCard: { width: (W - 42) / 2, height: 220, borderRadius: 14, overflow: 'hidden', backgroundColor: T.surf },
-  resultImg:  { width: '100%', height: '100%', resizeMode: 'cover' },
-  resultBadge:{ position: 'absolute', top: 8, left: 8, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
-  resultBadgeTxt: { color: 'white', fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
-  resultInfo: { position: 'absolute', bottom: 10, left: 10, right: 10 },
-  resultTitle:{ color: 'white', fontSize: 14, fontWeight: '700', marginBottom: 4 },
-  resultMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  root:          { flex: 1, backgroundColor: 'transparent' },
+  inner:         { flex: 1, paddingTop: Platform.OS === 'ios' ? 54 : 24 },
+
+  // ── Top bar ──
+  topBar:        { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, marginBottom: 10, gap: 8 },
+
+  // Barre recherche
+  inputRow:      { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 10, paddingHorizontal: 11, height: 38, borderWidth: StyleSheet.hairlineWidth, borderColor: T.surfBorder },
+  input:         { flex: 1, color: T.textPrim, fontSize: 14, fontWeight: '500' },
+  clearBtn:      { padding: 4 },
+  cancelBtn:     { paddingLeft: 4 },
+  cancelTxt:     { color: T.textSec, fontSize: 14, fontWeight: '600' },
+
+  // Bouton toggle filtres
+  filterToggleBtn:{ position: 'relative', width: 36, height: 38, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: StyleSheet.hairlineWidth, borderColor: T.surfBorder, alignItems: 'center', justifyContent: 'center' },
+  filterBadge:   { position: 'absolute', top: 5, right: 5, width: 14, height: 14, borderRadius: 7, backgroundColor: T.gold, alignItems: 'center', justifyContent: 'center' },
+  filterBadgeTxt:{ color: '#000', fontSize: 8, fontWeight: '800' },
+
+  // Rectangles filtres compacts
+  filterRectRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 6 },
+  filterRect:    { flexDirection: 'row', alignItems: 'center', gap: 4, height: 34, paddingHorizontal: 11, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.09)' },
+  filterRectOn:  { backgroundColor: 'rgba(245,166,35,0.10)', borderColor: 'rgba(245,166,35,0.30)' },
+  filterRectTxt: { color: T.textSec, fontSize: 12, fontWeight: '600' },
+  filterRectTxtOn:{ color: T.gold },
+
+  // Bouton reset (×)
+  resetRect:     { width: 32, height: 34, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.09)', alignItems: 'center', justifyContent: 'center' },
+
+  // Retour recherche
+  backSearchBtn: { width: 36, height: 34, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.09)', alignItems: 'center', justifyContent: 'center' },
+
+  // Résultats
+  resultsContent:{ paddingHorizontal: 16, paddingBottom: 50 },
+  loadRow:       { paddingTop: 60, alignItems: 'center' },
+  emptyWrap:     { alignItems: 'center', paddingTop: 70 },
+  emptyTxt:      { color: T.textSec, fontSize: 17, fontWeight: '600', marginTop: 14 },
+  emptySub:      { color: T.textTert, fontSize: 13, marginTop: 6 },
+  retryBtn:      { marginTop: 16, paddingHorizontal: 22, paddingVertical: 10, borderRadius: 20, borderWidth: 1, borderColor: T.gold },
+  resultCount:   { color: T.textTert, fontSize: 12, marginBottom: 12 },
+  grid:          { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  resultCard:    { width: (W - 42) / 2, height: 220, borderRadius: 14, overflow: 'hidden', backgroundColor: T.surf },
+  resultImg:     { width: '100%', height: '100%', resizeMode: 'cover' },
+  resultBadge:   { position: 'absolute', top: 8, left: 8, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 5 },
+  resultBadgeTxt:{ color: 'white', fontSize: 9, fontWeight: '800', letterSpacing: 0.4 },
+  resultInfo:    { position: 'absolute', bottom: 10, left: 10, right: 10 },
+  resultTitle:   { color: 'white', fontSize: 14, fontWeight: '700', marginBottom: 4 },
+  resultMeta:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
   resultMetaTxt: { color: 'rgba(255,255,255,0.6)', fontSize: 11 },
 });
 
 // ─────────────────────────────────────────────────────────────────
-// ── PORTRAIT CARD  (mini-série / film)
+// ── PORTRAIT CARD
 // ─────────────────────────────────────────────────────────────────
 const PortraitCard = memo(({ item }: { item: Work }) => {
   const router = useRouter();
   const scale  = useRef(new Animated.Value(1)).current;
-
   const onIn  = () => Animated.spring(scale, { toValue: 0.96, useNativeDriver: true, tension: 200, friction: 10 }).start();
   const onOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, tension: 200, friction: 10 }).start();
-
   return (
-    <TouchableOpacity
-      activeOpacity={1}
-      onPressIn={onIn} onPressOut={onOut}
-      onPress={() => router.push(`/film/${item.id}`)}
-      style={pc.wrap}
-    >
-      <Animated.View style={[pc.card, { transform: [{ scale }] }]}>
-        <Image
-          source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id}/300/450` }}
-          style={pc.img}
-        />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.72)']}
-          style={pc.grad}
-          start={{ x: 0, y: 0.5 }} end={{ x: 0, y: 1 }}
-        />
-        {/* badge */}
-        <View style={[pc.badge, { backgroundColor: item.is_original ? T.badgePurp : T.badgePink }]}>
-          <Text style={pc.badgeTxt}>{item.is_original ? 'ORIGINAL' : item.category.toUpperCase()}</Text>
+    <TouchableOpacity activeOpacity={1} onPressIn={onIn} onPressOut={onOut} onPress={() => router.push(`/film/${item.id}`)} style={pcS.wrap}>
+      <Animated.View style={[pcS.card, { transform: [{ scale }] }]}>
+        <Image source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id}/300/450` }} style={pcS.img} />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.72)']} style={pcS.grad} start={{ x: 0, y: 0.5 }} end={{ x: 0, y: 1 }} />
+        <View style={[pcS.badge, { backgroundColor: item.is_original ? T.badgePurp : T.badgePink }]}>
+          <Text style={pcS.badgeTxt}>{item.is_original ? 'ORIGINAL' : item.category.toUpperCase()}</Text>
         </View>
-        {/* meta */}
-        <View style={pc.meta}>
-          <Text style={pc.title} numberOfLines={2}>{item.title}</Text>
-          <View style={pc.stats}>
+        <View style={pcS.meta}>
+          <Text style={pcS.title} numberOfLines={2}>{item.title}</Text>
+          <View style={pcS.stats}>
             <Ionicons name="heart" size={10} color={T.gold} />
-            <Text style={pc.statTxt}>{item.likes}</Text>
+            <Text style={pcS.statTxt}>{item.likes}</Text>
           </View>
         </View>
       </Animated.View>
@@ -360,7 +431,7 @@ const PortraitCard = memo(({ item }: { item: Work }) => {
   );
 });
 PortraitCard.displayName = 'PortraitCard';
-const pc = StyleSheet.create({
+const pcS = StyleSheet.create({
   wrap:     { marginRight: 14 },
   card:     { width: PORT_W, height: PORT_H, borderRadius: 14, overflow: 'hidden', backgroundColor: T.bg2 },
   img:      { width: '100%', height: '100%', resizeMode: 'cover' },
@@ -374,48 +445,32 @@ const pc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────
-// ── LANDSCAPE CARD  (court / moyen / long métrage)
+// ── LANDSCAPE CARD
 // ─────────────────────────────────────────────────────────────────
 const LandscapeCard = memo(({ item }: { item: Work }) => {
   const router = useRouter();
   const scale  = useRef(new Animated.Value(1)).current;
-
   const onIn  = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true, tension: 200, friction: 10 }).start();
   const onOut = () => Animated.spring(scale, { toValue: 1,    useNativeDriver: true, tension: 200, friction: 10 }).start();
-
   return (
-    <TouchableOpacity
-      activeOpacity={1}
-      onPressIn={onIn} onPressOut={onOut}
-      onPress={() => router.push(`/film/${item.id}`)}
-      style={lc.wrap}
-    >
-      <Animated.View style={[lc.card, { transform: [{ scale }] }]}>
-        <Image
-          source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id + 100}/600/340` }}
-          style={lc.img}
-        />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)']}
-          style={lc.grad}
-          start={{ x: 0.3, y: 0 }} end={{ x: 1, y: 1 }}
-        />
-        {/* duration badge */}
-        <View style={lc.durBadge}>
+    <TouchableOpacity activeOpacity={1} onPressIn={onIn} onPressOut={onOut} onPress={() => router.push(`/film/${item.id}`)} style={lcS.wrap}>
+      <Animated.View style={[lcS.card, { transform: [{ scale }] }]}>
+        <Image source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id + 100}/600/340` }} style={lcS.img} />
+        <LinearGradient colors={['transparent', 'rgba(0,0,0,0.8)']} style={lcS.grad} start={{ x: 0.3, y: 0 }} end={{ x: 1, y: 1 }} />
+        <View style={lcS.durBadge}>
           <Ionicons name="time-outline" size={9} color="rgba(255,255,255,0.7)" />
-          <Text style={lc.durTxt}>{item.duration}m</Text>
+          <Text style={lcS.durTxt}>{item.duration}m</Text>
         </View>
-        {/* info */}
-        <View style={lc.meta}>
-          <Text style={lc.title} numberOfLines={1}>{item.title}</Text>
-          <Text style={lc.adj} numberOfLines={1}>{item.adjective}</Text>
-          <View style={lc.stats}>
+        <View style={lcS.meta}>
+          <Text style={lcS.title} numberOfLines={1}>{item.title}</Text>
+          <Text style={lcS.adj} numberOfLines={1}>{item.adjective}</Text>
+          <View style={lcS.stats}>
             <Ionicons name="heart" size={10} color={T.gold} />
-            <Text style={lc.statTxt}>{item.likes}</Text>
+            <Text style={lcS.statTxt}>{item.likes}</Text>
             {item.comments != null && (
               <>
                 <Ionicons name="chatbubble" size={9} color={T.textSec} />
-                <Text style={[lc.statTxt, { color: T.textSec }]}>{item.comments}</Text>
+                <Text style={[lcS.statTxt, { color: T.textSec }]}>{item.comments}</Text>
               </>
             )}
           </View>
@@ -425,7 +480,7 @@ const LandscapeCard = memo(({ item }: { item: Work }) => {
   );
 });
 LandscapeCard.displayName = 'LandscapeCard';
-const lc = StyleSheet.create({
+const lcS = StyleSheet.create({
   wrap:     { marginRight: 14 },
   card:     { width: LAND_W, height: LAND_H, borderRadius: 14, overflow: 'hidden', backgroundColor: T.bg2 },
   img:      { width: '100%', height: '100%', resizeMode: 'cover' },
@@ -440,7 +495,7 @@ const lc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────
-// ── SKELETON CARDS
+// ── SKELETONS
 // ─────────────────────────────────────────────────────────────────
 const PortraitSkeleton = memo(() => {
   const op = useRef(new Animated.Value(0.25)).current;
@@ -450,7 +505,7 @@ const PortraitSkeleton = memo(() => {
       Animated.timing(op, { toValue: 0.25, duration: 800, useNativeDriver: true }),
     ])).start();
   }, []); // eslint-disable-line
-  return <Animated.View style={[pc.card, { backgroundColor: T.surf, opacity: op, marginRight: 14 }]} />;
+  return <Animated.View style={[pcS.card, { backgroundColor: T.surf, opacity: op, marginRight: 14 }]} />;
 });
 PortraitSkeleton.displayName = 'PortraitSkeleton';
 
@@ -462,68 +517,35 @@ const LandscapeSkeleton = memo(() => {
       Animated.timing(op, { toValue: 0.25, duration: 800, useNativeDriver: true }),
     ])).start();
   }, []); // eslint-disable-line
-  return <Animated.View style={[lc.card, { backgroundColor: T.surf, opacity: op, marginRight: 14 }]} />;
+  return <Animated.View style={[lcS.card, { backgroundColor: T.surf, opacity: op, marginRight: 14 }]} />;
 });
 LandscapeSkeleton.displayName = 'LandscapeSkeleton';
 
 // ─────────────────────────────────────────────────────────────────
-// ── HERO BANNER  (premier trending, Apple TV top-shelf style)
+// ── HERO BANNER
 // ─────────────────────────────────────────────────────────────────
 const HeroBanner = memo(({ item }: { item: Work | null }) => {
   const router = useRouter();
-  if (!item) return (
-    <Animated.View style={hb.skeleton} />
-  );
+  if (!item) return <Animated.View style={hb.skeleton} />;
   return (
-    <TouchableOpacity
-      activeOpacity={0.95}
-      onPress={() => router.push(`/film/${item.id}`)}
-      style={hb.wrap}
-    >
-      <ImageBackground
-        source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id}/800/500` }}
-        style={hb.img}
-        resizeMode="cover"
-      >
-        {/* top vignette */}
-        <LinearGradient
-          colors={['rgba(10,10,15,0.55)', 'transparent']}
-          style={hb.topGrad}
-          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-        />
-        {/* bottom gradient */}
-        <LinearGradient
-          colors={['transparent', 'rgba(10,10,15,0.6)', T.bg]}
-          style={hb.botGrad}
-          start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
-        />
-
-        {/* content */}
+    <TouchableOpacity activeOpacity={0.95} onPress={() => router.push(`/film/${item.id}`)} style={hb.wrap}>
+      <ImageBackground source={{ uri: item.image ?? `https://picsum.photos/seed/${item.id}/800/500` }} style={hb.img} resizeMode="cover">
+        <LinearGradient colors={['rgba(10,10,15,0.55)', 'transparent']} style={hb.topGrad} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
+        <LinearGradient colors={['transparent', 'rgba(10,10,15,0.6)', T.bg]} style={hb.botGrad} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }} />
         <View style={hb.content}>
           <View style={[hb.badge, { backgroundColor: item.is_original ? T.badgePurp : T.badgePink }]}>
             <Text style={hb.badgeTxt}>{item.is_original ? '★ ORIGINAL' : item.category.toUpperCase()}</Text>
           </View>
           <Text style={hb.title}>{item.title}</Text>
           <Text style={hb.adj} numberOfLines={1}>{item.adjective}</Text>
-
-          {/* action row */}
           <View style={hb.actions}>
-            <TouchableOpacity
-              style={hb.playBtn}
-              onPress={() => router.push(`/film/${item.id}`)}
-              activeOpacity={0.85}
-            >
+            <TouchableOpacity style={hb.playBtn} onPress={() => router.push(`/film/${item.id}`)} activeOpacity={0.85}>
               <Ionicons name="play" size={16} color={T.bg} />
               <Text style={hb.playTxt}>Regarder</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
-            style={hb.infoBtn}
-            onPress={() => router.push(`/film/${item.id}`)}
-            >
+            <TouchableOpacity style={hb.infoBtn} onPress={() => router.push(`/film/${item.id}`)}>
               <Ionicons name="information-circle-outline" size={16} color="white" />
-              <Text 
-              style={hb.infoTxt}>Infos</Text>
-              
+              <Text style={hb.infoTxt}>Infos</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -551,13 +573,11 @@ const hb = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────
-// ── ROW SECTION  (section title + horizontal FlatList)
+// ── ROW SECTION
 // ─────────────────────────────────────────────────────────────────
 interface RowSectionProps {
-  title: string;
-  subtitle?: string;
-  items: Work[];
-  loading: boolean;
+  title: string; subtitle?: string;
+  items: Work[]; loading: boolean;
   variant: 'portrait' | 'landscape';
   onSeeAll?: () => void;
 }
@@ -565,7 +585,6 @@ const RowSection = memo(({ title, subtitle, items, loading, variant, onSeeAll }:
   const isPort = variant === 'portrait';
   return (
     <View style={rs.section}>
-      {/* header */}
       <View style={rs.head}>
         <View>
           <Text style={rs.title}>{title}</Text>
@@ -578,34 +597,22 @@ const RowSection = memo(({ title, subtitle, items, loading, variant, onSeeAll }:
           </TouchableOpacity>
         )}
       </View>
-
-      {/* list */}
-      {loading
-        ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={rs.listPad}>
-            {[0,1,2,3,4].map(i => isPort
-              ? <PortraitSkeleton  key={i} />
-              : <LandscapeSkeleton key={i} />
-            )}
-          </ScrollView>
-        )
-        : (
-          <FlatList
-            horizontal
-            data={items}
-            keyExtractor={i => String(i.id)}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={rs.listPad}
-            renderItem={({ item }) => isPort
-              ? <PortraitCard  item={item} />
-              : <LandscapeCard item={item} />
-            }
-            decelerationRate="fast"
-            snapToInterval={isPort ? PORT_W + 14 : LAND_W + 14}
-            snapToAlignment="start"
-          />
-        )
-      }
+      {loading ? (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={rs.listPad}>
+          {[0,1,2,3,4].map(i => isPort ? <PortraitSkeleton key={i} /> : <LandscapeSkeleton key={i} />)}
+        </ScrollView>
+      ) : (
+        <FlatList
+          horizontal data={items}
+          keyExtractor={i => String(i.id)}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={rs.listPad}
+          renderItem={({ item }) => isPort ? <PortraitCard item={item} /> : <LandscapeCard item={item} />}
+          decelerationRate="fast"
+          snapToInterval={isPort ? PORT_W + 14 : LAND_W + 14}
+          snapToAlignment="start"
+        />
+      )}
     </View>
   );
 });
@@ -620,28 +627,25 @@ const rs = StyleSheet.create({
   listPad:   { paddingHorizontal: 20 },
 });
 
-//────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
 // ══ MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────
 export default function SearchScreen() {
   const router = useRouter();
 
-  // ── state ────────────────────────────────────────────────────
-  const [search,    setSearch]    = useState('');
-  const [activeTab, setActiveTab] = useState('Catégories');
-  const [genre,     setGenre]     = useState('Tous');
-  const [sortBy,    setSortBy]    = useState<SortOption>('Popularité');
-  const [duration,  setDuration]  = useState<DurationBand>('Toutes');
-  const [year,      setYear]      = useState('Toutes');
-  const [searchOpen, setSearchOpen] = useState(false);
+  const [search,      setSearch]      = useState('');
+  const [activeTab,   setActiveTab]   = useState('Catégories');
+  const [genre,       setGenre]       = useState('Tous');
+  const [sortBy,      setSortBy]      = useState<SortOption>('Popularité');
+  const [duration,    setDuration]    = useState<DurationBand>('Toutes');
+  const [year,        setYear]        = useState('Toutes');
+  const [searchOpen,  setSearchOpen]  = useState(false);
+  const [works,       setWorks]       = useState<Work[]>([]);
+  const [trending,    setTrending]    = useState<Work[]>([]);
+  const [popular,     setPopular]     = useState<Work[]>([]);
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState(false);
 
-  const [works,    setWorks]    = useState<Work[]>([]);
-  const [trending, setTrending] = useState<Work[]>([]);
-  const [popular,  setPopular]  = useState<Work[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(false);
-
-  // ── debounced search ─────────────────────────────────────────
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const debTimer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => {
@@ -650,31 +654,24 @@ export default function SearchScreen() {
     return () => clearTimeout(debTimer.current);
   }, [search]);
 
-  // ── fetch filtered ───────────────────────────────────────────
   const loadWorks = useCallback(async () => {
     setLoading(true); setError(false);
     try {
-      const data = await fetchWorks({
-        tab: activeTab, search: debouncedSearch,
-        genre, sortBy, duration, year,
-      });
+      const data = await fetchWorks({ tab: activeTab, search: debouncedSearch, genre, sortBy, duration, year });
       setWorks(data);
     } catch { setError(true); }
-    finally   { setLoading(false); }
+    finally { setLoading(false); }
   }, [activeTab, debouncedSearch, genre, sortBy, duration, year]);
 
   useEffect(() => { loadWorks(); }, [loadWorks]);
 
-  // ── fetch trending + popular once ────────────────────────────
   useEffect(() => {
     fetchTrending(10).then(data => {
       setTrending(data);
-      // popular = same source, shuffled differently (or separate endpoint if available)
       setPopular([...data].reverse());
     }).catch(() => {});
   }, []);
 
-  // ── dropdowns ────────────────────────────────────────────────
   const [openDrop,   setOpenDrop]   = useState<string | null>(null);
   const [dropAnchor, setDropAnchor] = useState({ x: 0, y: 0 });
 
@@ -693,43 +690,39 @@ export default function SearchScreen() {
     setGenre('Tous'); setSortBy('Popularité'); setDuration('Toutes'); setYear('Toutes');
   }, []);
 
-  // ── split works by type ──────────────────────────────────────
-  // Portrait: mini-séries & films (is_original or category matches)
-  const portraitWorks   = useMemo(() => works.filter(w => w.is_original || ['film', 'mini-série', 'série'].includes(w.category.toLowerCase())), [works]);
-  // Landscape: court / moyen / long métrage by duration
-  const courtMetrage    = useMemo(() => works.filter(w => w.duration < 60),              [works]);
-  const moyenMetrage    = useMemo(() => works.filter(w => w.duration >= 60 && w.duration <= 100), [works]);
-  const longMetrage     = useMemo(() => works.filter(w => w.duration > 100),             [works]);
+  const portraitWorks = useMemo(() => works.filter(w => w.is_original || ['film', 'mini-série', 'série'].includes(w.category.toLowerCase())), [works]);
+  const courtMetrage  = useMemo(() => works.filter(w => w.duration < 60), [works]);
+  const moyenMetrage  = useMemo(() => works.filter(w => w.duration >= 60 && w.duration <= 100), [works]);
+  const longMetrage   = useMemo(() => works.filter(w => w.duration > 100), [works]);
 
-  const heroItem = trending[0] ?? null;
-
+  const heroItem   = trending[0] ?? null;
   const isFiltered = debouncedSearch.trim() || activeTab !== 'Catégories' || activeFilterCount > 0;
 
-  // ── header scroll fade ───────────────────────────────────────
   const scrollY    = useRef(new Animated.Value(0)).current;
-  const headerOpac = scrollY.interpolate({ inputRange: [0, 120], outputRange: [0, 1], extrapolate: 'clamp' });
 
   return (
     <View style={ms.root}>
       <StatusBar style="light" />
 
-      {/* ── STICKY HEADER (appears on scroll) ── */}
-      <Animated.View style={[ms.stickyHeader, { opacity: headerOpac }]} pointerEvents="none">
+      {/* Sticky header */}
+      <Animated.View
+        style={[ms.stickyHeader, { opacity: scrollY.interpolate({ inputRange: [0, 120], outputRange: [1, 0], extrapolate: 'clamp' }) }]}
+        pointerEvents="none"
+      >
         <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={ms.stickyInner}>
           <Text style={ms.stickyTitle}>UNIVERSE</Text>
         </View>
       </Animated.View>
 
-      {/* ── SEARCH ICON TOP-RIGHT ── */}
+      {/* Bouton recherche top-right */}
       <View style={ms.topRight} pointerEvents="box-none">
         <TouchableOpacity style={ms.searchIconBtn} onPress={() => setSearchOpen(true)}>
-          <BlurView intensity={40} tint="dark" style={StyleSheet.absoluteFill} />
           <Ionicons name="search" size={20} color="white" />
         </TouchableOpacity>
       </View>
 
-      {/* ── SEARCH OVERLAY ── */}
+      {/* Search overlay */}
       <SearchOverlay
         visible={searchOpen}
         onClose={() => setSearchOpen(false)}
@@ -745,19 +738,15 @@ export default function SearchScreen() {
         dropAnchor={dropAnchor}
       />
 
-      {/* ── MAIN SCROLL ── */}
+      {/* Main scroll */}
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={ms.scroll}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
         scrollEventThrottle={16}
       >
-        {/* HERO */}
         <HeroBanner item={heroItem} />
 
-     
-
-        {/* ── FILTERED MODE ── */}
         {isFiltered && (
           <RowSection
             title={debouncedSearch.trim() ? `"${debouncedSearch}"` : activeTab}
@@ -768,74 +757,17 @@ export default function SearchScreen() {
           />
         )}
 
-        {/* ── HOME MODE ── */}
         {!isFiltered && (
           <>
-            {/* Trending – portrait */}
-            <RowSection
-              title="Les plus tendances"
-              subtitle="Cette semaine"
-              items={trending}
-              loading={trending.length === 0}
-              variant="portrait"
-              onSeeAll={() => router.push('/popular')}
-            />
+            <RowSection title="Les plus tendances" subtitle="Cette semaine" items={trending} loading={trending.length === 0} variant="portrait" onSeeAll={() => router.push('/popular')} />
+            <RowSection title="Les plus populaires" subtitle="Tous les temps" items={popular} loading={popular.length === 0} variant="portrait" onSeeAll={() => router.push('/popular')} />
+            {(courtMetrage.length > 0 || loading) && <RowSection title="Courts métrages" subtitle="Moins de 60 min" items={courtMetrage} loading={loading} variant="landscape" />}
+            {(moyenMetrage.length > 0 || loading) && <RowSection title="Moyens métrages" subtitle="60 – 100 min" items={moyenMetrage} loading={loading} variant="landscape" />}
+            {(longMetrage.length > 0 || loading)  && <RowSection title="Longs métrages" subtitle="Plus de 100 min" items={longMetrage} loading={loading} variant="landscape" />}
 
-            {/* Popular – portrait */}
-            <RowSection
-              title="Les plus populaires"
-              subtitle="Tous les temps"
-              items={popular}
-              loading={popular.length === 0}
-              variant="portrait"
-              onSeeAll={() => router.push('/popular')}
-            />
-
-            {/* Court métrage – landscape */}
-            {(courtMetrage.length > 0 || loading) && (
-              <RowSection
-                title="Courts métrages"
-                subtitle="Moins de 60 min"
-                items={courtMetrage}
-                loading={loading}
-                variant="landscape"
-              />
-            )}
-
-            {/* Moyen métrage – landscape */}
-            {(moyenMetrage.length > 0 || loading) && (
-              <RowSection
-                title="Moyens métrages"
-                subtitle="60 – 100 min"
-                items={moyenMetrage}
-                loading={loading}
-                variant="landscape"
-              />
-            )}
-
-            {/* Long métrage – landscape */}
-            {(longMetrage.length > 0 || loading) && (
-              <RowSection
-                title="Longs métrages"
-                subtitle="Plus de 100 min"
-                items={longMetrage}
-                loading={loading}
-                variant="landscape"
-              />
-            )}
-
-            {/* Popular banner (footer CTA) */}
-            <TouchableOpacity
-              style={ms.banner}
-              activeOpacity={0.85}
-              onPress={() => router.push('/popular')}
-            >
+            <TouchableOpacity style={ms.banner} activeOpacity={0.85} onPress={() => router.push('/popular')}>
               <BlurView intensity={25} tint="dark" style={ms.bannerBlur}>
-                <LinearGradient
-                  colors={['rgba(245,166,35,0.12)', 'rgba(245,166,35,0.04)']}
-                  style={StyleSheet.absoluteFill}
-                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                />
+                <LinearGradient colors={['rgba(245,166,35,0.12)', 'rgba(245,166,35,0.04)']} style={StyleSheet.absoluteFill} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
                 <View style={ms.bannerLeft}>
                   <View style={ms.bannerIcon}>
                     <Ionicons name="flame" size={18} color={T.gold} />
@@ -856,29 +788,18 @@ export default function SearchScreen() {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// MAIN STYLES
-// ─────────────────────────────────────────────────────────────────
 const ms = StyleSheet.create({
   root:        { flex: 1, backgroundColor: T.bg },
   scroll:      { paddingBottom: 120 },
-
-  // sticky header
   stickyHeader:{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50, height: Platform.OS === 'ios' ? 90 : 60 },
   stickyInner: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 20, paddingBottom: 10, marginTop: Platform.OS === 'ios' ? 44 : 0 },
   stickyTitle: { color: T.textPrim, fontSize: 35, fontWeight: '700' },
-
-  // search icon
-  topRight:     { position: 'absolute', top: Platform.OS === 'ios' ? 44 : 10, right: 20, zIndex: 100 },
+  topRight:    { position: 'absolute', top: Platform.OS === 'ios' ? 44 : 10, right: 20, zIndex: 100 },
   searchIconBtn:{ width: 40, height: 40, borderRadius: 20, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: T.surfBorder },
-
-  // tab wrapper
-  tabWrap:  { marginTop: 24 },
-
-  // popular banner
-  banner:     { marginHorizontal: 20, marginTop: 8, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.surfBorder },
-  bannerBlur: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
-  bannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 13 },
-  bannerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: T.goldSoft, justifyContent: 'center', alignItems: 'center' },
-  bannerTitle:{ color: T.textPrim, fontSize: 15, fontWeight: '700' },
-  bannerSub:  { color: T.textSec, fontSize: 12, marginTop: 2 },
+  banner:      { marginHorizontal: 20, marginTop: 8, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.surfBorder },
+  bannerBlur:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
+  bannerLeft:  { flexDirection: 'row', alignItems: 'center', gap: 13 },
+  bannerIcon:  { width: 40, height: 40, borderRadius: 20, backgroundColor: T.goldSoft, justifyContent: 'center', alignItems: 'center' },
+  bannerTitle: { color: T.textPrim, fontSize: 15, fontWeight: '700' },
+  bannerSub:   { color: T.textSec, fontSize: 12, marginTop: 2 },
 });
