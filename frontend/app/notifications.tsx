@@ -27,13 +27,11 @@ const NOTIF_ICONS: Record<string, { icon: string; color: string }> = {
 export default function NotificationsScreen() {
   const router = useRouter();
   const [notifs, setNotifs] = useState<Notif[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     notificationsAPI.getAll()
       .then(setNotifs)
       .catch(() => {})
-      .finally(() => setLoading(false));
   }, []);
 
   const unread = notifs.filter(n => !n.read).length;
@@ -55,11 +53,8 @@ export default function NotificationsScreen() {
         </View>
       </SafeAreaView>
 
-      {loading ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      ) : (
+     
+       : (
         <FlatList
           data={notifs}
           keyExtractor={item => item.id}

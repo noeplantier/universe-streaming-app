@@ -74,7 +74,7 @@ const C = {
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────────────────
-const TONE_KEYS = ['analyse', 'coup de coeur', 'deception', 'reflexion'] as const;
+const TONE_KEYS = ['analyse', 'coup de coeur', 'deception', 'reflexion', 'détente', 'neutre', 'mitigé', 'enthousiaste'] as const;
 type Tone = typeof TONE_KEYS[number];
 
 const TONES: { key: Tone; label: string; icon: string; color: string }[] = [
@@ -82,6 +82,11 @@ const TONES: { key: Tone; label: string; icon: string; color: string }[] = [
   { key: 'coup de coeur', label: 'Coup de cœur', icon: 'heart-outline',        color: C.red      },
   { key: 'deception',     label: 'Déception',    icon: 'thunderstorm-outline', color: C.gold     },
   { key: 'reflexion',     label: 'Réflexion',    icon: 'bulb-outline',         color: '#A8C8F0'  },
+  { key: 'détente',       label: 'Détente',      icon: 'cafe-outline',         color: '#86EEFF'  },
+  { key: 'neutre',              label: 'Neutre',       icon: 'ellipse-outline',      color: C.textSec  },
+  { key: 'mitigé',             label: 'Mitigé',       icon: 'remove-outline',       color: C.textSec  },
+  { key: 'enthousiaste',       label: 'Enthousiaste', icon: 'star-outline',         color: C.gold     },
+
 ];
 
 const GENRES_LIST = [
@@ -159,7 +164,7 @@ function mapPost(r: SupabasePost): Post {
     id:            r.id,
     userId:        r.user_id,
     userName:      r.profiles?.display_name ?? 'Cinéphile',
-    avatar:        r.profiles?.avatar_url   ?? `https://i.pravatar.cc/100?u=${r.user_id}`,
+    avatar:        r.profiles?.avatar_url   ?? 'https://i.pravatar.cc/150?u=${userId}',
     timeAgo:       timeAgo(r.created_at),
     content:       r.body           ?? '',
     likes:         r.likes_count    ?? 0,
@@ -645,32 +650,49 @@ function ComposeModal({ visible, onClose, onPublished, userId }: {
                   </View>
                 )}
 
-                {/* ── CRITIQUE ──────────────────────────────────────────── */}
-                {step === 'critique' && (
-                  <View style={cm.stepWrap}>
-                    <Text style={cm.sectionHead}>Rédigez votre critique</Text>
-                    <Text style={cm.hint}>Minimum {MIN_BODY} caractères. Argumentez et nuancez.</Text>
+                        {/* ── CRITIQUE ──────────────────────────────────────────── */}
+                        {step === 'critique' && (
+                          <View style={cm.stepWrap}>
+                          <Text style={cm.sectionHead}>Rédigez votre critique</Text>
+                          <Text style={cm.hint}>Minimum {MIN_BODY} caractères. Argumentez et nuancez.</Text>
 
-                    <View style={cm.field}>
-                      <Text style={cm.label}>TON DE LA CRITIQUE *</Text>
-                      <View style={cm.toneGrid}>
-                        {TONES.map(t => {
-                          const on = form.tone === t.key;
-                          return (
+                          <View style={cm.field}>
+                          <Text style={cm.label}>TON DE LA CRITIQUE *</Text>
+                          <View style={cm.toneGrid}>
+                          {TONES.slice(0, 4).map(t => {
+                            const on = form.tone === t.key;
+                            return (
                             <TouchableOpacity
-                              key={t.key}
-                              style={[cm.toneCard, on && { borderColor: t.color, backgroundColor: `${t.color}14` }]}
-                              onPress={() => { patch('tone', t.key); clrErr('critique'); }}
+                            key={t.key}
+                            style={[cm.toneCard, on && { borderColor: t.color, backgroundColor: `${t.color}14` }]}
+                            onPress={() => { patch('tone', t.key); clrErr('critique'); }}
                             >
-                              <View style={[cm.toneIconWrap, on && { backgroundColor: `${t.color}20` }]}>
-                                <Ionicons name={t.icon as any} size={20} color={on ? t.color : C.text} />
-                              </View>
-                              <Text style={[cm.toneLbl, on && { color: t.color }]}>{t.label}</Text>
+                            <View style={[cm.toneIconWrap, on && { backgroundColor: `${t.color}20` }]}>
+                            <Ionicons name={t.icon as any} size={20} color={on ? t.color : C.text} />
+                            </View>
+                            <Text style={[cm.toneLbl, on && { color: t.color }]}>{t.label}</Text>
                             </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-                    </View>
+                            );
+                          })}
+                          </View>
+                          <View style={cm.toneGrid}>
+                          {TONES.slice(4).map(t => {
+                            const on = form.tone === t.key;
+                            return (
+                            <TouchableOpacity
+                            key={t.key}
+                            style={[cm.toneCard, on && { borderColor: t.color, backgroundColor: `${t.color}14` }]}
+                            onPress={() => { patch('tone', t.key); clrErr('critique'); }}
+                            >
+                            <View style={[cm.toneIconWrap, on && { backgroundColor: `${t.color}20` }]}>
+                            <Ionicons name={t.icon as any} size={20} color={on ? t.color : C.text} />
+                            </View>
+                            <Text style={[cm.toneLbl, on && { color: t.color }]}>{t.label}</Text>
+                            </TouchableOpacity>
+                            );
+                          })}
+                          </View>
+                          </View>
 
                     <View style={cm.field}>
                       <Text style={cm.label}>CRITIQUE *</Text>
@@ -930,8 +952,8 @@ const cm = StyleSheet.create({
   chipTxt:      { color: C.textSec, fontSize: 13, fontWeight: '600' },
   ratingBadge:  { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: C.goldDim, borderWidth: 1, borderColor: 'rgba(245,200,66,0.2)' },
   ratingTxt:    { color: C.gold, fontSize: 14, fontWeight: '800' },
-  toneGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  toneCard:     { width: (W - 40 - 10) / 2, paddingVertical: 16, borderRadius: 14, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', gap: 8 },
+  toneGrid:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between' },
+  toneCard:     { width: '48%', paddingVertical: 16, borderRadius: 14, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', gap: 8 },
   toneIconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.navyMid, justifyContent: 'center', alignItems: 'center' },
   toneLbl:      { color: C.textSec, fontSize: 13, fontWeight: '700' },
   charBg:       { flex: 1, height: 2, borderRadius: 1, backgroundColor: C.surf, overflow: 'hidden' },
@@ -971,7 +993,6 @@ const ComposeBar = memo(function ComposeBar({ onPress, userId }: { onPress: () =
   return (
     <TouchableOpacity style={cbar.wrap} onPress={onPress} activeOpacity={0.85}>
       <View style={cbar.leftAccent} />
-      <Image source={{ uri: `https://i.pravatar.cc/100?u=${userId}` }} style={cbar.avi} />
       <View style={cbar.body}>
         <Text style={cbar.title}>Partagez votre critique</Text>
         <Text style={cbar.sub}>Analyse · Coup de cœur · Réflexion · Déception</Text>

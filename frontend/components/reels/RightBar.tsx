@@ -131,7 +131,6 @@ const LeftBar = memo(function LeftBar({
       {/* Like */}
       <IconBtn
         name={liked ? 'heart' : 'heart-outline'}
-        label={liked ? String(film.likes + 1) : String(film.likes)}
         active={liked}
         scale={heartSc}
         onPress={pressLike}
