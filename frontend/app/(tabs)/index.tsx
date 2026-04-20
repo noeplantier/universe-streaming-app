@@ -92,7 +92,7 @@ function useReelsFeed(feedKey: MenuKey) {
     let cancelled = false;
 
     async function loadFeed() {
-      setLoading(true);
+      setLoading(false);
       setError(null);
 
       try {
