@@ -1,15 +1,28 @@
- 
 import React, { memo, useRef, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Platform,
+  View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
-import { P } from './types';
 import type { FeedFilm } from './types';
 
-interface RightBarProps {
+// ─────────────────────────────────────────────────────────────────────────────
+// TOKENS — blanc pur, surfaces navyMid/transparent
+// ─────────────────────────────────────────────────────────────────────────────
+const T = {
+  icon:     'rgba(255,255,255,0.88)',
+  iconDim:  'rgba(255,255,255,0.40)',
+  label:    'rgba(255,255,255,0.42)',
+  surface:  'rgba(255,255,255,0.07)',
+  active:   'rgba(255,255,255,0.14)',
+} as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+interface LeftBarProps {
   film:   FeedFilm;
   liked:  boolean;
   muted:  boolean;
@@ -20,20 +33,60 @@ interface RightBarProps {
   onSave: () => void;
 }
 
-const RightBar = memo(function RightBar({
+// ─────────────────────────────────────────────────────────────────────────────
+// ICON BUTTON ATOMIQUE
+// ─────────────────────────────────────────────────────────────────────────────
+interface IconBtnProps {
+  name:    keyof typeof Ionicons.glyphMap;
+  label?:  string;
+  active?: boolean;
+  scale?:  Animated.Value;
+  onPress: () => void;
+}
+
+const IconBtn = memo(function IconBtn({ name, label, active, scale, onPress }: IconBtnProps) {
+  const inner = (
+    <View style={[s.iconWrap, active && s.iconWrapActive]}>
+      <BlurView intensity={active ? 18 : 10} tint="dark" style={StyleSheet.absoluteFill} />
+      <Ionicons name={name} size={22} color={active ? T.icon : T.iconDim} />
+    </View>
+  );
+
+  return (
+    <View style={s.item}>
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.7}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        {scale
+          ? <Animated.View style={{ transform: [{ scale }] }}>{inner}</Animated.View>
+          : inner
+        }
+      </TouchableOpacity>
+      {label ? <Text style={s.label}>{label}</Text> : null}
+    </View>
+  );
+});
+IconBtn.displayName = 'IconBtn';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEFT BAR
+// ─────────────────────────────────────────────────────────────────────────────
+const LeftBar = memo(function LeftBar({
   film, liked, muted, saved, onLike, onMute, onInfo, onSave,
-}: RightBarProps) {
+}: LeftBarProps) {
   const heartSc = useRef(new Animated.Value(1)).current;
   const saveSc  = useRef(new Animated.Value(1)).current;
 
   const bounce = useCallback((anim: Animated.Value) => {
     Animated.sequence([
-      Animated.timing(anim,  { toValue: 1.45, duration: 90,  useNativeDriver: true }),
-      Animated.spring(anim,  { toValue: 1,    useNativeDriver: true, speed: 30, bounciness: 14 }),
+      Animated.timing(anim, { toValue: 1.4, duration: 85,  useNativeDriver: true }),
+      Animated.spring (anim, { toValue: 1,   useNativeDriver: true, speed: 30, bounciness: 12 }),
     ]).start();
   }, []);
 
-  const pressHeart = useCallback(() => {
+  const pressLike = useCallback(() => {
     bounce(heartSc);
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onLike();
@@ -55,101 +108,100 @@ const RightBar = memo(function RightBar({
     onMute();
   }, [onMute]);
 
-  const likeCount = film.likes + (liked ? 1 : 0);
+  const pressShare = useCallback(async () => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Share.share({
+        message: `🎬 "${film.title}" sur Universe — Cinéma Indépendant`,
+        title: film.title,
+      });
+    } catch { /* silently ignore */ }
+  }, [film.title]);
 
   return (
     <View style={s.bar}>
 
-      {/* ── Mute ── */}
-      <TouchableOpacity
-        style={s.iconBtn}
+      {/* Mute */}
+      <IconBtn
+        name={muted ? 'volume-mute' : 'volume-high'}
+        active={muted}
         onPress={pressMute}
-        activeOpacity={0.75}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-      >
-        <View style={[s.iconWrap, muted && { backgroundColor: 'rgba(255,255,255,0.12)' }]}>
-          <Ionicons
-            name={muted ? 'volume-mute' : 'volume-high'}
-            size={22}
-            color={muted ? P.primL : P?.t1 || '#FFF'}
-          />
-        </View>
-      </TouchableOpacity>
+      />
 
-      {/* ── Like ── */}
-      <View style={s.item}>
-        <TouchableOpacity
-          onPress={pressHeart}
-          activeOpacity={0.82}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Animated.View style={{ transform: [{ scale: heartSc }] }}>
-            <Ionicons
-              name={liked ? 'heart' : 'heart-outline'}
-              size={34}
-              color={liked ? P.red : 'rgba(240,232,255,0.90)'}
-            />
-          </Animated.View>
-        </TouchableOpacity>
-      </View>
+      {/* Like */}
+      <IconBtn
+        name={liked ? 'heart' : 'heart-outline'}
+        label={liked ? String(film.likes + 1) : String(film.likes)}
+        active={liked}
+        scale={heartSc}
+        onPress={pressLike}
+      />
 
-      {/* ── Info ── */}
-      <View style={s.item}>
-        <TouchableOpacity
-          onPress={pressInfo}
-          activeOpacity={0.8}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <View style={s.iconWrap}>
-            <Ionicons name="information-circle-outline" size={26} color="rgba(240,232,255,0.90)" />
-          </View>
-        </TouchableOpacity>
-        <Text style={s.count}>Infos</Text>
-      </View>
+      {/* Save / Watchlist */}
+      <IconBtn
+        name={saved ? 'bookmark' : 'bookmark-outline'}
+        label="Sauver"
+        active={saved}
+        scale={saveSc}
+        onPress={pressSave}
+      />
 
-      {/* ── Watchlist ── */}
-      <View style={s.item}>
-        <TouchableOpacity
-          onPress={pressSave}
-          activeOpacity={0.8}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Animated.View style={{ transform: [{ scale: saveSc }] }}>
-            <Ionicons
-              name={saved ? 'bookmark' : 'bookmark-outline'}
-              size={30}
-              color={saved ? P.gold : 'rgba(240,232,255,0.90)'}
-            />
-          </Animated.View>
-        </TouchableOpacity>
-        <Text style={s.count}>Sauver</Text>
-      </View>
+      {/* Info */}
+      <IconBtn
+        name="information-circle-outline"
+        label="Infos"
+        onPress={pressInfo}
+      />
 
-      {/* ── Partager ── */}
-      <View style={s.item}>
-        <TouchableOpacity
-          onPress={() => {
-            if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          }}
-          activeOpacity={0.8}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <View style={s.iconWrap}>
-            <Ionicons name="arrow-redo-outline" size={26} color="rgba(240,232,255,0.90)" />
-          </View>
-        </TouchableOpacity>
-        <Text style={s.count}>Partager</Text>
-      </View>
+      {/* Partager */}
+      <IconBtn
+        name="arrow-redo-outline"
+        label="Partager"
+        onPress={pressShare}
+      />
+
     </View>
   );
 });
 
-export default RightBar;
+export default LeftBar;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  bar:            { position: 'absolute', right: 14, bottom: 220, alignItems: 'center', gap: 20 },
-  iconBtn:        { alignItems: 'center', justifyContent: 'center' },
-  iconWrap:       { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.08)' },
-  item:           { alignItems: 'center', gap: 4 },
-  count:          { color: 'rgba(240,232,255,0.82)', fontSize: 11, fontWeight: '700' },
+  bar: {
+    position:   'absolute',
+    right:        14,
+    bottom:      220,
+    alignItems: 'center',
+    gap:         18,
+  },
+
+  item: {
+    alignItems: 'center',
+    gap:         4,
+  },
+
+  iconWrap: {
+    width:           44,
+    height:          44,
+    borderRadius:    22,
+    overflow:        'hidden',
+    alignItems:      'center',
+    justifyContent:  'center',
+    borderWidth:      StyleSheet.hairlineWidth,
+    borderColor:     'rgba(255,255,255,0.08)',
+  },
+
+  iconWrapActive: {
+    borderColor: 'rgba(255,255,255,0.20)',
+  },
+
+  label: {
+    color:         T.label,
+    fontSize:       10,
+    fontWeight:    '600',
+    letterSpacing:  0.2,
+  },
 });

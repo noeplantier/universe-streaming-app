@@ -33,7 +33,7 @@ if (Platform.OS !== 'web') {
   }
 }
 
-import RightBar   from './RightBar';
+import RightBar     from './RightBar';
 import BottomCard from './BottomCard';
 import { P }      from './types';
 import type { FeedFilm } from './types';
