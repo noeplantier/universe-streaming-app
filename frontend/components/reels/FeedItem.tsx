@@ -354,12 +354,7 @@ const FeedItem = memo(function FeedItem({
           onSave={handleSave}
         />
 
-        <BottomCard
-          film={film}
-          progress={progress}
-          onFollow={onFollowFriend}
-          insetBot={insetBot}
-        />
+<BottomCard reelId={film.id} progress={progress} />
 
       </View>
     </TouchableWithoutFeedback>

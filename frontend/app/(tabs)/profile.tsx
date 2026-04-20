@@ -514,26 +514,23 @@ export default function ProfileScreen() {
               />
               <View style={pg.avatarRing} pointerEvents="none" />
               {/* Online indicator */}
-              <View style={pg.onlineDot} />
             </View>
 
             {/* Stats */}
             <View style={pg.statsRow}>
               <StatColumn
                 value={`${user.films_seen_count ?? seenFilms.length}`}
-                label="films vus"
+                label="films"
               />
               <View style={pg.statDivider} />
               <StatColumn
                 value={fmt(user.followers_count ?? 2840)}
-                label="abonnés"
-                onPress={() => router.push('/followers' as any)}
+                label="critiques"
               />
               <View style={pg.statDivider} />
               <StatColumn
                 value={fmt(user.following_count ?? 318)}
-                label="abonnements"
-                onPress={() => router.push('/following' as any)}
+                label="festivals"
               />
             </View>
           </View>

@@ -1,13 +1,17 @@
-import React, { memo } from 'react';
-import { View, Text, Animated, StyleSheet } from 'react-native';
+import React, { memo, useEffect, useState, useCallback } from 'react';
+import {
+  View, Text, Animated, StyleSheet,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔧 HELPERS (Importés depuis Infosheet)
+// 🔧 HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 function formatViews(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M vues`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K vues`;
-  return `${n} vues`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
+  return `${n}`;
 }
 
 function formatLikes(n: number): string {
@@ -16,8 +20,30 @@ function formatLikes(n: number): string {
   return `${n}`;
 }
 
+function formatDuration(raw: string | number | undefined): string {
+  if (!raw) return '';
+  const secs = typeof raw === 'string' ? parseInt(raw, 10) : raw;
+  if (isNaN(secs) || secs <= 0) return '';
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return s > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${m} min`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 📊 VIDEO PROGRESS BAR — barre réelle, Animated.Value pour 0 GC pression
+// 📦 TYPES
+// ─────────────────────────────────────────────────────────────────────────────
+interface ReelMeta {
+  title:       string;
+  director?:   string;
+  year?:       string | number;
+  genre?:      string;
+  duration?:   string | number;
+  views_count: number;
+  likes_count: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 📊 VIDEO PROGRESS BAR
 // ─────────────────────────────────────────────────────────────────────────────
 interface VideoProgressBarProps {
   progress: Animated.Value | number;
@@ -37,156 +63,176 @@ const VideoProgressBar = memo(({ progress }: VideoProgressBarProps) => {
   return (
     <View style={pb.track} pointerEvents="none">
       <Animated.View style={[pb.fill, { width: width as any }]} />
-      {/* Curseur lumineux à l'extrémité */}
       <Animated.View style={[pb.thumb, { left: width as any }]} />
     </View>
   );
 });
 VideoProgressBar.displayName = 'VideoProgressBar';
 
+const pb = StyleSheet.create({
+  track: {
+    height:          3,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    width:           '100%',
+    position:        'relative',
+    borderRadius:     2,
+    marginTop:       12,
+  },
+  fill: {
+    height:          '100%',
+    backgroundColor: '#FFFFFF',
+    position:        'absolute',
+    left:             0,
+    top:              0,
+    borderRadius:     2,
+  },
+  thumb: {
+    position:        'absolute',
+    top:             -2,
+    marginLeft:      -3.5,
+    width:            7,
+    height:           7,
+    borderRadius:     3.5,
+    backgroundColor: '#FFFFFF',
+    shadowColor:     '#FFF',
+    shadowOffset:    { width: 0, height: 0 },
+    shadowOpacity:   1,
+    shadowRadius:    6,
+    elevation:        4,
+  },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
-// 🌌 BOTTOM VIEW — Informations de la vidéo (Textes Blancs, Mode Galaxie)
+// 🌌 BOTTOM CARD
 // ─────────────────────────────────────────────────────────────────────────────
 export interface BottomCardProps {
-  title?: string;
-  director?: string;
-  year?: number | string;
-  genre?: string;
-  synopsis?: string;
-  viewsCount?: number;
-  likesCount?: number;
+  /** ID du reel Supabase en cours de lecture */
+  reelId:   string | number;
   progress: Animated.Value | number;
 }
 
-const BottomCard = memo(({ 
-  title, 
-  director, 
-  year, 
-  genre, 
-  synopsis, 
-  viewsCount = 0, 
-  likesCount = 0, 
-  progress 
-}: BottomCardProps) => {
-  return (
-    <View style={styles.container}>
-      <View style={styles.infoContainer}>
-        {/* Titre (Blanc éclatant) */}
-        <Text style={styles.title} numberOfLines={1}>
-          {title || 'Titre inconnu'}
-        </Text>
-        
-        {/* Meta Infos: Réalisateur, Année, Genre */}
-        <Text style={styles.metaText} numberOfLines={1}>
-          {director ? `${director} ` : ''}
-          {year ? `• ${year} ` : ''}
-          {genre ? `• ${genre}` : ''}
-        </Text>
+const BottomCard = memo(({ reelId, progress }: BottomCardProps) => {
+  const [meta, setMeta] = useState<ReelMeta | null>(null);
 
-        {/* Synopsis */}
-        {synopsis && (
-          <Text style={styles.synopsis} numberOfLines={2}>
-            {synopsis}
-          </Text>
+  // ── Fetch minimal depuis Supabase ──────────────────────────────────────────
+  const fetchMeta = useCallback(async () => {
+    if (!reelId) return;
+    try {
+      const { data, error } = await supabase
+        .from('reels')                          // adapte si ta table s'appelle autrement
+        .select('title, director, year, genre, duration, views_count, likes_count')
+        .eq('id', reelId)
+        .single();
+
+      if (error || !data) return;
+      setMeta(data as ReelMeta);
+    } catch {
+      // silently ignore — la carte reste vide plutôt que de crasher
+    }
+  }, [reelId]);
+
+  useEffect(() => {
+    setMeta(null);   // reset entre deux reels
+    fetchMeta();
+  }, [fetchMeta]);
+
+  // ── Méta ligne discrète ───────────────────────────────────────────────────
+  const metaParts = [
+    meta?.director,
+    meta?.year ? String(meta.year) : undefined,
+    meta?.genre,
+    meta?.duration ? formatDuration(meta.duration) : undefined,
+  ].filter(Boolean).join('  ·  ');
+
+  return (
+    <View style={s.wrapper} pointerEvents="box-none">
+      {/* Dégradé bas de page pour la lisibilité */}
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.55)']}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+
+      <View style={s.inner}>
+        {/* Titre */}
+        {!!meta?.title && (
+          <Text style={s.title} numberOfLines={1}>{meta.title}</Text>
         )}
 
-        {/* Stats: Vues et Likes */}
-        <View style={styles.statsContainer}>
-          <Text style={styles.statsText}>👁 {formatViews(viewsCount)}</Text>
-          <Text style={styles.statsText}>♥ {formatLikes(likesCount)}</Text>
-        </View>
+        {/* Métadonnées en ligne */}
+        {!!metaParts && (
+          <Text style={s.meta} numberOfLines={1}>{metaParts}</Text>
+        )}
+
+        {/* Stats minimalistes */}
+        {!!meta && (
+          <View style={s.stats}>
+            <Text style={s.stat}>👁 {formatViews(meta.views_count)}</Text>
+            <Text style={s.dot}>·</Text>
+            <Text style={s.stat}>♥ {formatLikes(meta.likes_count)}</Text>
+          </View>
+        )}
+
+        {/* Barre de progression */}
+        <VideoProgressBar progress={progress} />
       </View>
-      
-      <VideoProgressBar progress={progress} />
     </View>
   );
 });
 BottomCard.displayName = 'BottomCard';
-
 export default BottomCard;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎨 STYLES
+// 💅 STYLES
 // ─────────────────────────────────────────────────────────────────────────────
-const pb = StyleSheet.create({
-  track: {
-    height: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)', // Fond semi-transparent étoilé
-    width: '100%',
-    position: 'relative',
-    borderRadius: 2,
-    marginTop: 12,
-  },
-  fill: {
-    height: '100%',
-    backgroundColor: '#FFF', // Cyan brillant (Galaxie)
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    borderRadius: 2,
-  },
-  thumb: {
-    position: 'absolute',
-    top: -2,
-    marginLeft: -3.5, 
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#FFF',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
-    elevation: 4,
-  }
-});
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 40,
+const s = StyleSheet.create({
+  wrapper: {
+    position:     'absolute',
+    bottom:        0,
+    left:          0,
+    right:         0,
     paddingBottom: 90,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.4)', // Dégradé sombre pour lisibilité des textes blancs
   },
-  infoContainer: {
-    marginBottom: 8,
+
+  inner: {
+    paddingHorizontal: 24,
+    paddingTop:        32,
+    paddingBottom:     0,
   },
+
   title: {
-    color: '#FFFFFF', // Texte Blanc
-    fontSize: 20,
-    fontWeight: '800',
-    marginBottom: 4,
-    textShadowColor: 'rgba(255, 255, 255, 0.3)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 4,
+    color:            'rgba(255,255,255,0.95)',
+    fontSize:          16,
+    fontWeight:       '700',
+    letterSpacing:    -0.3,
+    marginBottom:      3,
+    textShadowColor:  'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius:  4,
   },
-  metaText: {
-    color: '#FFFFFF', // Texte Blanc
-    fontSize: 13,
-    fontWeight: '600',
-    opacity: 0.9,
-    marginBottom: 6,
+
+  meta: {
+    color:       'rgba(255,255,255,0.45)',
+    fontSize:     11,
+    fontWeight:  '500',
+    letterSpacing: 0.2,
+    marginBottom:  6,
   },
-  synopsis: {
-    color: '#FFFFFF', // Texte Blanc
-    fontSize: 14,
-    lineHeight: 20,
-    opacity: 0.8,
-    marginBottom: 8,
-  },
-  statsContainer: {
+
+  stats: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+    alignItems:    'center',
+    gap:            6,
   },
-  statsText: {
-    color: '#FFFFFF', // Texte Blanc
-    fontSize: 12,
+
+  stat: {
+    color:      'rgba(255,255,255,0.40)',
+    fontSize:    11,
     fontWeight: '500',
-    opacity: 0.7,
+  },
+
+  dot: {
+    color:    'rgba(255,255,255,0.20)',
+    fontSize:  11,
   },
 });
