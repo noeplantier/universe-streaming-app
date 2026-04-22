@@ -127,12 +127,6 @@ interface SearchOverlayProps {
   dropAnchor: { x: number; y: number };
 }
 
-const FILTER_DEFS = [
-  { key: 'genre',    label: 'Genre',  def: 'Tous'        },
-  { key: 'sort',     label: 'Tri',    def: 'Popularité'  },
-  { key: 'duration', label: 'Durée',  def: 'Toutes'      },
-  { key: 'year',     label: 'Année',  def: 'Toutes'      },
-] as const;
 
 const SearchOverlay = memo(({
   visible, onClose,
@@ -167,16 +161,6 @@ const SearchOverlay = memo(({
     genre, sort: sortBy, duration, year,
   };
 
-  const getLabel = (key: string): string => {
-    const val = filterValues[key];
-    const def = FILTER_DEFS.find(f => f.key === key)?.def ?? '';
-    return val !== def ? val : FILTER_DEFS.find(f => f.key === key)?.label ?? '';
-  };
-
-  const isActive = (key: string): boolean => {
-    const def = FILTER_DEFS.find(f => f.key === key)?.def ?? '';
-    return filterValues[key] !== def;
-  };
 
   if (!visible) return null;
 
@@ -245,26 +229,7 @@ const SearchOverlay = memo(({
                   style={{ flex: 1 }}
                   contentContainerStyle={so.filterRectRow}
                 >
-                  {FILTER_DEFS.map(f => {
-                    const active = isActive(f.key);
-                    return (
-                      <TouchableOpacity
-                        key={f.key}
-                        style={[so.filterRect, active && so.filterRectOn]}
-                        onPress={e => openDropdown(f.key, e)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[so.filterRectTxt, active && so.filterRectTxtOn]} numberOfLines={1}>
-                          {getLabel(f.key)}
-                        </Text>
-                        <Ionicons
-                          name="chevron-down"
-                          size={10}
-                          color={active ? T.gold : T.textTert}
-                        />
-                      </TouchableOpacity>
-                    );
-                  })}
+               
 
                   {activeFilterCount > 0 && (
                     <TouchableOpacity style={so.resetRect} onPress={onResetFilters}>
