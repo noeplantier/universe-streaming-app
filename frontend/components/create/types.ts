@@ -15,7 +15,7 @@ export interface Critique {
   film_title: string;
   titre:      string;
   contenu:    string;
-  note:       number | null;  
+  note:       number | null;  // 0–5
   tags:       string[];
   created_at: string;
   updated_at: string;

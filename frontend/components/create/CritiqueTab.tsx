@@ -11,7 +11,6 @@ import React, {
   import { supabase }       from '@/lib/supabase';
   import { C }              from './tokens';
   import type { Critique, ReelRef } from './types';
-import { P } from '../reels/types';
   
   // ─────────────────────────────────────────────────────────────────────────────
   // Star rating widget
@@ -52,7 +51,7 @@ import { P } from '../reels/types';
     return (
       <View style={card.wrap}>
         <LinearGradient
-          colors={[C.navyMid, C.navyMid]}
+          colors={['rgba(124,58,237,0.06)', 'transparent']}
           style={StyleSheet.absoluteFill}
         />
         <View style={card.header}>
@@ -95,9 +94,9 @@ import { P } from '../reels/types';
   });
   
   const card = StyleSheet.create({
-    wrap:       { backgroundColor: 'transparent', borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14, overflow: 'hidden' },
+    wrap:       { backgroundColor: C.surf, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14, overflow: 'hidden' },
     header:     { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 8 },
-    filmTitle:  { color: "white", fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
+    filmTitle:  { color: C.teal, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 2 },
     titre:      { color: C.text, fontSize: 15, fontWeight: '800' },
     actions:    { flexDirection: 'row', gap: 8 },
     actionBtn:  { width: 30, height: 30, borderRadius: 15, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
@@ -105,8 +104,8 @@ import { P } from '../reels/types';
     noteLabel:  { color: C.textTert, fontSize: 11 },
     contenu:    { color: C.textSec, fontSize: 13, lineHeight: 20, marginBottom: 10 },
     tagsRow:    { gap: 6, marginBottom: 10 },
-    tag:        { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: C.text, borderWidth: 1, borderColor: C.textTert },
-    tagTxt:     { color: C.navyMid, fontSize: 11, fontWeight: '600' },
+    tag:        { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.purpleMid },
+    tagTxt:     { color: C.purple, fontSize: 11, fontWeight: '600' },
     date:       { color: C.textTert, fontSize: 10, textAlign: 'right' },
   });
   
@@ -118,7 +117,7 @@ import { P } from '../reels/types';
       <View style={empty.wrap}>
         <View style={empty.iconWrap}>
           <LinearGradient
-            colors={[C.navyMid, C.navyMid]}
+            colors={[C.purple, C.navyMid]}
             start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
             style={empty.iconBg}
           >
@@ -130,7 +129,7 @@ import { P } from '../reels/types';
           Rédigez votre première analyse — un regard critique sur votre propre création.
         </Text>
         <TouchableOpacity style={empty.cta} onPress={onNew} activeOpacity={0.85}>
-          <LinearGradient colors={[C.navyMid, C.navyMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={empty.ctaGrad}>
+          <LinearGradient colors={[C.purple, C.navyMid]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={empty.ctaGrad}>
             <Ionicons name="add" size={18} color="white" />
             <Text style={empty.ctaTxt}>Écrire une critique</Text>
           </LinearGradient>
@@ -184,7 +183,7 @@ import { P } from '../reels/types';
             maxLength={20}
           />
           <TouchableOpacity style={ti.addBtn} onPress={addTag}>
-            <Ionicons name="add" size={18} color={"white"} />
+            <Ionicons name="add" size={18} color={C.purple} />
           </TouchableOpacity>
         </View>
         {tags.length > 0 && (
@@ -192,7 +191,7 @@ import { P } from '../reels/types';
             {tags.map(t => (
               <TouchableOpacity key={t} style={ti.tag} onPress={() => removeTag(t)}>
                 <Text style={ti.tagTxt}>#{t}</Text>
-                <Ionicons name="close" size={11} color={C.navyMid} />
+                <Ionicons name="close" size={11} color={C.purple} />
               </TouchableOpacity>
             ))}
           </View>
@@ -204,10 +203,10 @@ import { P } from '../reels/types';
   const ti = StyleSheet.create({
     row:      { flexDirection: 'row', gap: 8 },
     input:    { flex: 1, backgroundColor: C.surf, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 11, color: C.text, fontSize: 14 },
-    addBtn:   { width: 44, height: 44, borderRadius: 30, backgroundColor: C.navyMid, borderWidth: 1, borderColor: "white", alignItems: 'center', justifyContent: 'center' },
+    addBtn:   { width: 44, height: 44, borderRadius: 12, backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.purpleMid, alignItems: 'center', justifyContent: 'center' },
     tagsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-    tag:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.navyMid },
-    tagTxt:   { color: C.navyMid, fontSize: 12, fontWeight: '600' },
+    tag:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, backgroundColor: C.purpleSoft, borderWidth: 1, borderColor: C.purpleMid },
+    tagTxt:   { color: C.purple, fontSize: 12, fontWeight: '600' },
   });
   
   // ─────────────────────────────────────────────────────────────────────────────
@@ -366,7 +365,7 @@ import { P } from '../reels/types';
   
         {/* Tags */}
         <View style={f.field}>
-          <Text style={f.label}>TAGS <Text style={{ color: C.navyMid, fontWeight: '400' }}>(max 6)</Text></Text>
+          <Text style={f.label}>TAGS <Text style={{ color: C.textTert, fontWeight: '400' }}>(max 6)</Text></Text>
           <TagInput tags={form.tags} onChange={v => patch('tags', v)} />
         </View>
   
@@ -380,7 +379,7 @@ import { P } from '../reels/types';
     formHeader:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
     cancelBtn:    { flexDirection: 'row', alignItems: 'center', gap: 4 },
     cancelTxt:    { color: C.textSec, fontSize: 14, fontWeight: '600' },
-    saveBtn:      { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.navyMid, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 16 },
+    saveBtn:      { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.purple, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 16 },
     saveTxt:      { color: 'white', fontSize: 14, fontWeight: '700' },
     sectionTitle: { color: C.text, fontSize: 18, fontWeight: '800', marginBottom: 6 },
     hint:         { color: C.textTert, fontSize: 13, lineHeight: 19, marginBottom: 24, fontStyle: 'italic' },
@@ -404,11 +403,6 @@ import { P } from '../reels/types';
     const [userId,     setUserId]     = useState<string | null>(null);
     const [editTarget, setEditTarget] = useState<Critique | null>(null);
     const fadeAnim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-      console.log("AUTH userId state:", userId);
-    }, [userId]);
-    
   
     // ── Auth ────────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -417,29 +411,30 @@ import { P } from '../reels/types';
       });
     }, []);
   
+    // ── Fetch ────────────────────────────────────────────────────────────────
     const fetchAll = useCallback(async (uid: string) => {
       setLoading(true);
-    
-      const { data: c, error: cErr } = await supabase
-        .from('critiques')
-        .select('*')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
-    
-      const { data: r, error: rErr } = await supabase
-        .from('reels')
-        .select('id, title')
-        .eq('user_id', uid)
-        .order('created_at', { ascending: false });
-    
-      console.log("uid", uid);
-      console.log("critiques error", cErr, "count", c?.length);
-      console.log("reels error", rErr, "count", r?.length);
-    
+      const [{ data: c }, { data: r }] = await Promise.all([
+        supabase
+          .from('critiques')
+          .select('*')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('reels')
+          .select('id, title')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false }),
+      ]);
       setCritiques((c ?? []) as Critique[]);
       setReels((r ?? []) as ReelRef[]);
       setLoading(false);
+      Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
     }, [fadeAnim]);
+  
+    useEffect(() => {
+      if (userId) fetchAll(userId);
+    }, [userId, fetchAll]);
   
     // ── Save ─────────────────────────────────────────────────────────────────
     const handleSave = useCallback(async (form: FormState) => {
@@ -547,7 +542,7 @@ import { P } from '../reels/types';
       <View style={{ flex: 1 }}>
         {loading ? (
           <View style={l.loader}>
-            <ActivityIndicator size="large" color={C.navyMid} />
+            <ActivityIndicator size="large" color={C.purple} />
           </View>
         ) : (
           <Animated.ScrollView
@@ -565,15 +560,14 @@ import { P } from '../reels/types';
               </View>
               {critiques.length > 0 && (
                 <TouchableOpacity style={l.newBtn} onPress={openNew} activeOpacity={0.85}>
-                    <LinearGradient
-                      colors={[C.navyMid, C.navyMid]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={l.newBtnGrad}
-                    >
-                      <Ionicons name="add" size={16} color="white" />
-                      <Text style={l.newBtnTxt}>Nouvelle</Text>
-                    </LinearGradient>
+                  <LinearGradient
+                    colors={[C.purple, C.navyMid]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                    style={l.newBtnGrad}
+                  >
+                    <Ionicons name="add" size={16} color="white" />
+                    <Text style={l.newBtnTxt}>Nouvelle</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               )}
             </View>

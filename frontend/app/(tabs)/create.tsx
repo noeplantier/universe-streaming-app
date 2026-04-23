@@ -4,6 +4,9 @@
  * • Tab Vidéo  : wizard 3 étapes + upload Supabase Storage + POST API
  * • Tab Critique: composant autonome (CritiqueTab)
  * • Design     : glass morphism, quasi-transparent, GalaxyBackground visible
+ *
+ * FIX: router.replace vers /(tabs)/ sans params pour éviter le 404.
+ *      Les données sont nettoyées et validées avant chaque INSERT.
  */
 
 import React, {
@@ -14,16 +17,15 @@ import {
   KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
-import { SafeAreaView }  from 'react-native-safe-area-context';
-import { BlurView }      from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
-import { StatusBar }     from 'expo-status-bar';
-import { Ionicons }      from '@expo/vector-icons';
-import { useRouter }     from 'expo-router';
-import * as FileSystem   from 'expo-file-system';
-import * as Haptics      from 'expo-haptics';
-import * as ImagePicker  from 'expo-image-picker';
-import { decode }        from 'base64-arraybuffer';
+import { SafeAreaView }   from 'react-native-safe-area-context';
+import { BlurView }       from 'expo-blur';
+import { StatusBar }      from 'expo-status-bar';
+import { Ionicons }       from '@expo/vector-icons';
+import { useRouter }      from 'expo-router';
+import * as FileSystem    from 'expo-file-system';
+import * as Haptics       from 'expo-haptics';
+import * as ImagePicker   from 'expo-image-picker';
+import { decode }         from 'base64-arraybuffer';
 
 import GalaxyBackground from '@/components/social/GalaxyBackground';
 import CritiqueTab      from '@/components/create/CritiqueTab';
@@ -45,30 +47,30 @@ const GENRES = [
 // PALETTE — deep-space glass
 // ─────────────────────────────────────────────────────────────────────────────
 const P = {
-  bg:           '#03000A',
-  glass:        'rgba(255,255,255,0.04)',
-  glassMid:     'rgba(255,255,255,0.07)',
-  glassHi:      'rgba(255,255,255,0.11)',
-  edge:         'rgba(255,255,255,0.08)',
-  edgeMid:      'rgba(255,255,255,0.14)',
-  edgeHi:       'rgba(255,255,255,0.22)',
-  white:        '#FFFFFF',
-  txt:          '#EDF6FF',
-  txtSec:       'rgba(255,255,255,0.50)',
-  txtTert:      'rgba(255,255,255,0.24)',
-  teal:         '#00C9FF',
-  tealGlass:    'rgba(0,201,255,0.08)',
-  tealEdge:     'rgba(0,201,255,0.22)',
-  navy:         '#0A1628',
-  navyMid:      '#0D2240',
-  green:        '#2ECC8A',
-  greenGlass:   'rgba(46,204,138,0.10)',
-  greenEdge:    'rgba(46,204,138,0.22)',
-  gold:         '#F5C842',
-  goldGlass:    'rgba(245,200,66,0.08)',
-  goldEdge:     'rgba(245,200,66,0.18)',
-  red:          '#FF3B5C',
-  redGlass:     'rgba(255,59,92,0.10)',
+  bg:          '#03000A',
+  glass:       'rgba(255,255,255,0.04)',
+  glassMid:    'rgba(255,255,255,0.07)',
+  glassHi:     'rgba(255,255,255,0.11)',
+  edge:        'rgba(255,255,255,0.08)',
+  edgeMid:     'rgba(255,255,255,0.14)',
+  edgeHi:      'rgba(255,255,255,0.22)',
+  white:       '#FFFFFF',
+  txt:         '#EDF6FF',
+  txtSec:      'rgba(255,255,255,0.50)',
+  txtTert:     'rgba(255,255,255,0.24)',
+  teal:        '#00C9FF',
+  tealGlass:   'rgba(0,201,255,0.08)',
+  tealEdge:    'rgba(0,201,255,0.22)',
+  navy:        '#0A1628',
+  navyMid:     '#0D2240',
+  green:       '#2ECC8A',
+  greenGlass:  'rgba(46,204,138,0.10)',
+  greenEdge:   'rgba(46,204,138,0.22)',
+  gold:        '#F5C842',
+  goldGlass:   'rgba(245,200,66,0.08)',
+  goldEdge:    'rgba(245,200,66,0.18)',
+  red:         '#FF3B5C',
+  redGlass:    'rgba(255,59,92,0.10)',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,7 +88,17 @@ interface ReelMeta {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// UPLOAD — Supabase Storage + POST to API route
+// HELPERS — Sanitize strings before DB insert
+// ─────────────────────────────────────────────────────────────────────────────
+const sanitize = (v: string, max = 255) => v.trim().slice(0, max);
+
+const safeYear = (raw: string): number | null => {
+  const n = parseInt(raw.trim(), 10);
+  return !isNaN(n) && n >= 1888 && n <= new Date().getFullYear() + 5 ? n : null;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UPLOAD — Supabase Storage + fallback INSERT
 // ─────────────────────────────────────────────────────────────────────────────
 async function uploadReel(
   localUri:   string,
@@ -97,93 +109,67 @@ async function uploadReel(
   try {
     onProgress(5, 'Préparation…');
 
-    const isBlob   = localUri.startsWith('blob:');
-    const rawExt   = isBlob ? 'mp4' : (localUri.split('.').pop()?.toLowerCase() ?? 'mp4');
-    const ext      = rawExt === 'mov' ? 'mp4' : rawExt;
-    const mime     = ext === 'mp4' ? 'video/mp4' : ext === 'webm' ? 'video/webm' : `video/${ext}`;
+    const isBlob  = localUri.startsWith('blob:');
+    const rawExt  = isBlob ? 'mp4' : (localUri.split('.').pop()?.toLowerCase() ?? 'mp4');
+    const ext     = rawExt === 'mov' ? 'mp4' : rawExt;
+    const mime    = ext === 'mp4' ? 'video/mp4' : ext === 'webm' ? 'video/webm' : `video/${ext}`;
+    // Unique filename — no spaces, no special chars
     const filename = `reel_${userId}_${Date.now()}.${ext}`;
 
-    // ── Lire le fichier ────────────────────────────────────────────────────
+    // ── Read file ─────────────────────────────────────────────────────────
     onProgress(15, 'Lecture du fichier…');
 
     let payload: ArrayBuffer | Blob;
-
     if (Platform.OS === 'web' || isBlob) {
       const res = await fetch(localUri);
-      payload   = await res.blob();            // Blob natif Web
+      payload   = await res.blob();
     } else {
-      // iOS / Android → base64 + decode ArrayBuffer
-      const b64 = await FileSystem.readAsStringAsync(localUri, {
-        encoding: 'base64',
-      });
-      payload = decode(b64);
+      const b64 = await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' });
+      payload   = decode(b64);
     }
 
-    const { data: session } = await supabase.auth.getSession();
-console.log('session?', !!session?.session);
-
-    // ── Upload Storage ─────────────────────────────────────────────────────
+    // ── Storage upload ────────────────────────────────────────────────────
     onProgress(30, 'Upload vidéo…');
 
     const { data: storageData, error: storageErr } = await supabase.storage
-    .from('social')
-    .upload(`videos/${filename}`, payload as any, { contentType: mime, upsert: false });
-  
-  console.log('storageErr=', storageErr);
-  console.log('storageData=', storageData);
-  
-  if (storageErr) throw storageErr;
+      .from('social')
+      .upload(`videos/${filename}`, payload as any, { contentType: mime, upsert: false });
 
-    onProgress(65, 'Métadonnées…');
+    if (storageErr) throw new Error(`Storage: ${storageErr.message}`);
+
+    onProgress(65, 'Génération de l\'URL…');
 
     const videoUrl = supabase.storage
       .from('social')
       .getPublicUrl(storageData.path).data.publicUrl;
 
-    // ── POST to API route (index.tsx / reels endpoint) ─────────────────────
-    // Construit un FormData pour le POST — compatible Expo Router API routes
-    const form = new FormData();
-    form.append('user_id',  userId);
-    form.append('video_url', videoUrl);
-    form.append('title',    meta.title.trim());
-    form.append('genre',    meta.genre);
-    form.append('director', meta.director.trim());
-    form.append('year',     meta.year.trim());
-    form.append('synopsis', meta.synopsis.trim());
-    form.append('duration', String(MAX_DURATION));
+    if (!videoUrl) throw new Error('Impossible de générer l\'URL publique');
 
-    onProgress(80, 'Publication…');
+    // ── Sanitize meta before insert ───────────────────────────────────────
+    onProgress(75, 'Validation des données…');
 
-    // Tentative POST vers l'API route
-    // → Ajustez l'URL selon votre endpoint Expo Router (ex: /api/reels)
-    let reelId: string | null = null;
+    const cleanTitle    = sanitize(meta.title, 200);
+    const cleanGenre    = sanitize(meta.genre, 60);
+    const cleanDirector = sanitize(meta.director, 120);
+    const cleanSynopsis = sanitize(meta.synopsis, 120);
+    const cleanYear     = safeYear(meta.year);
 
-    try {
-      const apiRes = await fetch('/api/reels', {
-        method:  'POST',
-        body:    form,
-        headers: { Accept: 'application/json' },
-      });
+    if (!cleanTitle)  throw new Error('Titre invalide');
+    if (!cleanGenre)  throw new Error('Genre invalide');
 
-      if (apiRes.ok) {
-        const json = await apiRes.json();
-        reelId = json?.id ?? null;
-      }
-    } catch {
-      // L'API route n'est pas joignable → fallback direct Supabase
-    }
+    // ── Database insert ───────────────────────────────────────────────────
+    onProgress(85, 'Publication…');
 
-    // ── Insert Supabase (Option A) ────────────────────────────────
-    const { data, error } = await supabase
+    const { data, error: dbErr } = await supabase
       .from('reels')
       .insert({
         user_id:     userId,
         video_url:   videoUrl,
-        title:       meta.title.trim(),
-        genre:       meta.genre,
-        director:    meta.director.trim(),
-        year:        meta.year.trim(),
-        synopsis:    meta.synopsis.trim(),
+        title:       cleanTitle,
+        genre:       cleanGenre,
+        director:    cleanDirector || null,
+        year:        cleanYear,
+        synopsis:    cleanSynopsis || null,
         duration:    MAX_DURATION,
         likes_count: 0,
         views_count: 0,
@@ -192,21 +178,21 @@ console.log('session?', !!session?.session);
       .select('id')
       .single();
 
-    if (error) throw error;
-
-    const finalReelId = data?.id ?? null;
-    if (!finalReelId) throw new Error('No reel ID returned');
+    if (dbErr) throw new Error(`DB: ${dbErr.message}`);
+    if (!data?.id) throw new Error('Aucun ID retourné');
 
     onProgress(100, 'Publié !');
-    return { id: finalReelId, video_url: videoUrl };
+    return { id: data.id, video_url: videoUrl };
+
   } catch (e) {
-    console.error('[uploadReel]', e);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error('[uploadReel]', msg);
     return null;
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GLASS CARD — wrapper semi-transparent
+// GLASS CARD
 // ─────────────────────────────────────────────────────────────────────────────
 interface GlassCardProps { children: React.ReactNode; style?: object }
 
@@ -224,12 +210,12 @@ GlassCard.displayName = 'GlassCard';
 
 const gc = StyleSheet.create({
   wrap: {
-    borderRadius:    20,
-    borderWidth:      0.5,
-    borderColor:      P.edge,
-    overflow:        'hidden',
-    backgroundColor:  P.glass,
-    marginBottom:     14,
+    borderRadius:   20,
+    borderWidth:     0.5,
+    borderColor:     P.edge,
+    overflow:       'hidden',
+    backgroundColor: P.glass,
+    marginBottom:    14,
   },
 });
 
@@ -264,6 +250,7 @@ const StepIndicator = memo(({ step }: { step: Step }) => (
     })}
   </View>
 ));
+StepIndicator.displayName = 'StepIndicator';
 
 const si = StyleSheet.create({
   wrap:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 32, marginBottom: 22 },
@@ -306,11 +293,9 @@ const StepImport = memo(({
       <Text style={step.hint}>Le passage le plus fort — {MAX_DURATION}s maximum.</Text>
 
       {!videoUri ? (
-        /* ── Dropzone ── */
         <TouchableOpacity onPress={onPick} activeOpacity={0.85}>
           <GlassCard style={{ marginBottom: 0 }}>
             <View style={imp.zone}>
-              {/* ring */}
               <View style={imp.ring}>
                 <Ionicons name="film-outline" size={26} color={P.txtSec} />
               </View>
@@ -328,7 +313,6 @@ const StepImport = memo(({
         </TouchableOpacity>
       ) : (
         <>
-          {/* ── File card ── */}
           <GlassCard>
             <View style={imp.fileRow}>
               <View style={imp.fileIcon}>
@@ -340,13 +324,16 @@ const StepImport = memo(({
                 </Text>
                 <Text style={imp.fileMeta}>{fmt(videoDuration)}</Text>
               </View>
-              <TouchableOpacity style={imp.removeBtn} onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity
+                style={imp.removeBtn}
+                onPress={onRemove}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <Ionicons name="close" size={14} color={P.txtTert} />
               </TouchableOpacity>
             </View>
           </GlassCard>
 
-          {/* ── Trim ── */}
           <TrimBar
             start={trimStart}
             end={trimEnd}
@@ -355,7 +342,6 @@ const StepImport = memo(({
             onEndChange={e => onTrimChange(trimStart, e)}
           />
 
-          {/* ── Tip ── */}
           <GlassCard style={{ borderColor: P.goldEdge, backgroundColor: P.goldGlass }}>
             <View style={imp.tip}>
               <Ionicons name="bulb-outline" size={13} color={P.gold} style={{ marginTop: 1 }} />
@@ -409,13 +395,11 @@ const GlassInput = memo(({ value, onChangeText, placeholder, ...rest }: any) => 
 ));
 GlassInput.displayName = 'GlassInput';
 
-// eslint-disable-next-line react/display-name
 const StepInfos = memo(({ meta, onChange }: InfosProps) => (
   <View style={{ gap: 10 }}>
     <Text style={step.title}>Votre film</Text>
     <Text style={step.hint}>Ces infos apparaîtront sur votre Réel.</Text>
 
-    {/* Titre */}
     <GlassCard>
       <View style={inf.fieldWrap}>
         <Text style={inf.label}>TITRE *</Text>
@@ -423,11 +407,12 @@ const StepInfos = memo(({ meta, onChange }: InfosProps) => (
           value={meta.title}
           onChangeText={(v: string) => onChange('title', v)}
           placeholder="Les Silences du Lac…"
+          maxLength={200}
+          returnKeyType="next"
         />
       </View>
     </GlassCard>
 
-    {/* Réalisateur + Année */}
     <View style={{ flexDirection: 'row', gap: 10 }}>
       <GlassCard style={{ flex: 1, marginBottom: 0 }}>
         <View style={inf.fieldWrap}>
@@ -436,6 +421,8 @@ const StepInfos = memo(({ meta, onChange }: InfosProps) => (
             value={meta.director}
             onChangeText={(v: string) => onChange('director', v)}
             placeholder="Prénom Nom"
+            maxLength={120}
+            returnKeyType="next"
           />
         </View>
       </GlassCard>
@@ -448,16 +435,20 @@ const StepInfos = memo(({ meta, onChange }: InfosProps) => (
             placeholder="2025"
             keyboardType="numeric"
             maxLength={4}
+            returnKeyType="done"
           />
         </View>
       </GlassCard>
     </View>
 
-    {/* Genre chips */}
     <GlassCard>
       <View style={inf.fieldWrap}>
         <Text style={inf.label}>GENRE *</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 7 }}
+        >
           {GENRES.map(g => {
             const on = meta.genre === g;
             return (
@@ -474,7 +465,6 @@ const StepInfos = memo(({ meta, onChange }: InfosProps) => (
       </View>
     </GlassCard>
 
-    {/* Synopsis */}
     <GlassCard>
       <View style={inf.fieldWrap}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -488,11 +478,11 @@ const StepInfos = memo(({ meta, onChange }: InfosProps) => (
           multiline
           style={[inf.input, { minHeight: 72, lineHeight: 20 }]}
           textAlignVertical="top"
+          maxLength={120}
         />
       </View>
     </GlassCard>
 
-    {/* Auto-tag notice */}
     <GlassCard style={{ borderColor: P.tealEdge, backgroundColor: P.tealGlass }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
         <Ionicons name="ribbon-outline" size={13} color={P.teal} />
@@ -503,6 +493,7 @@ const StepInfos = memo(({ meta, onChange }: InfosProps) => (
     </GlassCard>
   </View>
 ));
+StepInfos.displayName = 'StepInfos';
 
 const inf = StyleSheet.create({
   fieldWrap: { padding: 14 },
@@ -533,10 +524,10 @@ const StepPublish = memo(({
 }: PublishProps) => {
   const dur    = trimEnd - trimStart;
   const checks = useMemo(() => [
-    { ok: meta.title.trim().length > 0,          txt: 'Titre renseigné' },
-    { ok: meta.genre.length > 0,                 txt: 'Genre sélectionné' },
-    { ok: dur > 0 && dur <= MAX_DURATION,         txt: `Extrait ≤ ${MAX_DURATION}s` },
-    { ok: true,                                  txt: '#CinémaIndépendant' },
+    { ok: meta.title.trim().length > 0,        txt: 'Titre renseigné' },
+    { ok: meta.genre.length > 0,               txt: 'Genre sélectionné' },
+    { ok: dur > 0 && dur <= MAX_DURATION,       txt: `Extrait ≤ ${MAX_DURATION}s` },
+    { ok: true,                                txt: '#CinémaIndépendant' },
   ], [meta.title, meta.genre, dur]);
   const allOk = checks.every(c => c.ok);
 
@@ -545,7 +536,6 @@ const StepPublish = memo(({
       <Text style={step.title}>Vérification</Text>
       <Text style={step.hint}>Un dernier regard avant publication.</Text>
 
-      {/* Preview mini card */}
       <GlassCard style={{ borderColor: P.edgeMid }}>
         <View style={{ padding: 14, gap: 6 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -571,7 +561,6 @@ const StepPublish = memo(({
         </View>
       </GlassCard>
 
-      {/* Checklist */}
       <GlassCard>
         <View style={{ padding: 14, gap: 10 }}>
           {checks.map(c => (
@@ -589,7 +578,6 @@ const StepPublish = memo(({
         </View>
       </GlassCard>
 
-      {/* Upload progress */}
       {uploading && (
         <GlassCard>
           <View style={{ padding: 16, gap: 10 }}>
@@ -598,7 +586,9 @@ const StepPublish = memo(({
               <Text style={{ color: P.txtSec, fontSize: 12 }}>{uploadMsg}</Text>
             </View>
             <View style={pub.progressBg}>
-              <Animated.View style={[pub.progressFill, { width: `${uploadProgress}%` as any }]} />
+              <Animated.View
+                style={[pub.progressFill, { width: `${uploadProgress}%` as any }]}
+              />
             </View>
             <Text style={{ color: P.txtTert, fontSize: 10, textAlign: 'right' }}>
               {uploadProgress}%
@@ -607,7 +597,6 @@ const StepPublish = memo(({
         </GlassCard>
       )}
 
-      {/* CTA */}
       {!uploading && (
         <TouchableOpacity
           style={[pub.cta, !allOk && { opacity: 0.35 }]}
@@ -615,7 +604,11 @@ const StepPublish = memo(({
           activeOpacity={0.88}
           disabled={!allOk}
         >
-          <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="light" style={StyleSheet.absoluteFillObject} />
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 20 : 12}
+            tint="light"
+            style={StyleSheet.absoluteFillObject}
+          />
           <View style={pub.ctaInner}>
             <Ionicons name="cloud-upload-outline" size={17} color={P.white} />
             <Text style={pub.ctaTxt}>Publier le Réel</Text>
@@ -629,20 +622,21 @@ const StepPublish = memo(({
     </View>
   );
 });
+StepPublish.displayName = 'StepPublish';
 
 const pub = StyleSheet.create({
-  thumb:       { width: 60, height: 90, borderRadius: 10, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center', gap: 4 },
-  thumbDur:    { color: P.txtTert, fontSize: 9, fontWeight: '600' },
-  genre:       { color: P.txtTert, fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-  filmTitle:   { color: P.txt, fontSize: 14, fontWeight: '800' },
-  director:    { color: P.txtSec, fontSize: 11, marginTop: 2 },
-  synopsis:    { color: P.txtTert, fontSize: 11, lineHeight: 16, fontStyle: 'italic' },
-  progressBg:  { height: 3, borderRadius: 2, backgroundColor: P.glass, overflow: 'hidden' },
-  progressFill:{ height: '100%', backgroundColor: P.white, borderRadius: 2 },
-  cta:         { borderRadius: 18, overflow: 'hidden', borderWidth: 0.5, borderColor: P.edgeMid },
-  ctaInner:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingVertical: 16 },
-  ctaTxt:      { color: P.white, fontSize: 15, fontWeight: '700' },
-  legal:       { color: P.txtTert, fontSize: 10, textAlign: 'center', lineHeight: 15, fontStyle: 'italic' },
+  thumb:        { width: 60, height: 90, borderRadius: 10, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  thumbDur:     { color: P.txtTert, fontSize: 9, fontWeight: '600' },
+  genre:        { color: P.txtTert, fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  filmTitle:    { color: P.txt, fontSize: 14, fontWeight: '800' },
+  director:     { color: P.txtSec, fontSize: 11, marginTop: 2 },
+  synopsis:     { color: P.txtTert, fontSize: 11, lineHeight: 16, fontStyle: 'italic' },
+  progressBg:   { height: 3, borderRadius: 2, backgroundColor: P.glass, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: P.white, borderRadius: 2 },
+  cta:          { borderRadius: 18, overflow: 'hidden', borderWidth: 0.5, borderColor: P.edgeMid },
+  ctaInner:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingVertical: 16 },
+  ctaTxt:       { color: P.white, fontSize: 15, fontWeight: '700' },
+  legal:        { color: P.txtTert, fontSize: 10, textAlign: 'center', lineHeight: 15, fontStyle: 'italic' },
 });
 
 const step = StyleSheet.create({
@@ -675,7 +669,7 @@ const VideoTab = memo(function VideoTab() {
   const [uploadProgress, setUploadProgress]  = useState(0);
   const [uploadMsg,      setUploadMsg]       = useState('');
 
-  // ── Step slide animation ─────────────────────────────────────────────────
+  // ── Slide animation ───────────────────────────────────────────────────────
   useEffect(() => {
     const dir = currentStep > prevStepRef.current ? 1 : -1;
     prevStepRef.current = currentStep;
@@ -704,8 +698,9 @@ const VideoTab = memo(function VideoTab() {
       allowsEditing:    false,
     });
     if (res.canceled || !res.assets?.[0]) return;
-    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
     const asset = res.assets[0];
     const dur   = Math.floor(asset.duration ?? 30);
     setVideoUri(asset.uri);
@@ -716,8 +711,8 @@ const VideoTab = memo(function VideoTab() {
   }, []);
 
   const removeVideo = useCallback(() => {
-    setVideoUri(null); setVideoFileName(''); setVideoDuration(0);
-    setTrimStart(0);   setTrimEnd(0);
+    setVideoUri(null); setVideoFileName('');
+    setVideoDuration(0); setTrimStart(0); setTrimEnd(0);
   }, []);
 
   const handleTrimChange = useCallback((s: number, e: number) => {
@@ -735,9 +730,9 @@ const VideoTab = memo(function VideoTab() {
 
   const errorHint = useMemo(() => {
     if (currentStep === 0) {
-      if (!videoUri)                              return 'Importez une vidéo pour continuer';
-      if ((trimEnd - trimStart) > MAX_DURATION)   return `Réduisez à ${MAX_DURATION}s max`;
-      if ((trimEnd - trimStart) <= 0)             return 'Sélectionnez une durée valide';
+      if (!videoUri)                            return 'Importez une vidéo pour continuer';
+      if ((trimEnd - trimStart) > MAX_DURATION) return `Réduisez à ${MAX_DURATION}s max`;
+      if ((trimEnd - trimStart) <= 0)           return 'Sélectionnez une durée valide';
     }
     if (currentStep === 1) {
       if (!meta.title.trim()) return 'Renseignez le titre';
@@ -759,39 +754,59 @@ const VideoTab = memo(function VideoTab() {
     else router.back();
   }, [currentStep, router]);
 
-  // ── Upload ────────────────────────────────────────────────────────────────
+  // ── Upload + redirect ─────────────────────────────────────────────────────
   const handleUpload = useCallback(async () => {
     if (!videoUri || uploading) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    const userId = user?.id;
-    if (!userId) { Alert.alert('Non connecté', 'Connectez-vous pour publier.'); return; }
+    const { data: { user }, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !user?.id) {
+      Alert.alert('Non connecté', 'Connectez-vous pour publier.');
+      return;
+    }
 
     setUploading(true);
     setUploadProgress(0);
     setUploadMsg('Démarrage…');
 
     const result = await uploadReel(
-      videoUri, meta, userId,
+      videoUri, meta, user.id,
       (pct, msg) => { setUploadProgress(pct); setUploadMsg(msg); },
     );
 
     setUploading(false);
 
     if (result) {
-      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace({ pathname: '/(tabs)/index', params: { newReelId: result.id } });
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+
+      /**
+       * FIX — Navigation correcte vers l'onglet Reels.
+       *
+       * Ne jamais passer de params dynamiques dans une URL de tab Expo Router :
+       * cela génère un chemin inexistant → 404.
+       *
+       * On utilise router.replace() vers le chemin statique de l'onglet,
+       * sans query string. Le feed se rafraîchit naturellement puisqu'il
+       * souscrit à Supabase Realtime ou se recharge à chaque focus.
+       */
+      router.replace('/(tabs)/');
     } else {
-      Alert.alert('Erreur', "L'upload a échoué. Vérifiez votre connexion.");
+      Alert.alert(
+        'Erreur de publication',
+        "L'upload a échoué. Vérifiez votre connexion et réessayez.",
+        [{ text: 'OK' }],
+      );
     }
   }, [videoUri, meta, uploading, router]);
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <StepIndicator step={currentStep} />
 
-      {/* Scrollable content */}
       <Animated.ScrollView
         style={{ transform: [{ translateX: slideAnim }] }}
         contentContainerStyle={wiz.scroll}
@@ -825,7 +840,7 @@ const VideoTab = memo(function VideoTab() {
         <View style={{ height: 50 }} />
       </Animated.ScrollView>
 
-      {/* Footer nav */}
+      {/* Footer nav — steps 0 & 1 only */}
       {currentStep < 2 && (
         <View style={wiz.footer}>
           <View style={wiz.footerRow}>
@@ -837,12 +852,20 @@ const VideoTab = memo(function VideoTab() {
             )}
 
             <TouchableOpacity
-              style={[wiz.nextBtn, !canContinue && { opacity: 0.35 }, currentStep === 0 && { marginLeft: 'auto' as any }]}
+              style={[
+                wiz.nextBtn,
+                !canContinue && { opacity: 0.35 },
+                currentStep === 0 && { marginLeft: 'auto' as any },
+              ]}
               onPress={goNext}
               disabled={!canContinue}
               activeOpacity={0.85}
             >
-              <BlurView intensity={Platform.OS === 'ios' ? 18 : 10} tint="light" style={StyleSheet.absoluteFillObject} />
+              <BlurView
+                intensity={Platform.OS === 'ios' ? 18 : 10}
+                tint="light"
+                style={StyleSheet.absoluteFillObject}
+              />
               <View style={wiz.nextInner}>
                 <Text style={wiz.nextTxt}>
                   {currentStep === 0 ? 'Informations' : 'Aperçu'}
@@ -862,8 +885,6 @@ const VideoTab = memo(function VideoTab() {
 });
 
 const wiz = StyleSheet.create({
-  backRow:       { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 6, paddingBottom: 4 },
-  backBtn:       { width: 34, height: 34, borderRadius: 17, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
   scroll:        { paddingHorizontal: 20, paddingTop: 2, paddingBottom: 120 },
   footer:        { borderTopWidth: 0.5, borderTopColor: P.edge, paddingTop: 12, paddingHorizontal: 20, paddingBottom: 20, marginBottom: 80 },
   footerRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -879,10 +900,9 @@ const wiz = StyleSheet.create({
 // TAB BAR
 // ─────────────────────────────────────────────────────────────────────────────
 const TAB_CONFIG = [
-  { id: 'video' as Tab,    label: 'Vidéo',    icon: 'videocam-outline' as const },
-  { id: 'critique' as Tab, label: 'Critique', icon: 'document-text-outline' as const },
+  { id: 'video'    as Tab, label: 'Vidéo',    icon: 'videocam-outline'       as const },
+  { id: 'critique' as Tab, label: 'Critique', icon: 'document-text-outline'  as const },
 ];
-
 const HIT = { top: 4, bottom: 4, left: 4, right: 4 } as const;
 
 const TabItem = memo(({ cfg, active, onPress }: {
@@ -911,17 +931,14 @@ const TabItem = memo(({ cfg, active, onPress }: {
           style={[StyleSheet.absoluteFillObject, tabbar.pill]}
         />
       )}
-      <Ionicons
-        name={cfg.icon}
-        size={14}
-        color={active ? P.white : P.txtTert}
-      />
+      <Ionicons name={cfg.icon} size={14} color={active ? P.white : P.txtTert} />
       <Text style={[tabbar.label, active ? tabbar.labelOn : tabbar.labelOff]}>
         {cfg.label}
       </Text>
     </TouchableOpacity>
   );
 });
+TabItem.displayName = 'TabItem';
 
 const TabBar = memo(({ active, onSwitch }: { active: Tab; onSwitch: (t: Tab) => void }) => (
   <View style={tabbar.wrap}>
@@ -930,18 +947,19 @@ const TabBar = memo(({ active, onSwitch }: { active: Tab; onSwitch: (t: Tab) => 
     ))}
   </View>
 ));
+TabBar.displayName = 'TabBar';
 
 const tabbar = StyleSheet.create({
-  wrap:     {
-    flexDirection:    'row',
-    marginHorizontal:  16,
-    marginBottom:      16,
-    backgroundColor:   P.edge,
-    borderRadius:      18,
-    borderWidth:        0.5,
-    borderColor:        P.edge,
-    padding:            4,
-    overflow:          'hidden',
+  wrap: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: P.edge,
+    borderRadius: 18,
+    borderWidth: 0.5,
+    borderColor: P.edge,
+    padding: 4,
+    overflow: 'hidden',
     ...Platform.select({
       ios:     { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10 },
       android: { elevation: 5 },
@@ -956,11 +974,11 @@ const tabbar = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TAB PANELS — montés une fois, masqués via position absolute + opacity 0
+// TAB PANELS — montés une fois, masqués via position absolute
 // → Aucun reset d'état au switch d'onglet
 // ─────────────────────────────────────────────────────────────────────────────
 const TabPanels = memo(({ active }: { active: Tab }) => {
-  const videoStyle    = useMemo(
+  const videoStyle = useMemo(
     () => [panels.panel, active !== 'video'    && panels.hidden],
     [active],
   );
@@ -979,6 +997,7 @@ const TabPanels = memo(({ active }: { active: Tab }) => {
     </>
   );
 });
+TabPanels.displayName = 'TabPanels';
 
 const panels = StyleSheet.create({
   panel:  { flex: 1 },
@@ -989,14 +1008,12 @@ const panels = StyleSheet.create({
 // SCREEN HEADER
 // ─────────────────────────────────────────────────────────────────────────────
 const ScreenHeader = memo(() => (
-  <View style={hdr.wrap}>
-  </View>
+  <View style={hdr.wrap} />
 ));
+ScreenHeader.displayName = 'ScreenHeader';
 
 const hdr = StyleSheet.create({
-  wrap:  { alignItems: 'center', paddingTop: 8, paddingBottom: 14 },
-  title: { color: P.white, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
-  rule:  { marginTop: 8, width: 28, height: 0.5, backgroundColor: P.edgeMid, borderRadius: 1 },
+  wrap: { alignItems: 'center', paddingTop: 8, paddingBottom: 14 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

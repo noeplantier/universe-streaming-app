@@ -11,7 +11,7 @@ export const C = {
     textTert:  '#3D5470',
     gold:      '#F5C842',
     goldDim:   'rgba(245,200,66,0.12)',
-    teal:      '#0D2240',
+    teal:      '#00C9FF',
     tealSoft:  'rgba(0,201,255,0.08)',
     tealMid:   'rgba(0,201,255,0.20)',
     tealGlow:  'rgba(0,201,255,0.45)',
