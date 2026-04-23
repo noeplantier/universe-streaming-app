@@ -404,6 +404,11 @@ import { P } from '../reels/types';
     const [userId,     setUserId]     = useState<string | null>(null);
     const [editTarget, setEditTarget] = useState<Critique | null>(null);
     const fadeAnim = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => {
+      console.log("AUTH userId state:", userId);
+    }, [userId]);
+    
   
     // ── Auth ────────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -412,30 +417,29 @@ import { P } from '../reels/types';
       });
     }, []);
   
-    // ── Fetch ────────────────────────────────────────────────────────────────
     const fetchAll = useCallback(async (uid: string) => {
       setLoading(true);
-      const [{ data: c }, { data: r }] = await Promise.all([
-        supabase
-          .from('critiques')
-          .select('*')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('reels')
-          .select('id, title')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false }),
-      ]);
+    
+      const { data: c, error: cErr } = await supabase
+        .from('critiques')
+        .select('*')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false });
+    
+      const { data: r, error: rErr } = await supabase
+        .from('reels')
+        .select('id, title')
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false });
+    
+      console.log("uid", uid);
+      console.log("critiques error", cErr, "count", c?.length);
+      console.log("reels error", rErr, "count", r?.length);
+    
       setCritiques((c ?? []) as Critique[]);
       setReels((r ?? []) as ReelRef[]);
       setLoading(false);
-      Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
     }, [fadeAnim]);
-  
-    useEffect(() => {
-      if (userId) fetchAll(userId);
-    }, [userId, fetchAll]);
   
     // ── Save ─────────────────────────────────────────────────────────────────
     const handleSave = useCallback(async (form: FormState) => {
