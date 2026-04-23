@@ -1,17 +1,3 @@
-/**
- * CritiqueLab.tsx
- * Onglet "Critique" du wizard create.tsx
- *
- * Sécurité production :
- *  • Auth gate strict — aucun appel DB sans userId valide (UUID v4)
- *  • Toutes les requêtes Supabase filtrent sur user_id côté client
- *    (en plus des RLS côté serveur)
- *  • Sanitisation des inputs avant tout INSERT / UPDATE
- *  • Gestion fine des erreurs Supabase (code + message)
- *
- * UI : fond navyMid + items entièrement transparents → GalaxyBackground visible
- */
-
 import React, {
     useState, useEffect, useCallback, memo, useRef,
   } from 'react';
@@ -631,53 +617,74 @@ import React, {
   
       return () => subscription.unsubscribe();
     }, []);
+
+
   
-    // ── Fetch — toujours filtré par user_id ────────────────────────────────
     const fetchAll = useCallback(async (uid: string) => {
-      if (!isValidUUID(uid)) return;
-  
-      setLoading(true);
-      fadeAnim.setValue(0);
-  
-      const [critiqueRes, reelRes] = await Promise.all([
-        supabase
-          .from('critiques')
-          .select('id, user_id, reel_id, film_title, titre, contenu, note, tags, created_at, updated_at')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false })
-          .limit(100),
-        supabase
-          .from('reels')
-          .select('id, title')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false })
-          .limit(50),
-      ]);
-  
-      if (critiqueRes.error) {
-        console.error('[CritiqueLab] fetch critiques:', critiqueRes.error.message);
-      }
-      if (reelRes.error) {
-        console.error('[CritiqueLab] fetch reels:', reelRes.error.message);
-      }
-  
-      // Filtrer les lignes dont l'UUID ne correspond pas (double sécurité)
-      const safeCritiques = (critiqueRes.data ?? []).filter(
-        c => isValidUUID(c.id) && c.user_id === uid,
-      ) as Critique[];
-  
-      const safeReels = (reelRes.data ?? []).filter(
-        r => isValidUUID(r.id),
-      ) as ReelRef[];
-  
-      setCritiques(safeCritiques);
-      setReels(safeReels);
-      setLoading(false);
-  
-      Animated.timing(fadeAnim, {
-        toValue: 1, duration: 280, useNativeDriver: true,
-      }).start();
-    }, [fadeAnim]);
+        if (!isValidUUID(uid)) {
+          console.warn('[CritiqueLab] fetchAll: invalid uid', uid);
+          return;
+        }
+      
+        setLoading(true);
+        fadeAnim.setValue(0);
+      
+        const [critiqueRes, reelRes] = await Promise.all([
+          supabase
+            .from('critiques')
+            .select('id, user_id, reel_id, film_title, titre, contenu, note, tags, created_at, updated_at')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: false })
+            .limit(100),
+      
+          supabase
+            .from('reels')
+            .select('id, title')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: false })
+            .limit(50),
+        ]);
+      
+        if (critiqueRes.error) {
+          console.error('[CritiqueLab] fetch critiques:', {
+            message: critiqueRes.error.message,
+            details: critiqueRes.error.details,
+            hint: critiqueRes.error.hint,
+            code: critiqueRes.error.code,
+          });
+          setLoading(false);
+          return;
+        }
+      
+        if (reelRes.error) {
+          console.error('[CritiqueLab] fetch reels:', {
+            message: reelRes.error.message,
+            details: reelRes.error.details,
+            hint: reelRes.error.hint,
+            code: reelRes.error.code,
+          });
+          setLoading(false);
+          return;
+        }
+      
+        const safeCritiques = (critiqueRes.data ?? []).filter(
+          c => isValidUUID(c.id) && c.user_id === uid,
+        ) as Critique[];
+      
+        const safeReels = (reelRes.data ?? []).filter(
+          r => isValidUUID(r.id),
+        ) as ReelRef[];
+      
+        setCritiques(safeCritiques);
+        setReels(safeReels);
+        setLoading(false);
+      
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 280,
+          useNativeDriver: true,
+        }).start();
+      }, [fadeAnim]);
   
     useEffect(() => {
       if (userId) fetchAll(userId);
