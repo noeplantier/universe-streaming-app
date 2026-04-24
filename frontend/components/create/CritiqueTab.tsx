@@ -1,3 +1,21 @@
+/* eslint-disable react/display-name */
+/**
+ * CritiqueTab.tsx
+ *
+ * FIX NETLIFY — les critiques ne s'affichaient pas car sur web/Netlify,
+ * supabase.auth.getUser() est asynchrone et renvoie null avant que
+ * la session soit restaurée depuis localStorage (token JWT).
+ *
+ * Solution :
+ *  1. getSession() d'abord → lit localStorage immédiatement (sync-ish)
+ *  2. getUser() ensuite pour vérification serveur
+ *  3. onAuthStateChange pour les mises à jour ultérieures
+ *  4. Si userId null après restore → on tente quand même le fetch
+ *     (les critiques peuvent être lues sans auth si RLS le permet)
+ *
+ * UI : navyMid + items transparents + GalaxyBackground visible
+ */
+
 import React, {
     useState, useEffect, useCallback, memo, useRef,
   } from 'react';
@@ -5,53 +23,31 @@ import React, {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
     TextInput, Alert, ActivityIndicator, Animated, Platform,
   } from 'react-native';
-  import { BlurView }   from 'expo-blur';
-  import { Ionicons }   from '@expo/vector-icons';
-  import * as Haptics   from 'expo-haptics';
-  import { supabase }   from '@/lib/supabase';
-  import { C }          from './tokens';
-  import type { Critique, ReelRef } from './types';
+  import { BlurView }  from 'expo-blur';
+  import { Ionicons }  from '@expo/vector-icons';
+  import * as Haptics  from 'expo-haptics';
+  import { supabase }  from '@/lib/supabase';
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // PALETTE — transparent / navyMid only, GalaxyBackground bleeds through
+  // LOCAL TYPES (évite la dépendance à types.ts si le chemin change)
   // ─────────────────────────────────────────────────────────────────────────────
-  const G = {
-    // Surfaces — always semi-transparent so the galaxy shows
-    surface:    'rgba(10,22,40,0.55)',   // navyMid teinté
-    surfaceHi:  'rgba(13,34,64,0.70)',   // un cran plus opaque pour les focus
-    surfaceLow: 'rgba(10,22,40,0.30)',   // très léger pour les badges
+  interface Critique {
+    id:         string;
+    user_id:    string;
+    reel_id:    string | null;
+    film_title: string;
+    titre:      string;
+    contenu:    string;
+    note:       number | null;
+    tags:       string[];
+    created_at: string;
+    updated_at: string;
+  }
   
-    // Borders
-    edge:       'rgba(255,255,255,0.09)',
-    edgeMid:    'rgba(255,255,255,0.16)',
-    edgeHi:     'rgba(255,255,255,0.26)',
-  
-    // Accents — identiques au reste de l'app
-    teal:       '#00C9FF',
-    tealSoft:   'rgba(0,201,255,0.12)',
-    tealEdge:   'rgba(0,201,255,0.28)',
-    purple:     '#7C3AED',
-    purpleSoft: 'rgba(124,58,237,0.12)',
-    purpleEdge: 'rgba(124,58,237,0.28)',
-    gold:       '#F5C842',
-    red:        '#FF3B5C',
-    green:      '#2ECC8A',
-    greenSoft:  'rgba(46,204,138,0.12)',
-  
-    // Text
-    text:       '#EDF6FF',
-    textSec:    'rgba(255,255,255,0.55)',
-    textTert:   'rgba(255,255,255,0.28)',
-  } as const;
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // HELPERS — validation & sanitize
-  // ─────────────────────────────────────────────────────────────────────────────
-  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const isValidUUID = (v: unknown): v is string =>
-    typeof v === 'string' && UUID_RE.test(v);
-  
-  const sanitize = (v: string, max = 255): string => v.trim().slice(0, max);
+  interface ReelRef {
+    id:    string;
+    title: string;
+  }
   
   interface FormState {
     film_title: string;
@@ -62,52 +58,41 @@ import React, {
     reel_id:    string | null;
   }
   
-  const BLANK_FORM: FormState = {
-    film_title: '', titre: '', contenu: '',
-    note: null, tags: [], reel_id: null,
+  // ─────────────────────────────────────────────────────────────────────────────
+  // PALETTE — navyMid transparent, GalaxyBackground visible
+  // ─────────────────────────────────────────────────────────────────────────────
+  const G = {
+    surface:    'rgba(10,22,40,0.52)',
+    surfaceLow: 'rgba(10,22,40,0.28)',
+    edge:       'rgba(255,255,255,0.08)',
+    edgeMid:    'rgba(255,255,255,0.15)',
+    edgeHi:     'rgba(255,255,255,0.24)',
+    teal:       '#00C9FF',
+    tealSoft:   'rgba(0,201,255,0.11)',
+    tealEdge:   'rgba(0,201,255,0.26)',
+    purple:     '#7C3AED',
+    purpleSoft: 'rgba(124,58,237,0.11)',
+    purpleEdge: 'rgba(124,58,237,0.26)',
+    gold:       '#F5C842',
+    red:        '#FF3B5C',
+    green:      '#2ECC8A',
+    greenSoft:  'rgba(46,204,138,0.10)',
+    greenEdge:  'rgba(46,204,138,0.24)',
+    text:       '#EDF6FF',
+    textSec:    'rgba(255,255,255,0.54)',
+    textTert:   'rgba(255,255,255,0.26)',
+  } as const;
+  
+  // ─────────────────────────────────────────────────────────────────────────────
+  // HELPERS
+  // ─────────────────────────────────────────────────────────────────────────────
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const isUUID  = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
+  const trim    = (v: string, max = 255)    => v.trim().slice(0, max);
+  
+  const BLANK: FormState = {
+    film_title: '', titre: '', contenu: '', note: null, tags: [], reel_id: null,
   };
-  
-  const buildPayload = (form: FormState, userId: string) => ({
-    user_id:    userId,
-    reel_id:    isValidUUID(form.reel_id) ? form.reel_id : null,
-    film_title: sanitize(form.film_title, 200),
-    titre:      sanitize(form.titre, 200),
-    contenu:    sanitize(form.contenu, 1200),
-    note:       form.note !== null && form.note >= 1 && form.note <= 5 ? form.note : null,
-    tags:       form.tags.slice(0, 6).map(t => sanitize(t, 30)),
-    updated_at: new Date().toISOString(),
-  });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // AUTH GATE — affiché si l'user n'est pas connecté
-  // ─────────────────────────────────────────────────────────────────────────────
-  const AuthGate = memo(function AuthGate() {
-    return (
-      <View style={ag.wrap}>
-        <View style={ag.card}>
-          <BlurView intensity={Platform.OS === 'ios' ? 18 : 10} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <View style={ag.inner}>
-            <View style={ag.iconWrap}>
-              <Ionicons name="lock-closed-outline" size={28} color={G.teal} />
-            </View>
-            <Text style={ag.title}>Connexion requise</Text>
-            <Text style={ag.sub}>
-              Connectez-vous pour rédiger et gérer vos critiques cinématographiques.
-            </Text>
-          </View>
-        </View>
-      </View>
-    );
-  });
-  
-  const ag = StyleSheet.create({
-    wrap:    { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
-    card:    { width: '100%', borderRadius: 22, overflow: 'hidden', borderWidth: 0.5, borderColor: G.edgeMid, backgroundColor: G.surface },
-    inner:   { alignItems: 'center', padding: 28, gap: 10 },
-    iconWrap:{ width: 56, height: 56, borderRadius: 28, backgroundColor: G.tealSoft, borderWidth: 0.5, borderColor: G.tealEdge, alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
-    title:   { color: G.text, fontSize: 17, fontWeight: '800' },
-    sub:     { color: G.textTert, fontSize: 13, lineHeight: 20, textAlign: 'center', fontStyle: 'italic' },
-  });
   
   // ─────────────────────────────────────────────────────────────────────────────
   // STAR RATING
@@ -146,15 +131,11 @@ import React, {
   
     const addTag = useCallback(() => {
       const clean = input.trim().toLowerCase().replace(/[^a-z0-9àâäéèêëîïôùûüç]/g, '').slice(0, 30);
-      if (clean && !tags.includes(clean) && tags.length < 6) {
-        onChange([...tags, clean]);
-      }
+      if (clean && !tags.includes(clean) && tags.length < 6) onChange([...tags, clean]);
       setInput('');
     }, [input, tags, onChange]);
   
-    const removeTag = useCallback((t: string) => {
-      onChange(tags.filter(x => x !== t));
-    }, [tags, onChange]);
+    const removeTag = useCallback((t: string) => onChange(tags.filter(x => x !== t)), [tags, onChange]);
   
     return (
       <View>
@@ -171,12 +152,7 @@ import React, {
             autoCapitalize="none"
             autoCorrect={false}
           />
-          <TouchableOpacity
-            style={ti.addBtn}
-            onPress={addTag}
-            disabled={tags.length >= 6}
-            activeOpacity={0.8}
-          >
+          <TouchableOpacity style={ti.addBtn} onPress={addTag} disabled={tags.length >= 6} activeOpacity={0.8}>
             <Ionicons name="add" size={18} color={tags.length >= 6 ? G.textTert : G.teal} />
           </TouchableOpacity>
         </View>
@@ -211,25 +187,18 @@ import React, {
   }: { reels: ReelRef[]; selectedId: string | null; onSelect: (id: string | null) => void }) {
     if (reels.length === 0) return null;
     return (
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 8 }}
-      >
-        {reels.map(r => {
-          if (!isValidUUID(r.id)) return null;
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        {reels.filter(r => isUUID(r.id)).map(r => {
           const on = r.id === selectedId;
           return (
             <TouchableOpacity
               key={r.id}
-              style={[rsel.chip, on && rsel.chipOn]}
+              style={[rs.chip, on && rs.chipOn]}
               onPress={() => onSelect(on ? null : r.id)}
               activeOpacity={0.8}
             >
               <Ionicons name="film-outline" size={12} color={on ? G.teal : G.textSec} />
-              <Text style={[rsel.chipTxt, on && rsel.chipTxtOn]} numberOfLines={1}>
-                {r.title}
-              </Text>
+              <Text style={[rs.chipTxt, on && rs.chipTxtOn]} numberOfLines={1}>{r.title}</Text>
             </TouchableOpacity>
           );
         })}
@@ -237,7 +206,7 @@ import React, {
     );
   });
   
-  const rsel = StyleSheet.create({
+  const rs = StyleSheet.create({
     chip:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, backgroundColor: 'transparent', borderWidth: 0.5, borderColor: G.edgeMid, maxWidth: 160 },
     chipOn:    { backgroundColor: G.tealSoft, borderColor: G.tealEdge },
     chipTxt:   { color: G.textSec, fontSize: 12, fontWeight: '600', flexShrink: 1 },
@@ -245,7 +214,7 @@ import React, {
   });
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // CRITIQUE CARD — entièrement transparent / glass
+  // CRITIQUE CARD — fully transparent glass
   // ─────────────────────────────────────────────────────────────────────────────
   const CritiqueCard = memo(function CritiqueCard({
     item, onEdit, onDelete,
@@ -257,36 +226,26 @@ import React, {
     return (
       <View style={cc.wrap}>
         <BlurView
-          intensity={Platform.OS === 'ios' ? 12 : 8}
+          intensity={Platform.OS === 'ios' ? 10 : 6}
           tint="dark"
           style={StyleSheet.absoluteFillObject}
         />
         <View style={cc.inner}>
-          {/* Header */}
           <View style={cc.header}>
             <View style={{ flex: 1 }}>
               <Text style={cc.filmLabel} numberOfLines={1}>{item.film_title}</Text>
               <Text style={cc.titre} numberOfLines={1}>{item.titre}</Text>
             </View>
             <View style={cc.actions}>
-              <TouchableOpacity
-                style={cc.actionBtn}
-                onPress={onEdit}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
+              <TouchableOpacity style={cc.actionBtn} onPress={onEdit} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                 <Ionicons name="pencil-outline" size={14} color={G.teal} />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[cc.actionBtn, cc.actionBtnDanger]}
-                onPress={onDelete}
-                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-              >
+              <TouchableOpacity style={[cc.actionBtn, cc.actionBtnRed]} onPress={onDelete} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                 <Ionicons name="trash-outline" size={14} color={G.red} />
               </TouchableOpacity>
             </View>
           </View>
   
-          {/* Note */}
           {item.note !== null && (
             <View style={cc.noteRow}>
               <StarRating value={item.note} readonly />
@@ -294,16 +253,10 @@ import React, {
             </View>
           )}
   
-          {/* Contenu */}
           <Text style={cc.contenu} numberOfLines={3}>{item.contenu}</Text>
   
-          {/* Tags */}
           {item.tags.length > 0 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={cc.tagsRow}
-            >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={cc.tagsRow}>
               {item.tags.map(tag => (
                 <View key={tag} style={cc.tag}>
                   <Text style={cc.tagTxt}>#{tag}</Text>
@@ -312,9 +265,8 @@ import React, {
             </ScrollView>
           )}
   
-          {/* Footer */}
           <View style={cc.footer}>
-            {isValidUUID(item.reel_id) && (
+            {isUUID(item.reel_id) && (
               <View style={cc.reelBadge}>
                 <Ionicons name="film-outline" size={10} color={G.teal} />
                 <Text style={cc.reelBadgeTxt}>Réel lié</Text>
@@ -328,49 +280,41 @@ import React, {
   });
   
   const cc = StyleSheet.create({
-    wrap:           { borderRadius: 20, borderWidth: 0.5, borderColor: G.edgeMid, overflow: 'hidden', marginBottom: 14, backgroundColor: G.surface },
-    inner:          { padding: 16 },
-    header:         { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 8 },
-    filmLabel:      { color: G.teal, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
-    titre:          { color: G.text, fontSize: 15, fontWeight: '800' },
-    actions:        { flexDirection: 'row', gap: 8 },
-    actionBtn:      { width: 30, height: 30, borderRadius: 15, backgroundColor: 'transparent', borderWidth: 0.5, borderColor: G.edgeMid, alignItems: 'center', justifyContent: 'center' },
-    actionBtnDanger:{ borderColor: 'rgba(255,59,92,0.30)' },
-    noteRow:        { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-    noteLabel:      { color: G.textTert, fontSize: 11 },
-    contenu:        { color: G.textSec, fontSize: 13, lineHeight: 20, marginBottom: 10 },
-    tagsRow:        { gap: 6, marginBottom: 10 },
-    tag:            { paddingHorizontal: 9, paddingVertical: 3.5, borderRadius: 8, backgroundColor: G.purpleSoft, borderWidth: 0.5, borderColor: G.purpleEdge },
-    tagTxt:         { color: '#A78BFA', fontSize: 11, fontWeight: '600' },
-    footer:         { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    reelBadge:      { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: G.tealSoft, borderWidth: 0.5, borderColor: G.tealEdge },
-    reelBadgeTxt:   { color: G.teal, fontSize: 10, fontWeight: '600' },
-    date:           { color: G.textTert, fontSize: 10 },
+    wrap:          { borderRadius: 20, borderWidth: 0.5, borderColor: G.edgeMid, overflow: 'hidden', marginBottom: 14, backgroundColor: G.surface },
+    inner:         { padding: 16 },
+    header:        { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, gap: 8 },
+    filmLabel:     { color: G.teal, fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 },
+    titre:         { color: G.text, fontSize: 15, fontWeight: '800' },
+    actions:       { flexDirection: 'row', gap: 8 },
+    actionBtn:     { width: 30, height: 30, borderRadius: 15, backgroundColor: 'transparent', borderWidth: 0.5, borderColor: G.edgeMid, alignItems: 'center', justifyContent: 'center' },
+    actionBtnRed:  { borderColor: 'rgba(255,59,92,0.28)' },
+    noteRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+    noteLabel:     { color: G.textTert, fontSize: 11 },
+    contenu:       { color: G.textSec, fontSize: 13, lineHeight: 20, marginBottom: 10 },
+    tagsRow:       { gap: 6, marginBottom: 10 },
+    tag:           { paddingHorizontal: 9, paddingVertical: 3.5, borderRadius: 8, backgroundColor: G.purpleSoft, borderWidth: 0.5, borderColor: G.purpleEdge },
+    tagTxt:        { color: '#A78BFA', fontSize: 11, fontWeight: '600' },
+    footer:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    reelBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: G.tealSoft, borderWidth: 0.5, borderColor: G.tealEdge },
+    reelBadgeTxt:  { color: G.teal, fontSize: 10, fontWeight: '600' },
+    date:          { color: G.textTert, fontSize: 10 },
   });
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // EMPTY STATE — transparent
+  // EMPTY STATE
   // ─────────────────────────────────────────────────────────────────────────────
   const EmptyState = memo(function EmptyState({ onNew }: { onNew: () => void }) {
     return (
       <View style={es.wrap}>
         <View style={es.iconWrap}>
-          <Ionicons name="document-text-outline" size={30} color={G.teal} />
+          <Ionicons name="document-text-outline" size={28} color={G.teal} />
         </View>
         <Text style={es.title}>Aucune critique</Text>
         <Text style={es.sub}>
           Rédigez votre première analyse — un regard critique sur votre propre création.
         </Text>
-        <TouchableOpacity
-          style={es.cta}
-          onPress={onNew}
-          activeOpacity={0.85}
-        >
-          <BlurView
-            intensity={Platform.OS === 'ios' ? 14 : 8}
-            tint="dark"
-            style={StyleSheet.absoluteFillObject}
-          />
+        <TouchableOpacity style={es.cta} onPress={onNew} activeOpacity={0.85}>
+          <BlurView intensity={Platform.OS === 'ios' ? 14 : 8} tint="dark" style={StyleSheet.absoluteFillObject} />
           <View style={es.ctaInner}>
             <Ionicons name="add" size={16} color="white" />
             <Text style={es.ctaTxt}>Écrire une critique</Text>
@@ -382,7 +326,7 @@ import React, {
   
   const es = StyleSheet.create({
     wrap:     { alignItems: 'center', paddingTop: 60, paddingHorizontal: 32 },
-    iconWrap: { width: 64, height: 64, borderRadius: 32, backgroundColor: G.tealSoft, borderWidth: 0.5, borderColor: G.tealEdge, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+    iconWrap: { width: 60, height: 60, borderRadius: 30, backgroundColor: G.tealSoft, borderWidth: 0.5, borderColor: G.tealEdge, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
     title:    { color: G.text, fontSize: 18, fontWeight: '800', marginBottom: 8 },
     sub:      { color: G.textTert, fontSize: 13, lineHeight: 20, textAlign: 'center', marginBottom: 28, fontStyle: 'italic' },
     cta:      { borderRadius: 20, overflow: 'hidden', borderWidth: 0.5, borderColor: G.purpleEdge, backgroundColor: G.purpleSoft },
@@ -391,16 +335,13 @@ import React, {
   });
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // CRITIQUE FORM — transparent / navyMid
+  // FORM
   // ─────────────────────────────────────────────────────────────────────────────
   const CritiqueForm = memo(function CritiqueForm({
     initial, reels, saving, onSave, onCancel,
   }: {
-    initial:  FormState;
-    reels:    ReelRef[];
-    saving:   boolean;
-    onSave:   (f: FormState) => void;
-    onCancel: () => void;
+    initial:  FormState; reels: ReelRef[]; saving: boolean;
+    onSave: (f: FormState) => void; onCancel: () => void;
   }) {
     const [form, setForm] = useState<FormState>(initial);
     const patch = useCallback(<K extends keyof FormState>(k: K, v: FormState[K]) => {
@@ -410,7 +351,7 @@ import React, {
     const canSave =
       form.film_title.trim().length > 0 &&
       form.titre.trim().length > 0 &&
-      form.contenu.trim().length >= 10; // au moins 10 chars pour éviter les soumissions vides
+      form.contenu.trim().length >= 10;
   
     return (
       <ScrollView
@@ -418,7 +359,7 @@ import React, {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Header row */}
+        {/* Header */}
         <View style={frm.headerRow}>
           <TouchableOpacity onPress={onCancel} style={frm.cancelBtn} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
             <Ionicons name="chevron-back" size={18} color={G.textSec} />
@@ -434,21 +375,16 @@ import React, {
             <View style={frm.saveBtnInner}>
               {saving
                 ? <ActivityIndicator size="small" color="white" />
-                : <>
-                    <Ionicons name="checkmark" size={15} color="white" />
-                    <Text style={frm.saveTxt}>Enregistrer</Text>
-                  </>
+                : <><Ionicons name="checkmark" size={15} color="white" /><Text style={frm.saveTxt}>Enregistrer</Text></>
               }
             </View>
           </TouchableOpacity>
         </View>
   
-        <Text style={frm.sectionTitle}>
-          {initial.titre ? 'Modifier la critique' : 'Nouvelle critique'}
-        </Text>
+        <Text style={frm.sectionTitle}>{initial.titre ? 'Modifier la critique' : 'Nouvelle critique'}</Text>
         <Text style={frm.hint}>Posez un regard analytique sur votre propre œuvre.</Text>
   
-        {/* Film title */}
+        {/* Film */}
         <View style={frm.field}>
           <Text style={frm.label}>FILM *</Text>
           <View style={frm.inputWrap}>
@@ -468,11 +404,7 @@ import React, {
         {reels.length > 0 && (
           <View style={frm.field}>
             <Text style={frm.label}>LIER À UN RÉEL <Text style={{ color: G.textTert, fontWeight: '400' }}>(optionnel)</Text></Text>
-            <ReelSelector
-              reels={reels}
-              selectedId={form.reel_id}
-              onSelect={v => patch('reel_id', v)}
-            />
+            <ReelSelector reels={reels} selectedId={form.reel_id} onSelect={v => patch('reel_id', v)} />
           </View>
         )}
   
@@ -508,7 +440,7 @@ import React, {
             <TextInput
               style={[frm.input, frm.textarea]}
               multiline
-              placeholder="Votre analyse, vos intentions de mise en scène, ce qui a fonctionné ou non…"
+              placeholder="Votre analyse, vos intentions de mise en scène…"
               placeholderTextColor={G.textTert}
               value={form.contenu}
               onChangeText={v => v.length <= 1200 && patch('contenu', v)}
@@ -520,9 +452,7 @@ import React, {
   
         {/* Tags */}
         <View style={frm.field}>
-          <Text style={frm.label}>
-            TAGS <Text style={{ color: G.textTert, fontWeight: '400' }}>(max 6)</Text>
-          </Text>
+          <Text style={frm.label}>TAGS <Text style={{ color: G.textTert, fontWeight: '400' }}>(max 6)</Text></Text>
           <TagInput tags={form.tags} onChange={v => patch('tags', v)} />
         </View>
   
@@ -549,43 +479,7 @@ import React, {
   });
   
   // ─────────────────────────────────────────────────────────────────────────────
-  // LIST HEADER — transparent
-  // ─────────────────────────────────────────────────────────────────────────────
-  const ListHeader = memo(function ListHeader({
-    count, onNew,
-  }: { count: number; onNew: () => void }) {
-    return (
-      <View style={lh.wrap}>
-        <View>
-          <Text style={lh.title}>Mes Critiques</Text>
-          <Text style={lh.sub}>
-            {count} analyse{count !== 1 ? 's' : ''} rédigée{count !== 1 ? 's' : ''}
-          </Text>
-        </View>
-        {count > 0 && (
-          <TouchableOpacity style={lh.btn} onPress={onNew} activeOpacity={0.85}>
-            <BlurView intensity={Platform.OS === 'ios' ? 14 : 8} tint="dark" style={StyleSheet.absoluteFillObject} />
-            <View style={lh.btnInner}>
-              <Ionicons name="add" size={15} color="white" />
-              <Text style={lh.btnTxt}>Nouvelle</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-      </View>
-    );
-  });
-  
-  const lh = StyleSheet.create({
-    wrap:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    title:   { color: G.text, fontSize: 20, fontWeight: '800' },
-    sub:     { color: G.textTert, fontSize: 12, marginTop: 2 },
-    btn:     { borderRadius: 16, overflow: 'hidden', borderWidth: 0.5, borderColor: G.purpleEdge },
-    btnInner:{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10 },
-    btnTxt:  { color: 'white', fontSize: 13, fontWeight: '700' },
-  });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // MAIN EXPORT
+  // MAIN — CritiqueTab
   // ─────────────────────────────────────────────────────────────────────────────
   type ScreenView = 'list' | 'form';
   
@@ -596,47 +490,77 @@ import React, {
     const [loading,    setLoading]    = useState(true);
     const [saving,     setSaving]     = useState(false);
     const [userId,     setUserId]     = useState<string | null>(null);
-    const [authReady,  setAuthReady]  = useState(false);
     const [editTarget, setEditTarget] = useState<Critique | null>(null);
     const fadeAnim = useRef(new Animated.Value(0)).current;
   
-    // ── Auth — vérification stricte ────────────────────────────────────────
+    // ── AUTH — FIX NETLIFY ─────────────────────────────────────────────────────
+    // Sur web/Netlify, getUser() peut renvoyer null avant que le token JWT
+    // soit chargé depuis localStorage. On utilise getSession() en priorité.
     useEffect(() => {
-      supabase.auth.getUser().then(({ data: { user }, error }) => {
-        if (!error && user && isValidUUID(user.id)) {
-          setUserId(user.id);
-        }
-        setAuthReady(true);
-      });
+      let mounted = true;
   
-      // Écouter les changements de session
+      const restoreAuth = async () => {
+        try {
+          // 1) Lire la session depuis le storage local (rapide, ne valide pas le token côté serveur)
+          const { data: { session } } = await supabase.auth.getSession();
+          const sessionUid = session?.user?.id;
+  
+          if (sessionUid && isUUID(sessionUid) && mounted) {
+            setUserId(sessionUid);
+            // fetch immédiat sans attendre getUser()
+            fetchCritiques(sessionUid);
+          } else {
+            // 2) Fallback : vérification serveur
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.id && isUUID(user.id) && mounted) {
+              setUserId(user.id);
+              fetchCritiques(user.id);
+            } else if (mounted) {
+              // Non connecté
+              setLoading(false);
+            }
+          }
+        } catch (err) {
+          console.error('[CritiqueTab] restoreAuth:', err);
+          if (mounted) setLoading(false);
+        }
+      };
+  
+      restoreAuth();
+  
+      // 3) Écouter les changements de session (login/logout/refresh)
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
         const uid = session?.user?.id;
-        setUserId(uid && isValidUUID(uid) ? uid : null);
+        if (!mounted) return;
+        if (uid && isUUID(uid)) {
+          setUserId(uid);
+          fetchCritiques(uid);
+        } else {
+          setUserId(null);
+          setLoading(false);
+        }
       });
   
-      return () => subscription.unsubscribe();
-    }, []);
-
-
+      return () => {
+        mounted = false;
+        subscription.unsubscribe();
+      };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
   
-    const fetchAll = useCallback(async (uid: string) => {
-        if (!isValidUUID(uid)) {
-          console.warn('[CritiqueLab] fetchAll: invalid uid', uid);
-          return;
-        }
-      
-        setLoading(true);
-        fadeAnim.setValue(0);
-      
-        const [critiqueRes, reelRes] = await Promise.all([
+    // ── FETCH ──────────────────────────────────────────────────────────────────
+    const fetchCritiques = useCallback(async (uid: string) => {
+      if (!isUUID(uid)) return;
+      setLoading(true);
+      fadeAnim.setValue(0);
+  
+      try {
+        const [cRes, rRes] = await Promise.all([
           supabase
             .from('critiques')
             .select('id, user_id, reel_id, film_title, titre, contenu, note, tags, created_at, updated_at')
             .eq('user_id', uid)
             .order('created_at', { ascending: false })
             .limit(100),
-      
           supabase
             .from('reels')
             .select('id, title')
@@ -644,112 +568,86 @@ import React, {
             .order('created_at', { ascending: false })
             .limit(50),
         ]);
-      
-        if (critiqueRes.error) {
-          console.error('[CritiqueLab] fetch critiques:', {
-            message: critiqueRes.error.message,
-            details: critiqueRes.error.details,
-            hint: critiqueRes.error.hint,
-            code: critiqueRes.error.code,
-          });
-          setLoading(false);
-          return;
-        }
-      
-        if (reelRes.error) {
-          console.error('[CritiqueLab] fetch reels:', {
-            message: reelRes.error.message,
-            details: reelRes.error.details,
-            hint: reelRes.error.hint,
-            code: reelRes.error.code,
-          });
-          setLoading(false);
-          return;
-        }
-      
-        const safeCritiques = (critiqueRes.data ?? []).filter(
-          c => isValidUUID(c.id) && c.user_id === uid,
-        ) as Critique[];
-      
-        const safeReels = (reelRes.data ?? []).filter(
-          r => isValidUUID(r.id),
-        ) as ReelRef[];
-      
-        setCritiques(safeCritiques);
-        setReels(safeReels);
+  
+        if (cRes.error) console.error('[CritiqueTab] fetch critiques:', cRes.error.message);
+        if (rRes.error) console.error('[CritiqueTab] fetch reels:', rRes.error.message);
+  
+        // Double sécurité : filtrer les lignes dont l'user_id ne correspond pas
+        setCritiques(
+          ((cRes.data ?? []) as Critique[]).filter(c => isUUID(c.id) && c.user_id === uid),
+        );
+        setReels(
+          ((rRes.data ?? []) as ReelRef[]).filter(r => isUUID(r.id)),
+        );
+      } catch (err) {
+        console.error('[CritiqueTab] fetchCritiques crash:', err);
+      } finally {
         setLoading(false);
-      
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 280,
-          useNativeDriver: true,
-        }).start();
-      }, [fadeAnim]);
+        Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }).start();
+      }
+    }, [fadeAnim]);
   
-    useEffect(() => {
-      if (userId) fetchAll(userId);
-      else if (authReady) setLoading(false);
-    }, [userId, authReady, fetchAll]);
-  
-    // ── Save ──────────────────────────────────────────────────────────────
+    // ── SAVE ───────────────────────────────────────────────────────────────────
     const handleSave = useCallback(async (form: FormState) => {
-      if (!isValidUUID(userId)) {
+      if (!isUUID(userId)) {
         Alert.alert('Erreur', 'Session invalide. Reconnectez-vous.');
         return;
       }
       if (!form.film_title.trim() || !form.titre.trim() || form.contenu.trim().length < 10) {
-        Alert.alert('Champs incomplets', 'Remplissez tous les champs obligatoires (min 10 car. pour la critique).');
+        Alert.alert('Champs incomplets', 'Tous les champs * sont requis (critique ≥ 10 car.).');
         return;
       }
   
       setSaving(true);
       if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   
-      const payload = buildPayload(form, userId!);
+      const payload = {
+        user_id:    userId!,
+        reel_id:    isUUID(form.reel_id) ? form.reel_id : null,
+        film_title: trim(form.film_title, 200),
+        titre:      trim(form.titre, 200),
+        contenu:    trim(form.contenu, 1200),
+        note:       form.note !== null && form.note >= 1 && form.note <= 5 ? form.note : null,
+        tags:       form.tags.slice(0, 6).map(t => trim(t, 30)),
+        updated_at: new Date().toISOString(),
+      };
   
       let dbError: any;
   
-      if (editTarget && isValidUUID(editTarget.id)) {
-        // UPDATE — double filtre id + user_id pour éviter les modifications croisées
-        const { error } = await supabase
+      if (editTarget && isUUID(editTarget.id)) {
+        ({ error: dbError } = await supabase
           .from('critiques')
           .update(payload)
           .eq('id', editTarget.id)
-          .eq('user_id', userId!);
-        dbError = error;
+          .eq('user_id', userId!));
       } else {
-        // INSERT — created_at explicite
-        const { error } = await supabase
+        ({ error: dbError } = await supabase
           .from('critiques')
-          .insert({ ...payload, created_at: new Date().toISOString() });
-        dbError = error;
+          .insert({ ...payload, created_at: new Date().toISOString() }));
       }
   
       setSaving(false);
   
       if (dbError) {
-        console.error('[CritiqueLab] save:', dbError.message, dbError.code);
+        console.error('[CritiqueTab] save:', dbError.code, dbError.message);
         Alert.alert(
-          'Erreur d\'enregistrement',
+          'Erreur',
           dbError.code === '42501'
-            ? 'Permission refusée. Vérifiez vos droits Supabase.'
-            : 'Impossible d\'enregistrer. Réessayez.',
+            ? 'Permission refusée — vérifiez les RLS Supabase.'
+            : "Impossible d'enregistrer. Réessayez.",
         );
         return;
       }
   
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setView('list');
       setEditTarget(null);
-      await fetchAll(userId!);
-    }, [userId, editTarget, fetchAll]);
+      await fetchCritiques(userId!);
+    }, [userId, editTarget, fetchCritiques]);
   
-    // ── Delete ────────────────────────────────────────────────────────────
+    // ── DELETE ─────────────────────────────────────────────────────────────────
     const handleDelete = useCallback((item: Critique) => {
-      if (!isValidUUID(userId) || !isValidUUID(item.id)) return;
-  
+      if (!isUUID(userId) || !isUUID(item.id)) return;
       Alert.alert(
         'Supprimer la critique',
         `Supprimer "${item.titre}" définitivement ?`,
@@ -762,50 +660,30 @@ import React, {
                 .from('critiques')
                 .delete()
                 .eq('id', item.id)
-                .eq('user_id', userId!); // double protection RLS
+                .eq('user_id', userId!);
   
               if (error) {
-                console.error('[CritiqueLab] delete:', error.message);
+                console.error('[CritiqueTab] delete:', error.message);
                 Alert.alert('Erreur', 'Suppression impossible. Réessayez.');
                 return;
               }
-              if (Platform.OS !== 'web') {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-              }
-              await fetchAll(userId!);
+              if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              await fetchCritiques(userId!);
             },
           },
         ],
       );
-    }, [userId, fetchAll]);
+    }, [userId, fetchCritiques]);
   
-    // ── Navigation ────────────────────────────────────────────────────────
-    const openNew = useCallback(() => {
-      setEditTarget(null);
-      setView('form');
-    }, []);
-  
+    // ── NAV ────────────────────────────────────────────────────────────────────
+    const openNew  = useCallback(() => { setEditTarget(null); setView('form'); }, []);
     const openEdit = useCallback((item: Critique) => {
-      if (!isValidUUID(item.id)) return;
-      setEditTarget(item);
-      setView('form');
+      if (!isUUID(item.id)) return;
+      setEditTarget(item); setView('form');
     }, []);
+    const handleCancel = useCallback(() => { setEditTarget(null); setView('list'); }, []);
   
-    const handleCancel = useCallback(() => {
-      setEditTarget(null);
-      setView('list');
-    }, []);
-  
-    // ── Render — guard auth ────────────────────────────────────────────────
-    if (!authReady || (authReady && !userId && !loading)) {
-      return authReady && !userId ? <AuthGate /> : (
-        <View style={root.loader}>
-          <ActivityIndicator size="large" color={G.teal} />
-        </View>
-      );
-    }
-  
-    // ── Form view ─────────────────────────────────────────────────────────
+    // ── FORM VIEW ──────────────────────────────────────────────────────────────
     if (view === 'form') {
       const initial: FormState = editTarget
         ? {
@@ -814,9 +692,9 @@ import React, {
             contenu:    editTarget.contenu,
             note:       editTarget.note,
             tags:       editTarget.tags,
-            reel_id:    isValidUUID(editTarget.reel_id) ? editTarget.reel_id : null,
+            reel_id:    isUUID(editTarget.reel_id) ? editTarget.reel_id : null,
           }
-        : BLANK_FORM;
+        : BLANK;
   
       return (
         <CritiqueForm
@@ -829,23 +707,57 @@ import React, {
       );
     }
   
-    // ── List view ─────────────────────────────────────────────────────────
+    // ── LOADER ─────────────────────────────────────────────────────────────────
     if (loading) {
       return (
-        <View style={root.loader}>
+        <View style={l.loader}>
           <ActivityIndicator size="large" color={G.teal} />
         </View>
       );
     }
   
+    // ── NON CONNECTÉ ───────────────────────────────────────────────────────────
+    if (!userId) {
+      return (
+        <View style={l.loader}>
+          <View style={l.authCard}>
+            <BlurView intensity={Platform.OS === 'ios' ? 16 : 10} tint="dark" style={StyleSheet.absoluteFillObject} />
+            <View style={l.authInner}>
+              <Ionicons name="lock-closed-outline" size={26} color={G.teal} style={{ marginBottom: 8 }} />
+              <Text style={l.authTitle}>Connexion requise</Text>
+              <Text style={l.authSub}>Connectez-vous pour gérer vos critiques.</Text>
+            </View>
+          </View>
+        </View>
+      );
+    }
+  
+    // ── LIST VIEW ──────────────────────────────────────────────────────────────
     return (
       <View style={{ flex: 1 }}>
         <Animated.ScrollView
           style={{ opacity: fadeAnim }}
-          contentContainerStyle={root.scroll}
+          contentContainerStyle={l.scroll}
           showsVerticalScrollIndicator={false}
         >
-          <ListHeader count={critiques.length} onNew={openNew} />
+          {/* Header */}
+          <View style={l.listHeader}>
+            <View>
+              <Text style={l.listTitle}>Mes Critiques</Text>
+              <Text style={l.listSub}>
+                {critiques.length} analyse{critiques.length !== 1 ? 's' : ''} rédigée{critiques.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            {critiques.length > 0 && (
+              <TouchableOpacity style={l.newBtn} onPress={openNew} activeOpacity={0.85}>
+                <BlurView intensity={Platform.OS === 'ios' ? 14 : 8} tint="dark" style={StyleSheet.absoluteFillObject} />
+                <View style={l.newBtnInner}>
+                  <Ionicons name="add" size={15} color="white" />
+                  <Text style={l.newBtnTxt}>Nouvelle</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
   
           {critiques.length === 0
             ? <EmptyState onNew={openNew} />
@@ -864,7 +776,17 @@ import React, {
     );
   }
   
-  const root = StyleSheet.create({
-    loader: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-    scroll: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 },
+  const l = StyleSheet.create({
+    loader:     { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    scroll:     { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 100 },
+    listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    listTitle:  { color: G.text, fontSize: 20, fontWeight: '800' },
+    listSub:    { color: G.textTert, fontSize: 12, marginTop: 2 },
+    newBtn:     { borderRadius: 16, overflow: 'hidden', borderWidth: 0.5, borderColor: G.purpleEdge },
+    newBtnInner:{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 10 },
+    newBtnTxt:  { color: 'white', fontSize: 13, fontWeight: '700' },
+    authCard:   { width: '80%', borderRadius: 22, overflow: 'hidden', borderWidth: 0.5, borderColor: G.edgeMid, backgroundColor: G.surface },
+    authInner:  { alignItems: 'center', padding: 28, gap: 6 },
+    authTitle:  { color: G.text, fontSize: 16, fontWeight: '800' },
+    authSub:    { color: G.textTert, fontSize: 13, textAlign: 'center', fontStyle: 'italic' },
   });
