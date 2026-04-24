@@ -156,12 +156,8 @@ const RankedItem = memo(({ rank, children, accentColor = 'rgba(255,255,255,0.9)'
   <View style={ri.wrap}>
     {/* Rank badge — top-left, overlapping the card */}
     <View style={ri.badge} pointerEvents="none">
-      <LinearGradient
-        colors={['rgba(0,0,0,0.85)', 'rgba(0,0,0,0.55)']}
-        style={ri.badgeGrad}
-      >
+     
         <Text style={[ri.rankTxt, { color: accentColor }]}>{rank}</Text>
-      </LinearGradient>
     </View>
     {children}
   </View>
@@ -172,7 +168,7 @@ const ri = StyleSheet.create({
   wrap:      { position: 'relative' },
   badge:     { position: 'absolute', top: 6, left: 6, zIndex: 30, borderRadius: 8, overflow: 'hidden' },
   badgeGrad: { paddingHorizontal: 7, paddingVertical: 4 },
-  rankTxt:   { fontSize: 13, fontWeight: '900', letterSpacing: -0.5 },
+  rankTxt:   { fontSize: 60, fontWeight: '900', letterSpacing: -0.5 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -237,7 +233,8 @@ export default function ProfileScreen() {
         filmId: String(c.reel_id ?? c.id),
         content: String(c.content ?? ''),
         rating:  c.rating == null ? 0 : Number(c.rating) || 0,
-        likes:   Number(c.likes_count ?? 0),
+        likes:   
+        (c.likes_count ?? 0),
         date:    c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString(),
         film: {
           id:       String(c.reel_id ?? c.id),
@@ -358,13 +355,13 @@ export default function ProfileScreen() {
         ) : (
           <HScrollRow>
             {sortedReviews.map((rev, idx) => (
-              <RankedItem key={rev.id} rank={idx + 1} accentColor={G.amber}>
+             
                 <CritiqueCard
                   review={rev}
                   rank={idx + 1}
                   onPress={() => router.push(`/review/${rev.id}` as any)}
                 />
-              </RankedItem>
+        
             ))}
           </HScrollRow>
         )}
@@ -385,13 +382,8 @@ export default function ProfileScreen() {
         ) : (
           <HScrollRow>
             {sortedSeen.map((film, idx) => (
-              <RankedItem
-                key={String((film as any).workId ?? film.id)}
-                rank={idx + 1}
-                accentColor={G.cyan}
-              >
+            
                 <SeenCard film={film} onPress={() => goFilm(film as any)} />
-              </RankedItem>
             ))}
           </HScrollRow>
         )}
