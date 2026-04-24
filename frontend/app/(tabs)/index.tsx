@@ -83,7 +83,7 @@ function mapReelToFeedFilm(reel: SupabaseReel): FeedFilm {
 // HOOK — chargement + realtime + actions optimistes
 // ─────────────────────────────────────────────────────────────────────────────
 function useReelsFeed(feedKey: MenuKey) {
-  const [films,   setFilms]   = useState<FeedFilm[]>(MOCK_FEED);
+  const [films,   setFilms]   = useState<FeedFilm[]>();
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
 
@@ -92,7 +92,7 @@ function useReelsFeed(feedKey: MenuKey) {
     let cancelled = false;
 
     async function loadFeed() {
-      setLoading(false);
+      setLoading(true);
       setError(null);
 
       try {
@@ -121,12 +121,12 @@ function useReelsFeed(feedKey: MenuKey) {
         if (cancelled) return;
         if (fetchError) throw fetchError;
 
-        setFilms(data?.length ? data.map(mapReelToFeedFilm) : MOCK_FEED);
+        setFilms(data?.length ? data.map(mapReelToFeedFilm) : []);
       } catch (err) {
         if (!cancelled) {
-          console.warn('[ReelsFeed] fallback MOCK:', err);
-          setFilms(MOCK_FEED);
-          setError('Impossible de charger le feed. Affichage local.');
+          console.warn('[ReelsFeed] fallback:', err);
+          setFilms([]);
+          setError('Impossible de charger le feed.');
         }
       } finally {
         if (!cancelled) setLoading(false);
