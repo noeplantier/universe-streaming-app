@@ -1,8 +1,3 @@
-/* eslint-disable react/display-name */
-/**
- * create.tsx — Écran racine
- * Les composants métier vivent dans /components/create/
- */
 import React, { useCallback, memo, useState } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { SafeAreaView }  from 'react-native-safe-area-context';

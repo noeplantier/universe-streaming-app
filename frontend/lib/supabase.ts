@@ -15,13 +15,13 @@ type StorageLike = {
 // ✅ Environnements sans window (Node/SSR) : on évite AsyncStorage
 const memoryStorage: StorageLike = {
   _m: new Map<string, string>(),
-  getItem: async function (key) {
+  getItem: async function (key: any) {
     return this._m.has(key) ? this._m.get(key)! : null;
   },
-  setItem: async function (key, value) {
+  setItem: async function (key: any, value: any) {
     this._m.set(key, value);
   },
-  removeItem: async function (key) {
+  removeItem: async function (key: any) {
     this._m.delete(key);
   },
 } as any;
@@ -82,6 +82,7 @@ export type Work = {
 export const WORK_LIST_COLUMNS =
   'id,title,category,genre,year,likes,comments,image,is_original,adjective,duration' as const;
 
+console.log('WORK_LIST_COLUMNS =', WORK_LIST_COLUMNS);
 export type SortOption = 'Popularité' | 'Récent' | 'Anciens';
 export type DurationBand = 'Toutes' | '< 60 min' | '60–100 min' | '> 100 min';
 

@@ -665,6 +665,8 @@ export default function SearchScreen() {
 
   const scrollY    = useRef(new Animated.Value(0)).current;
 
+  console.log('works state =', works);
+  
   return (
     <View style={ms.root}>
       <StatusBar style="light" />
@@ -721,6 +723,8 @@ export default function SearchScreen() {
             variant="portrait"
           />
         )}
+
+
 
         {!isFiltered && (
           <>

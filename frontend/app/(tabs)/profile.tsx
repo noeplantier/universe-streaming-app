@@ -347,7 +347,7 @@ export default function ProfileScreen() {
           label="Critiques"
           subtitle="Classées par popularité"
           accentColor={G.amber}
-          onViewAll={() => router.push('/profile/reviews')}
+          onViewAll={() => router.push('/profile/reviews' as any)}
         />
 
         {sortedReviews.length === 0 ? (
