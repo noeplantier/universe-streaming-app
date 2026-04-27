@@ -19,6 +19,7 @@ import {
   fetchWorks, fetchTrending,
   type Work, type SortOption, type DurationBand,
 } from '@/lib/supabase';
+import { C } from '@/components/create/tokens';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -34,13 +35,13 @@ const T = {
   textPrim:  '#F2F2F7',
   textSec:   '#8E8E93',
   textTert:  '#636366',
-  gold:      '#F5A623',
+  gold:      '#F2F2F7',
   goldSoft:  'rgba(245,166,35,0.18)',
   blue:      '#0A84FF',
-  blueSoft:  'rgba(10,132,255,0.18)',
-  badgePink: '#FF375F',
-  badgePurp: '#5E5CE6',
-  badgeTeal: '#30D158',
+  blueSoft: C.navyMid,
+  badgePink: C.navyMid,
+  badgePurp: C.navyMid,
+  badgeTeal: C.navyMid,
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -60,49 +61,6 @@ const SORT_OPT: SortOption[]    = ['Popularité', 'Récent', 'Anciens'];
 const DURATIONS: DurationBand[] = ['Toutes', '< 60 min', '60–100 min', '> 100 min'];
 const YEARS     = ['Toutes', '2024', '2023', '2022'];
 
-// ─────────────────────────────────────────────────────────────────
-// ── FILTER DROPDOWN
-// ─────────────────────────────────────────────────────────────────
-interface DropdownProps {
-  visible: boolean; onClose: () => void;
-  options: string[]; selected: string;
-  onSelect: (v: string) => void;
-  anchor: { x: number; y: number };
-}
-const FilterDropdown = memo(({ visible, onClose, options, selected, onSelect, anchor }: DropdownProps) => {
-  if (!visible) return null;
-  return (
-    <Pressable style={StyleSheet.absoluteFill} onPress={onClose}>
-      <View style={[dd.box, { top: anchor.y + 8, left: anchor.x - 75 }]}>
-        {options.map(opt => {
-          const isSelected = opt === selected;
-          return (
-            <TouchableOpacity
-              key={opt}
-              style={dd.item}
-              onPress={() => { onSelect(opt); onClose(); }}
-            >
-              <Text style={[dd.txt, isSelected && dd.txtOn]}>{opt}</Text>
-              {isSelected && (
-                <View style={dd.check}>
-                  <Ionicons name="check" size={12} color={T.gold} />
-                </View>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </Pressable>
-  );
-});
-FilterDropdown.displayName = 'FilterDropdown';
-const dd = StyleSheet.create({
-  box:   { position: 'absolute', minWidth: 150, backgroundColor: 'rgba(22,22,32,0.97)', borderRadius: 14, borderWidth: 1, borderColor: T.surfBorder, overflow: 'hidden', zIndex: 999, elevation: 10 },
-  item:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 11 },
-  txt:   { color: T.textSec, fontSize: 14, fontWeight: '500' },
-  txtOn: { color: T.textPrim, fontWeight: '700' },
-  check: { width: 20, height: 20, borderRadius: 10, backgroundColor: T.goldSoft, justifyContent: 'center', alignItems: 'center' },
-});
 
 // ─────────────────────────────────────────────────────────────────
 // ── SEARCH OVERLAY
@@ -166,12 +124,7 @@ const SearchOverlay = memo(({
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose}>
-      {/* Dropdowns */}
-      <FilterDropdown visible={openDrop === 'genre'}    onClose={() => setOpenDrop(null)} options={GENRES}    selected={genre}    onSelect={setGenre}    anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'sort'}     onClose={() => setOpenDrop(null)} options={SORT_OPT}  selected={sortBy}   onSelect={v => setSortBy(v as SortOption)}    anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'duration'} onClose={() => setOpenDrop(null)} options={DURATIONS} selected={duration} onSelect={v => setDuration(v as DurationBand)} anchor={dropAnchor} />
-      <FilterDropdown visible={openDrop === 'year'}     onClose={() => setOpenDrop(null)} options={YEARS}     selected={year}     onSelect={setYear}     anchor={dropAnchor} />
-
+    
       <Animated.View style={[so.root, { transform: [{ translateY: slideY }] }]}>
         <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
 
@@ -203,18 +156,7 @@ const SearchOverlay = memo(({
                   )}
                 </View>
 
-                {/* Bouton "Filtrer" → bascule en phase filter */}
-                <TouchableOpacity
-                  style={so.filterToggleBtn}
-                  onPress={() => setPhase('filter')}
-                >
-                  <Ionicons name="options-outline" size={15} color={activeFilterCount > 0 ? T.gold : T.textSec} />
-                  {activeFilterCount > 0 && (
-                    <View style={so.filterBadge}>
-                      <Text style={so.filterBadgeTxt}>{activeFilterCount}</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
+             
 
                 <TouchableOpacity onPress={onClose} style={so.cancelBtn}>
                   <Text style={so.cancelTxt}>Annuler</Text>
@@ -254,6 +196,8 @@ const SearchOverlay = memo(({
           </View>
 
           {/* ── RÉSULTATS ── */}
+          <GalaxyBackground />
+
           <ScrollView
             contentContainerStyle={so.resultsContent}
             showsVerticalScrollIndicator={false}
