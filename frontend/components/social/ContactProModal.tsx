@@ -1,3 +1,4 @@
+// components/social/ContactProModal.tsx
 import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
 import {
   View, Text, StyleSheet, Modal, Animated, Pressable,

@@ -1,3 +1,4 @@
+// components/social/ProDirectory.tsx
 import React, { useState, useCallback, memo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,

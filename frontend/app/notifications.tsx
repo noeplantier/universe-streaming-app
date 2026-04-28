@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
 import { notificationsAPI } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import GalaxyBackground from '@/components/social/GalaxyBackground';
 
 interface Notif {
   id: string; type: string; message: string;
@@ -38,6 +39,8 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.container}>
+          <GalaxyBackground/>
+
       <SafeAreaView edges={['top']}>
         <View style={styles.header}>
           <TouchableOpacity testID="notif-back-btn" onPress={() => router.back()} style={styles.backBtn}>
@@ -89,13 +92,13 @@ export default function NotificationsScreen() {
             </View>
           }
         />
-      )}
+      )
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+  container: { flex: 1},
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: SPACING.screenEdge, paddingVertical: 12 },
   backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 20, fontWeight: '800', color: COLORS.textPrimary },

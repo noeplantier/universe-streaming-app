@@ -1,3 +1,4 @@
+// components/social/InteractionContext.tsx
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { Share } from 'react-native';
 import { supabase } from '@/lib/supabase';

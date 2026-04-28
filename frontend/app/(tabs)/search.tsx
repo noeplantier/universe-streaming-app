@@ -196,7 +196,7 @@ const SearchOverlay = memo(({
           </View>
 
           {/* ── RÉSULTATS ── */}
-          <GalaxyBackground />
+
 
           <ScrollView
             contentContainerStyle={so.resultsContent}
@@ -650,6 +650,9 @@ export default function SearchScreen() {
       />
 
       {/* Main scroll */}
+
+          <GalaxyBackground/>
+      
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={ms.scroll}
@@ -702,7 +705,7 @@ export default function SearchScreen() {
 
 // ─────────────────────────────────────────────────────────────────
 const ms = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: T.bg },
+  root:        { flex: 1 },
   scroll:      { paddingBottom: 120 },
   stickyHeader:{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50, height: Platform.OS === 'ios' ? 90 : 60 },
   stickyInner: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 20, paddingBottom: 10, marginTop: Platform.OS === 'ios' ? 44 : 0 },
