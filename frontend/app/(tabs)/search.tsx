@@ -737,7 +737,8 @@ const SearchOverlay = memo(function SearchOverlay({
   if (!visible) return null;
 
   return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose}>
+    <Modal visible animationType="none" onRequestClose={onClose}>
+      <GalaxyBackground/>
       <Animated.View style={[ov.root, { transform: [{ translateY: slideY }] }]}>
         <View style={ov.inner}>
           {/* Top bar */}
@@ -920,19 +921,29 @@ export default function SearchScreen() {
         }]}
         pointerEvents="none"
       >
-        <BlurView intensity={60} tint="dark" style={StyleSheet.absoluteFill} />
         <View style={ms.stickyInner}>
           <Text style={ms.stickyTitle}>UNIVERSE</Text>
         </View>
-      </Animated.View>
 
-      {/* Search button */}
-      <View style={ms.topRight} pointerEvents="box-none">
+  
+
+            {/* Gift button */}
+      <View style={{ position: 'absolute', top: Platform.OS === 'ios' ? 50 : 14, right: 68, zIndex: 100 }}>
+        <TouchableOpacity style={[ms.searchBtn, { width: 36, height: 36 }]} onPress={() => router.push('/cadeau' as any)}>
+          <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <Ionicons name="gift" size={16} color={T.white} />
+        </TouchableOpacity> 
+      </View>
+
+          {/* Search button */}
+          <View style={ms.topRight} pointerEvents="box-none">
         <TouchableOpacity style={ms.searchBtn} onPress={() => setSearchOpen(true)}>
           <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
           <Ionicons name="search" size={19} color={T.white} />
         </TouchableOpacity>
       </View>
+      </Animated.View>
+
 
       {/* Search overlay */}
       <SearchOverlay
