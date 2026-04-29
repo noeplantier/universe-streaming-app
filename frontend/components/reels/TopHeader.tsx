@@ -49,13 +49,13 @@ const TopHeader = memo(function TopHeader({ feedKey, onMenuPress, scrollY }: Top
         <Ionicons name="chevron-down" size={13} color={P?.t2 || '#AAA'} style={{ marginTop: 1 }} />
       </TouchableOpacity>
 
-      {/* ── Amies + avatars ── */}
+      {/* ── Amis + avatars ── */}
       <TouchableOpacity
         style={s.rightGroup}
         activeOpacity={0.7}
         onPress={() => router.push('/social')}
       >
-        <Text style={s.amiesLabel}>Amies</Text>
+        <Text style={s.amisLabel}>Amis</Text>
         <View style={s.avatarPile}>
           {(FP || []).slice(0, 2).map((f, i) => (
             <Image
@@ -82,7 +82,7 @@ const s = StyleSheet.create({
   hLine:       { height: 2.5, borderRadius: 2, backgroundColor: P?.t1 || '#FFF' },
   feedLabel:   { color: P?.t1 || '#FFF', fontSize: 18, fontWeight: '700', letterSpacing: 0.2, flexShrink: 1 },
   rightGroup:  { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  amiesLabel:  { color: P?.t2 || '#AAA', fontSize: 15, fontWeight: '600' },
+  amisLabel:  { color: P?.t2 || '#AAA', fontSize: 15, fontWeight: '600' },
   avatarPile:  { flexDirection: 'row', alignItems: 'center' },
   avatar:      { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: P.bg },
   globeCircle: { backgroundColor: P.surface, alignItems: 'center', justifyContent: 'center' },

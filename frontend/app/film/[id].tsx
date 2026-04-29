@@ -934,8 +934,8 @@ const s = StyleSheet.create({
   // ── Info grid ────────────────────────────────────────────────
   infoGrid: { backgroundColor: C.surf, borderRadius: 16, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
   infoRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 0.5, borderBottomColor: C.border },
-  infoLabel:{ color: C.textTert, fontSize: 12, fontWeight: '600' },
-  infoValue:{ color: C.text, fontSize: 12, fontWeight: '700', maxWidth: '60%' },
+  infoLabel:{ color: 'white', fontSize: 12, fontWeight: '600' },
+  infoValue:{ color: 'white', fontSize: 12, fontWeight: '700', maxWidth: '60%' },
 
   // ── Error ─────────────────────────────────────────────────────
   errorIcon:    { width: 72, height: 72, borderRadius: 36, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },

@@ -927,22 +927,26 @@ export default function SearchScreen() {
 
   
 
-            {/* Gift button */}
-      <View style={{ position: 'absolute', top: Platform.OS === 'ios' ? 50 : 14, right: 68, zIndex: 100 }}>
-        <TouchableOpacity style={[ms.searchBtn, { width: 36, height: 36 }]} onPress={() => router.push('/cadeau' as any)}>
-          <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <Ionicons name="gift" size={16} color={T.white} />
-        </TouchableOpacity> 
-      </View>
+  
 
           {/* Search button */}
           <View style={ms.topRight} pointerEvents="box-none">
         <TouchableOpacity style={ms.searchBtn} onPress={() => setSearchOpen(true)}>
           <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <Ionicons name="search" size={19} color={T.white} />
+          <Ionicons name="search" size={25} color={T.white} />
         </TouchableOpacity>
       </View>
+
+                {/* Gift button */}
+                <View style={{ position: 'absolute', top: Platform.OS === 'ios' ? 50 : 14, right: 68, zIndex: 100 }}>
+        <TouchableOpacity style={[ms.searchBtn, { width: 36, height: 36 }]} onPress={() => router.push('/cadeau' as any)}>
+          <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
+          <Ionicons name="gift" size={25} color={T.white} />
+        </TouchableOpacity> 
+      </View>
+
       </Animated.View>
+
 
 
       {/* Search overlay */}
@@ -1045,6 +1049,7 @@ const ms = StyleSheet.create({
   stickyHeader:{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50, height: Platform.OS === 'ios' ? 90 : 60 },
   stickyInner: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 20, paddingBottom: 10, marginTop: Platform.OS === 'ios' ? 44 : 0 },
   stickyTitle: { color: T.text, fontSize: 34, fontWeight: '800', letterSpacing: -0.5 },
+  topLeft:     { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 14, left: 18, zIndex: 100 },
   topRight:    { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 14, right: 18, zIndex: 100 },
   searchBtn:   { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: T.surfBorder },
   banner:      { marginHorizontal: 20, marginBottom: 20, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: T.surfBorder },

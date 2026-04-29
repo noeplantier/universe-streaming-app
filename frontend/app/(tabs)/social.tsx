@@ -1598,36 +1598,7 @@ const hdr = StyleSheet.create({
   dot:       { position: 'absolute', top: 8, right: 8, width: 7, height: 7, borderRadius: 4, backgroundColor: C.red, borderWidth: 1.5, borderColor: C.bg0 },
 });
 
-const ComposeBar = memo(function ComposeBar({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity style={cbar.wrap} onPress={onPress} activeOpacity={0.85}>
-      <View style={cbar.leftAccent} />
-      <View style={cbar.body}>
-        <Text style={cbar.title}>Partagez votre critique</Text>
-        <Text style={cbar.sub}>Analyse · Coup de cœur · Réflexion · Déception</Text>
-        <View style={cbar.pills}>
-          {(['film-outline', 'star-outline', 'image-outline'] as const).map((icon, i) => (
-            <View key={icon} style={cbar.pill}>
-              <Ionicons name={icon} size={10} color={C.textSec} />
-              <Text style={cbar.pillTxt}>{['Œuvre', 'Note', 'Visuel'][i]}</Text>
-            </View>
-          ))}
-        </View>
-      </View>
-      <Ionicons name="add-circle" size={28} color={C.blue} />
-    </TouchableOpacity>
-  );
-});
-const cbar = StyleSheet.create({
-  wrap:      { marginHorizontal: EDGE, marginBottom: 14, borderRadius: 18, borderWidth: 1, borderColor: C.border, flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, backgroundColor: C.surf, overflow: 'hidden' },
-  leftAccent:{ width: 3, height: '100%', position: 'absolute', left: 0, top: 0, backgroundColor: C.blue, borderTopRightRadius: 2, borderBottomRightRadius: 2 },
-  body:      { flex: 1, gap: 3 },
-  title:     { color: C.text, fontSize: 13, fontWeight: '700' },
-  sub:       { color: C.textSec, fontSize: 10 },
-  pills:     { flexDirection: 'row', gap: 6, marginTop: 5 },
-  pill:      { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.border },
-  pillTxt:   { fontSize: 10, fontWeight: '600', color: C.textSec },
-});
+
 
 const FilterTabs = memo(function FilterTabs({ active, set }: { active: FeedTab; set: (t: FeedTab) => void }) {
   return (
@@ -1754,7 +1725,6 @@ export default function SocialScreen() {
       <FilterTabs active={activeTab} set={setActiveTab} />
       {activeTab !== 'Pros' && (
         <>
-          <ComposeBar onPress={() => setComposeOpen(true)} />
           {activeTab === 'Tendances' && trendingPosts.length > 0 && (
             <TrendingBanner posts={trendingPosts} />
           )}
