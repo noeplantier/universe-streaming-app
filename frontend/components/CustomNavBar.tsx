@@ -76,7 +76,7 @@ function CustomNavBar() {
 
         <NavItem
           icon={<Ionicons name="people" size={24} color="white" />}
-          label="Amies"
+          label="Amis"
           onPress={() => navigate('/social')}
         />
 

@@ -22,6 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { FeedFilm } from '@/components/reels/types';
 import { C } from '@/components/create/tokens';
+import GalaxyBackground from '../social/GalaxyBackground';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🎨 TOKENS
@@ -87,7 +88,6 @@ const tp = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical:    5,
     borderRadius:       20,
-    backgroundColor:   T.tag,
     borderWidth:        0.5,
     borderColor:       T.tagBorder,
     marginRight:        6,
@@ -219,7 +219,9 @@ const InfoSheet = memo(({ film, onClose }: InfoSheetProps) => {
   const paddingBottom = Math.max(insets.bottom, 24);
 
   return (
+    
     <View style={StyleSheet.absoluteFillObject} pointerEvents="box-none">
+
       {/* ── Backdrop ────────────────────────────────────────────────────── */}
       <Animated.View
         style={[is.backdrop, { opacity }]}
@@ -228,7 +230,9 @@ const InfoSheet = memo(({ film, onClose }: InfoSheetProps) => {
         <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
       </Animated.View>
 
+
       {/* ── Sheet ───────────────────────────────────────────────────────── */}
+
       <Animated.View
         style={[
           is.sheet,
@@ -243,11 +247,8 @@ const InfoSheet = memo(({ film, onClose }: InfoSheetProps) => {
           style={StyleSheet.absoluteFillObject}
         />
         {/* Fond navyMid */}
-        <LinearGradient
-          colors={[C.navyMid, C.navyMid]}
-          style={StyleSheet.absoluteFillObject}
-          pointerEvents="none"
-        />
+        <GalaxyBackground />
+
 
         {/* ── Handle ────────────────────────────────────────────────────── */}
         <View style={is.handleWrap}>
@@ -359,7 +360,7 @@ export default InfoSheet;
 const is = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.70)',
+  
     zIndex:          90,
   },
 
@@ -373,7 +374,6 @@ const is = StyleSheet.create({
     borderTopRightRadius:  SHEET_RADIUS,
     overflow:              'hidden',
     maxHeight:             '92%',
-    backgroundColor:       C.navyMid,
   },
 
   handleWrap: {

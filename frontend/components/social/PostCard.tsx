@@ -1,230 +1,167 @@
-import React, {
-    memo, useState, useCallback, useRef,
-  } from 'react';
-  import {
-    View, Text, StyleSheet, Image, TouchableOpacity,
-    Animated, Platform,
-  } from 'react-native';
-  import { LinearGradient } from 'expo-linear-gradient';
-  import { Ionicons }       from '@expo/vector-icons';
-  import { useRouter }      from 'expo-router';
-  import * as Haptics       from 'expo-haptics';
-  
-  import CommentsModal from './CommentsModal';
-  import { useSocial } from './SocialContext';
-  import { G, ROLES }  from './types';
-  import type { PostData } from './types';
-  
-  const EDGE = 18;
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  
-  interface Props { post: PostData }
-  
-  const PostCard = memo(function PostCard({ post }: Props) {
-    const router = useRouter();
-    const { toggleLike, toggleSave, toggleFollow } = useSocial();
-  
-    const [showComments, setShowComments] = useState(false);
-  
-    // Animations
-    const heartSc = useRef(new Animated.Value(1)).current;
-    const saveSc  = useRef(new Animated.Value(1)).current;
-  
-    const bounce = useCallback((anim: Animated.Value) => {
-      Animated.sequence([
-        Animated.spring(anim, { toValue: 1.32, useNativeDriver: true, speed: 50, bounciness: 14 }),
-        Animated.spring(anim, { toValue: 1,    useNativeDriver: true, speed: 50 }),
-      ]).start();
-    }, []);
-  
-    const handleLike = useCallback(() => {
-      bounce(heartSc);
-      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      toggleLike(post.id);
-    }, [post.id, toggleLike, heartSc, bounce]);
-  
-    const handleSave = useCallback(() => {
-      bounce(saveSc);
-      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      toggleSave(post.id);
-    }, [post.id, toggleSave, saveSc, bounce]);
-  
-    const handleFollow = useCallback(() => {
-      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      toggleFollow(post.author.handle);
-    }, [post.author.handle, toggleFollow]);
-  
-    const role = ROLES[post.author.role] ?? ROLES.viewer;
-  
-    return (
-      <View style={s.root}>
-        <CommentsModal
-          visible={showComments}
-          onClose={() => setShowComments(false)}
-          post={post}
-        />
-  
-        {/* ── Ligne verticale timeline ── */}
-        <View style={s.timeline}>
-          <TouchableOpacity onPress={() => router.push(`/user/${post.author.handle}`)}>
-            <Image source={{ uri: post.author.avi }} style={s.avi} />
-          </TouchableOpacity>
-          <View style={s.threadLine} />
+import React, { memo, useCallback, useRef, useMemo, useContext } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, Animated, Platform } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+import { C, TONES, EDGE } from './SocialTokens';
+import type { Post } from './SocialTypes';
+import { InteractionCtx } from './InteractionContext';
+
+const StarRow = memo(({ rating, size = 11 }: { rating: number; size?: number }) => (
+  <View style={{ flexDirection: 'row', gap: 1.5 }}>
+    {[1,2,3,4,5].map(i => (
+      <Ionicons
+        key={i}
+        name={rating >= i ? 'star' : rating >= i - 0.5 ? 'star-half' : 'star-outline'}
+        size={size} color={C.gold}
+      />
+    ))}
+  </View>
+));
+
+const PostCard = memo(function PostCard({ post, userId }: { post: Post; userId: string }) {
+  const router = useRouter();
+  const { liked, saved, toggleLike, toggleSave, sharePost } = useContext(InteractionCtx);
+
+  const isLiked  = !!liked[post.id];
+  const isSaved  = !!saved[post.id];
+  const likeScale = useRef(new Animated.Value(1)).current;
+  const saveScale = useRef(new Animated.Value(1)).current;
+
+  const bounce = useCallback((anim: Animated.Value) => {
+    Animated.sequence([
+      Animated.spring(anim, { toValue: 1.42, useNativeDriver: true, tension: 300, friction: 7 }),
+      Animated.spring(anim, { toValue: 1,    useNativeDriver: true, tension: 200, friction: 8 }),
+    ]).start();
+  }, []);
+
+  const onLike = useCallback(() => {
+    bounce(likeScale);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    toggleLike(post.id, userId);
+  }, [post.id, userId, toggleLike, likeScale, bounce]);
+
+  const onSave = useCallback(() => {
+    bounce(saveScale);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    toggleSave(post.id);
+  }, [post.id, toggleSave, saveScale, bounce]);
+
+  const toneInfo = useMemo(() => TONES.find(t => t.key === post.tone) ?? TONES[0], [post.tone]);
+  const imgSrc   = useMemo(() =>
+    post.image_url ? { uri: post.image_url } : { uri: `https://picsum.photos/seed/${post.id}/800/450` },
+  [post.image_url, post.id]);
+  const metaStr  = [post.work_director, post.work_year].filter(Boolean).join(' · ');
+
+  return (
+    <View style={s.card}>
+      {/* ── Hero image ── */}
+      <TouchableOpacity activeOpacity={0.92} onPress={() => router.push(`/film/${post.id}`)}>
+        <Image source={imgSrc} style={s.img} resizeMode="cover" />
+        <LinearGradient colors={['transparent', 'rgba(2,8,16,0.92)']} style={s.imgGrad} />
+
+        {/* Tone badge */}
+        <View style={[s.toneBadge, { borderColor: `${toneInfo.color}30` }]}>
+          <Ionicons name={toneInfo.icon as any} size={10} color={toneInfo.color} />
+          <Text style={[s.toneTxt, { color: toneInfo.color }]}>{toneInfo.label}</Text>
         </View>
-  
-        {/* ── Corps ── */}
-        <View style={s.body}>
-  
-          {/* Header auteur */}
-          <View style={s.head}>
-            <View style={s.authorInfo}>
-              <Text style={s.name}>{post.author.name}</Text>
-              {role.label !== '' && (
-                <View style={[s.badge, { backgroundColor: role.bg }]}>
-                  <Text style={[s.badgeTxt, { color: role.color }]}>{role.label}</Text>
-                </View>
-              )}
-            </View>
-            <View style={s.headRight}>
-              <Text style={s.handle}>@{post.author.handle} · {post.time}</Text>
-            </View>
+
+        {/* Film info overlay */}
+        <View style={s.filmOverlay}>
+          <Text style={s.filmTitle} numberOfLines={1}>{post.work_title || 'Œuvre inconnue'}</Text>
+          {metaStr.length > 0 && <Text style={s.filmMeta}>{metaStr}</Text>}
+          <StarRow rating={post.rating} />
+        </View>
+      </TouchableOpacity>
+
+      {/* ── Body ── */}
+      <View style={s.body}>
+        {/* Author row */}
+        <View style={s.authorRow}>
+          <Image source={{ uri: post.avatar }} style={s.avi} />
+          <View style={{ flex: 1 }}>
+            <Text style={s.authorName}>{post.userName}</Text>
+            <Text style={s.authorTime}>{post.timeAgo}</Text>
           </View>
-  
-          {/* Handle + Follow */}
-          <View style={s.handleRow}>
-            {!post.author.following && post.author.handle !== 'hugoch' && (
-              <TouchableOpacity onPress={handleFollow} style={s.followBtn} activeOpacity={0.85}>
-                <Ionicons name="person-add" size={10} color={G.primary} />
-                <Text style={s.followTxt}>Suivre</Text>
-              </TouchableOpacity>
-            )}
-            {post.author.following && (
-              <View style={s.followingBadge}>
-                <Ionicons name="checkmark" size={10} color={G.green} />
-                <Text style={[s.followTxt, { color: G.green }]}>Abonné</Text>
-              </View>
-            )}
-          </View>
-  
-          {/* Contenu textuel */}
-          <Text style={s.content}>{post.content}</Text>
-  
-          {/* Film embed */}
-          {post.film && (
-            <TouchableOpacity
-              style={s.filmEmbed}
-              activeOpacity={0.88}
-              onPress={() => router.push(`/film/${post.film!.filmId ?? '1'}`)}
-            >
-              <Image source={{ uri: post.film.poster }} style={s.filmPoster} />
-              <LinearGradient
-                colors={['transparent', 'rgba(0,0,0,0.65)']}
-                style={StyleSheet.absoluteFillObject}
-              />
-              <View style={s.filmInfo}>
-                <Text style={s.filmTitle}>{post.film.title}</Text>
-                <Text style={s.filmMeta}>Film · {post.film.year}</Text>
-                {post.film.rating !== undefined && (
-                  <View style={s.ratingRow}>
-                    <Ionicons name="star" size={10} color={G.sG} />
-                    <Text style={s.ratingTxt}>{post.film.rating.toFixed(1)}</Text>
-                  </View>
-                )}
-                <View style={s.watchBtn}>
-                  <Ionicons name="play" size={10} color="#000" />
-                  <Text style={s.watchTxt}>Voir</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
+          {post.work_genre.length > 0 && (
+            <View style={s.genrePill}><Text style={s.genrePillTxt}>{post.work_genre}</Text></View>
           )}
-  
-          {/* Actions */}
-          <View style={s.actions}>
-            {/* Like */}
-            <TouchableOpacity style={s.actBtn} onPress={handleLike} activeOpacity={0.8}>
-              <Animated.View style={{ transform: [{ scale: heartSc }] }}>
-                <Ionicons
-                  name={post.liked ? 'heart' : 'heart-outline'}
-                  size={20}
-                  color={post.liked ? G.red : 'rgba(237,232,255,0.45)'}
-                />
-              </Animated.View>
-              <Text style={[s.actTxt, post.liked && { color: G.red }]}>
-                {post.likes.toLocaleString('fr-FR')}
-              </Text>
-            </TouchableOpacity>
-  
-            {/* Commentaires */}
-            <TouchableOpacity
-              style={s.actBtn}
-              onPress={() => setShowComments(true)}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="chatbubble-outline" size={19} color="rgb(255, 255, 255)" />
-              <Text style={s.actTxt}>{post.comments.length}</Text>
-            </TouchableOpacity>
-  
-            {/* Partager */}
-            <TouchableOpacity style={s.actBtn} activeOpacity={0.8}>
-              <Ionicons name="share-social-outline" size={19} color="rgba(237,232,255,0.45)" />
-            </TouchableOpacity>
-  
-            {/* Save */}
-            <TouchableOpacity style={[s.actBtn, { marginLeft: 'auto' }]} onPress={handleSave} activeOpacity={0.8}>
-              <Animated.View style={{ transform: [{ scale: saveSc }] }}>
-                <Ionicons
-                  name={post.saved ? 'bookmark' : 'bookmark-outline'}
-                  size={19}
-                  color={post.saved ? G.sG : 'rgba(237,232,255,0.45)'}
-                />
-              </Animated.View>
-            </TouchableOpacity>
+        </View>
+
+        {/* Content */}
+        <Text style={s.content} numberOfLines={4}>{post.content}</Text>
+
+        {/* Tags */}
+        {post.tags.length > 0 && (
+          <View style={s.tagRow}>
+            {post.tags.slice(0, 3).map(tag => (
+              <Text key={tag} style={s.tag}>#{tag}</Text>
+            ))}
           </View>
+        )}
+
+        <View style={s.divider} />
+
+        {/* Actions */}
+        <View style={s.actions}>
+          <TouchableOpacity style={s.action} onPress={onLike} activeOpacity={0.78}>
+            <Animated.View style={{ transform: [{ scale: likeScale }] }}>
+              <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={18} color={isLiked ? C.red : C.textSec} />
+            </Animated.View>
+            <Text style={[s.actionTxt, isLiked && { color: C.red }]}>{post.likes + (isLiked ? 1 : 0)}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={s.action} onPress={() => router.push(`/film/${post.id}`)} activeOpacity={0.78}>
+            <Ionicons name="chatbubble-outline" size={17} color={C.textSec} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={s.action} onPress={() => sharePost(post.id, post.work_title, userId)} activeOpacity={0.78}>
+            <Ionicons name="share-outline" size={18} color={C.textSec} />
+            <Text style={s.actionTxt}>{post.shares}</Text>
+          </TouchableOpacity>
+
+          <View style={{ flex: 1 }} />
+
+          <TouchableOpacity style={s.action} onPress={onSave} activeOpacity={0.78}>
+            <Animated.View style={{ transform: [{ scale: saveScale }] }}>
+              <Ionicons name={isSaved ? 'bookmark' : 'bookmark-outline'} size={18} color={isSaved ? C.gold : C.textSec} />
+            </Animated.View>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={s.arrowBtn} onPress={() => router.push(`/film/${post.id}`)}>
+            <Ionicons name="arrow-forward" size={14} color={C.textSec} />
+          </TouchableOpacity>
         </View>
       </View>
-    );
-  });
-  
-  export default PostCard;
-  
-  const AVI_SZ = 42;
-  
-  const s = StyleSheet.create({
-    root:     { flexDirection: 'row', paddingTop: 16, paddingHorizontal: EDGE, paddingBottom: 4 },
-  
-    // Timeline layout
-    timeline: { alignItems: 'center', width: AVI_SZ, marginRight: 12 },
-    avi:      { width: AVI_SZ, height: AVI_SZ, borderRadius: AVI_SZ / 2, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
-    threadLine:{ flex: 1, width: 1.5, backgroundColor: 'rgba(255,255,255,0.07)', marginTop: 8, marginBottom: 4, borderRadius: 1, minHeight: 20 },
-  
-    body:     { flex: 1, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
-    head:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-    authorInfo:{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, flexWrap: 'wrap' },
-    name:     { color: G.sW, fontWeight: '700', fontSize: 14 },
-    badge:    { paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
-    badgeTxt: { fontSize: 9, fontWeight: '800' },
-    headRight:{ },
-    handle:   { color: 'rgba(237,232,255,0.38)', fontSize: 11, marginTop: 1 },
-  
-    handleRow:     { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 8 },
-    followBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: G.primaryDim, borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(192,96,255,0.35)', alignSelf: 'flex-start' },
-    followingBadge:{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(48,209,88,0.10)', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: 'rgba(48,209,88,0.25)', alignSelf: 'flex-start' },
-    followTxt:     { fontSize: 10, fontWeight: '700', color: G.primary },
-  
-    content:  { color: 'rgba(237,232,255,0.88)', fontSize: 15, lineHeight: 22, marginBottom: 12 },
-  
-    filmEmbed:  { flexDirection: 'row', height: 90, borderRadius: 14, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', marginBottom: 12 },
-    filmPoster: { width: 62, height: '100%', resizeMode: 'cover' },
-    filmInfo:   { flex: 1, padding: 12, justifyContent: 'center', gap: 2 },
-    filmTitle:  { color: '#fff', fontWeight: '700', fontSize: 13 },
-    filmMeta:   { color: 'rgba(255,255,255,0.45)', fontSize: 11 },
-    ratingRow:  { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
-    ratingTxt:  { color: G.sG, fontSize: 11, fontWeight: '700' },
-    watchBtn:   { flexDirection: 'row', alignItems: 'center', backgroundColor: G.sG, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99, alignSelf: 'flex-start', gap: 3, marginTop: 4 },
-    watchTxt:   { fontSize: 10, fontWeight: '700', color: '#000' },
-  
-    actions:  { flexDirection: 'row', alignItems: 'center', gap: 20, marginTop: 4 },
-    actBtn:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
-    actTxt:   { color: 'rgba(237,232,255,0.45)', fontSize: 13, fontWeight: '600' },
-  });
+    </View>
+  );
+});
+
+export default PostCard;
+
+const s = StyleSheet.create({
+  card:        { marginHorizontal: EDGE, marginBottom: 20, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: C.border, backgroundColor: C.surf },
+  img:         { width: '100%', height: 205 },
+  imgGrad:     { position: 'absolute', bottom: 0, left: 0, right: 0, height: '62%' },
+  toneBadge:   { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: 'rgba(2,8,16,0.72)', borderWidth: 1 },
+  toneTxt:     { fontSize: 10, fontWeight: '700' },
+  filmOverlay: { position: 'absolute', bottom: 12, left: 14, right: 14 },
+  filmTitle:   { color: '#fff', fontSize: 17, fontWeight: '800', letterSpacing: -0.3, marginBottom: 2 },
+  filmMeta:    { color: 'rgba(255,255,255,0.42)', fontSize: 11, marginBottom: 6 },
+  body:        { padding: 14 },
+  authorRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  avi:         { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: C.border },
+  authorName:  { color: C.text, fontSize: 13, fontWeight: '700' },
+  authorTime:  { color: C.textSec, fontSize: 10, marginTop: 1 },
+  genrePill:   { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: C.navyLight, borderWidth: 1, borderColor: C.borderBlue },
+  genrePillTxt:{ color: C.textSec, fontSize: 10, fontWeight: '700' },
+  content:     { color: C.textSec, fontSize: 14, lineHeight: 21, marginBottom: 10 },
+  tagRow:      { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
+  tag:         { color: C.gold, fontSize: 11, fontWeight: '600' },
+  divider:     { height: 1, backgroundColor: C.border, marginBottom: 12 },
+  actions:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  action:      { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 7, borderRadius: 14 },
+  actionTxt:   { color: C.textSec, fontSize: 12, fontWeight: '600' },
+  arrowBtn:    { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: C.navyLight },
+});
