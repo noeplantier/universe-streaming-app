@@ -1,11 +1,3 @@
-// app/film/[id].tsx
-// ─────────────────────────────────────────────────────────────────────────────
-//  Détail d'une œuvre de cinéma indépendant
-//  • source=works  → table public.works  (cards depuis search.tsx)
-//  • source=films  → table public.films  (cards depuis profile.tsx)
-//  • Fallback automatique : works → films → community_posts_enriched
-//  UX identique à /reel/[id].tsx — GalaxyBackground × C.navyMid
-// ─────────────────────────────────────────────────────────────────────────────
 import React, {
   useState, useEffect, useRef, useCallback, memo, useMemo,
 } from 'react';
@@ -192,8 +184,8 @@ async function fetchWork(
 
 // Œuvres similaires (même genre / catégorie)
 async function fetchSimilar(work: NormWork): Promise<NormWork[]> {
-  const table = work.source === 'films' ? 'films' : 'works';
-  const norm  = work.source === 'films' ? fromFilms : fromWorks;
+  const table = work.source === 'works' ? 'works' : 'works';
+  const norm  = work.source === 'works' ? fromFilms : fromWorks;
 
   const query = supabase
     .from(table)
@@ -462,7 +454,7 @@ export default function FilmDetailScreen() {
     try {
       const data = await fetchWork(
         rawId,
-        (sourceHint === 'works' || sourceHint === 'films') ? sourceHint : 'auto',
+        (sourceHint === 'works' || sourceHint === 'works') ? sourceHint : 'auto',
       );
       if (!data) throw new Error('not found');
       setWork(data);
@@ -564,7 +556,7 @@ export default function FilmDetailScreen() {
     );
   }
 
-  const heroUri = work.image ?? `https://picsum.photos/seed/${work.id}/800/600`;
+  const heroUri = work.image ?? `https://picsum.photos/seed/${works.id}/800/600`;
   const categoryColor = work.is_original ? C.blue : C.textSec;
 
   // ─────────────────────────────────────────────────────────────────────────
