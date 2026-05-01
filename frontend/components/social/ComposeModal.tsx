@@ -1,4 +1,3 @@
-// components/social/ComposeModal.tsx
 import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
 import {
   View, Text, StyleSheet, Modal, Animated, Pressable,
@@ -194,7 +193,10 @@ export default function ComposeModal({
                           : <Ionicons name={STEP_ICON[st] as any} size={11} color={curr ? C.white : C.textSec} />
                         }
                       </View>
-                   
+                      <Text style={[s.stepLbl, curr && { color: C.text }, done && { color: C.textSec }]}>
+                        {STEP_LBL[st]}
+                      </Text>
+                      {i < STEPS.length - 1 && <View style={[s.stepLine, done && { backgroundColor: C.navyBright }]} />}
                     </View>
                   );
                 })}
@@ -446,9 +448,9 @@ const s = StyleSheet.create({
   title:        { color: C.text, fontSize: 19, fontWeight: '800', letterSpacing: -0.4 },
   sub:          { color: C.textTert, fontSize: 11, marginTop: 3 },
   closeBtn:     { width: 30, height: 30, borderRadius: 15, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center' },
-  stepRow:      { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 36,marginTop:16, alignItems: 'flex-start' },
+  stepRow:      { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 16, alignItems: 'flex-start' },
   stepItem:     { flex: 1, alignItems: 'center', position: 'relative' },
-  stepCircle:   { width: 38, height: 38, borderRadius: 24, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  stepCircle:   { width: 28, height: 28, borderRadius: 14, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
   stepDone:     { backgroundColor: C.navyBright, borderColor: C.navyBright },
   stepCurr:     { backgroundColor: C.navyLight, borderColor: C.borderHi },
   stepLbl:      { color: C.textTert, fontSize: 9, fontWeight: '700', letterSpacing: 0.2, textAlign: 'center' },

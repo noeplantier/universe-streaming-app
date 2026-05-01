@@ -1,19 +1,3 @@
-// app/(tabs)/social.tsx
-// ─────────────────────────────────────────────────────────────────────────────
-//  Réseau social · Cinéma Indépendant
-//  Tabs : Pour vous · Tendances · Pros
-//
-//  ⚠️  TOUS les tokens sont définis localement — aucun import externe
-//      de SocialTokens / SocialTypes pour éviter les erreurs de résolution
-//      sur Netlify / Expo Web.
-//
-//  Fetching :
-//   • Posts   → table community_posts_enriched (vue Supabase)
-//   • Pros    → table professionals
-//   • Likes   → table post_likes + RPC increment/decrement_likes
-//   • Shares  → table post_shares
-//   • Contact → table pro_contact_requests
-// ─────────────────────────────────────────────────────────────────────────────
 import React, {
   useState, useCallback, useRef, useMemo, useEffect,
   useContext, createContext, memo,
