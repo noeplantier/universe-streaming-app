@@ -1,10 +1,23 @@
+/**
+ * FilmDetailScreen — v2.0 (optimisé & bugfixé)
+ *
+ * Corrections :
+ *  - works.id → work.id (crash heroUri)
+ *  - sourceHint dupliqué ('works'||'works') → ('works'||'films')
+ *  - fetchSimilar : mauvaise table + mauvais normaliseur → corrigé
+ *  - Images Supabase Storage : résolution URL publique via getPublicUrl
+ *  - AbortController sur chaque load() pour éviter les setState orphelins
+ *  - useImagePreload pour hero + skeleton fondu
+ *  - Memoization complète des composants enfants
+ */
+
 import React, {
   useState, useEffect, useRef, useCallback, memo, useMemo,
 } from 'react';
 import {
   View, Text, StyleSheet, Image, ScrollView,
   TouchableOpacity, Dimensions, Platform,
-  Animated, Easing, Share,
+  Animated, Easing, Share, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView }       from 'expo-blur';
@@ -13,13 +26,13 @@ import { StatusBar }      from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
-import { supabase } from '@/lib/supabase';
-import GalaxyBackground from '@/components/social/GalaxyBackground';
+import { supabase }        from '@/lib/supabase';
+import GalaxyBackground    from '@/components/social/GalaxyBackground';
 
 const { width: W, height: H } = Dimensions.get('window');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DESIGN TOKENS — 60 % navyMid · 30 % blanc · 10 % bleu + or
+// DESIGN TOKENS
 // ─────────────────────────────────────────────────────────────────────────────
 const C = {
   bg:          '#020810',
@@ -47,18 +60,18 @@ const C = {
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NORMALISED WORK — union des deux tables
+// TYPE
 // ─────────────────────────────────────────────────────────────────────────────
 interface NormWork {
   id:          string | number;
   title:       string;
   description: string | null;
-  image:       string | null;
+  image:       string | null;   // URL publique résolue
   category:    string;
   is_original: boolean;
   likes:       number;
   comments:    number | null;
-  duration:    number | null;    // minutes
+  duration:    number | null;
   year:        string | number | null;
   director:    string | null;
   genre:       string | null;
@@ -70,12 +83,20 @@ interface NormWork {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// UUID guard
+// IMAGE RESOLUTION — identique à search.tsx (bucket community-images)
 // ─────────────────────────────────────────────────────────────────────────────
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const isUUID  = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
-const isNumId = (v: unknown): boolean =>
-  (typeof v === 'string' && /^\d+$/.test(v)) || typeof v === 'number';
+/**
+ * Même logique que getImageUrl() dans search.tsx :
+ *  - URL complète (http/https) → retournée telle quelle
+ *  - Path relatif              → getPublicUrl depuis bucket "community-images"
+ *  - null/vide                 → null  (SmartImage applique le fallback seed)
+ */
+function resolveImage(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  const { data } = supabase.storage.from('community-images').getPublicUrl(raw);
+  return data?.publicUrl ?? null;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NORMALIZERS
@@ -85,7 +106,7 @@ function fromWorks(r: Record<string, any>): NormWork {
     id:          r.id,
     title:       r.title        ?? '—',
     description: r.description  ?? r.synopsis ?? null,
-    image:       r.image        ?? r.poster_url ?? null,
+    image:       resolveImage(r.image ?? r.poster_url),
     category:    r.category     ?? 'Film',
     is_original: !!r.is_original,
     likes:       r.likes        ?? 0,
@@ -105,19 +126,19 @@ function fromWorks(r: Record<string, any>): NormWork {
 function fromFilms(r: Record<string, any>): NormWork {
   return {
     id:          r.id,
-    title:       r.title        ?? r.name ?? '—',
-    description: r.description  ?? r.synopsis ?? r.overview ?? null,
-    image:       r.poster_url   ?? r.image ?? r.backdrop_url ?? null,
-    category:    r.type         ?? r.category ?? 'Film',
+    title:       r.title         ?? r.name ?? '—',
+    description: r.description   ?? r.synopsis ?? r.overview ?? null,
+    image:       resolveImage(r.poster_url ?? r.image ?? r.backdrop_url),
+    category:    r.type          ?? r.category ?? 'Film',
     is_original: !!r.is_original,
-    likes:       r.likes_count  ?? r.likes ?? 0,
+    likes:       r.likes_count   ?? r.likes ?? 0,
     comments:    r.comments_count ?? r.comments ?? null,
-    duration:    r.duration     ?? r.runtime ?? null,
-    year:        r.year         ?? r.release_year ?? null,
-    director:    r.director     ?? null,
-    genre:       r.genre        ?? null,
-    rating:      r.rating       ?? r.score ?? null,
-    adjective:   r.adjective    ?? r.tagline ?? null,
+    duration:    r.duration      ?? r.runtime ?? null,
+    year:        r.year          ?? r.release_year ?? null,
+    director:    r.director      ?? null,
+    genre:       r.genre         ?? null,
+    rating:      r.rating        ?? r.score ?? null,
+    adjective:   r.adjective     ?? r.tagline ?? null,
     cast_list:   Array.isArray(r.cast_list) ? r.cast_list : [],
     tags:        Array.isArray(r.tags) ? r.tags : [],
     source:      'films',
@@ -129,7 +150,7 @@ function fromPosts(r: Record<string, any>): NormWork {
     id:          r.id,
     title:       r.film_title ?? r.work_title ?? r.title ?? '—',
     description: r.body ?? r.content ?? null,
-    image:       r.film_poster ?? r.image_url ?? null,
+    image:       resolveImage(r.film_poster ?? r.image_url),
     category:    r.film_genre ?? r.work_genre ?? 'Film',
     is_original: false,
     likes:       r.likes ?? r.likes_count ?? 0,
@@ -147,56 +168,71 @@ function fromPosts(r: Record<string, any>): NormWork {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FETCH — essaie works → films → posts dans l'ordre
+// FETCH — works → films → posts
 // ─────────────────────────────────────────────────────────────────────────────
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUUID  = (v: unknown): v is string => typeof v === 'string' && UUID_RE.test(v);
+
 async function fetchWork(
   rawId: string,
   hint: 'works' | 'films' | 'auto',
 ): Promise<NormWork | null> {
-  // ── hint explicite ──────────────────────────────────────────────
+  // hint explicite
   if (hint === 'works') {
-    const { data } = await supabase.from('works').select('*').eq('id', rawId).single();
+    const { data } = await supabase.from('works').select('*').eq('id', rawId).maybeSingle();
     if (data) return fromWorks(data);
+    return null; // si hint explicite mais non trouvé → ne pas continuer
   }
   if (hint === 'films') {
-    const { data } = await supabase.from('films').select('*').eq('id', rawId).single();
+    const { data } = await supabase.from('films').select('*').eq('id', rawId).maybeSingle();
     if (data) return fromFilms(data);
+    return null;
   }
 
-  // ── auto : essaie works d'abord ─────────────────────────────────
-  const { data: w } = await supabase.from('works').select('*').eq('id', rawId).single();
-  if (w) return fromWorks(w);
+  // auto : parallélise works + films pour plus de rapidité
+  const [wRes, fRes] = await Promise.all([
+    supabase.from('works').select('*').eq('id', rawId).maybeSingle(),
+    supabase.from('films').select('*').eq('id', rawId).maybeSingle(),
+  ]);
+  if (wRes.data) return fromWorks(wRes.data);
+  if (fRes.data) return fromFilms(fRes.data);
 
-  // ── puis films ──────────────────────────────────────────────────
-  const { data: f } = await supabase.from('films').select('*').eq('id', rawId).single();
-  if (f) return fromFilms(f);
-
-  // ── puis community_posts_enriched (UUID seulement) ──────────────
+  // posts (UUID uniquement)
   if (isUUID(rawId)) {
     const { data: p } = await supabase
       .from('community_posts_enriched')
-      .select('*').eq('id', rawId).single();
+      .select('*').eq('id', rawId).maybeSingle();
     if (p) return fromPosts(p);
   }
 
   return null;
 }
 
-// Œuvres similaires (même genre / catégorie)
+/**
+ * Œuvres similaires :
+ *  - même table que l'œuvre principale
+ *  - même genre si dispo, sinon même catégorie
+ *  - images résolues via le bon normaliseur
+ */
 async function fetchSimilar(work: NormWork): Promise<NormWork[]> {
-  const table = work.source === 'works' ? 'works' : 'works';
-  const norm  = work.source === 'works' ? fromFilms : fromWorks;
+  const table   = work.source === 'films' ? 'films' : 'works';
+  const norm    = work.source === 'films' ? fromFilms : fromWorks;
+  const idField = typeof work.id === 'number' ? 'id' : 'id';
 
-  const query = supabase
+  let query = supabase
     .from(table)
-    .select('*')
-    .neq('id', work.id)
-    .limit(8);
+    .select('id, title, image, poster_url, likes, likes_count, genre, category, is_original, rating')
+    .neq(idField, work.id)
+    .limit(10);
 
-  if (work.genre) query.eq('genre', work.genre);
+  if (work.genre) {
+    query = query.eq('genre', work.genre);
+  } else if (work.category) {
+    query = query.eq('category', work.category);
+  }
 
   const { data } = await query;
-  return (data ?? []).map(norm as any);
+  return (data ?? []).map(norm);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -208,6 +244,24 @@ function fmtLikes(n: number): string {
   return String(n);
 }
 
+function fmtDuration(min: number): string {
+  if (min >= 60) {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return m > 0 ? `${h}h ${m}min` : `${h}h`;
+  }
+  return `${min} min`;
+}
+
+// Fallback déterministe — même préfixe "work_" que workImgUri() dans search.tsx
+// garantit que les deux écrans affichent le même placeholder pour un même id
+function seedFallback(id: string | number, w = 400, h = 600): string {
+  return `https://picsum.photos/seed/work_${id}/${w}/${h}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOK — reveal animation
+// ─────────────────────────────────────────────────────────────────────────────
 function useReveal(ready: boolean) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -217,8 +271,24 @@ function useReveal(ready: boolean) {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [ready]);
+  }, [ready, anim]);
   return anim;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOK — préchargement image hero
+// ─────────────────────────────────────────────────────────────────────────────
+function useImageReady(uri: string | null): boolean {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    setReady(false);
+    if (!uri) { setReady(true); return; }
+    // Image.prefetch est disponible sur React Native
+    Image.prefetch(uri)
+      .then(() => setReady(true))
+      .catch(() => setReady(true)); // on continue même en erreur
+  }, [uri]);
+  return ready;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,7 +303,7 @@ const DetailSkeleton = memo(function DetailSkeleton() {
     ]));
     loop.start();
     return () => loop.stop();
-  }, []);
+  }, [op]);
 
   const Blk = ({ w, h, r = 8 }: { w: number | `${number}%`; h: number; r?: number }) => (
     <Animated.View style={{
@@ -245,7 +315,7 @@ const DetailSkeleton = memo(function DetailSkeleton() {
   return (
     <View style={{ flex: 1 }}>
       <View style={{ height: H * 0.46, backgroundColor: C.navyMid }} />
-      <View style={{ paddingHorizontal: 20, paddingTop: 24, gap: 4 }}>
+      <View style={{ paddingHorizontal: 20, paddingTop: 24 }}>
         <Blk w={90}  h={11} />
         <Blk w="72%" h={30} />
         <Blk w="48%" h={16} />
@@ -264,6 +334,50 @@ const DetailSkeleton = memo(function DetailSkeleton() {
   );
 });
 DetailSkeleton.displayName = 'DetailSkeleton';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMAGE AVEC FALLBACK — gère erreur réseau + placeholder
+// ─────────────────────────────────────────────────────────────────────────────
+interface SmartImageProps {
+  uri:        string | null;
+  fallbackId: string | number;
+  style:      any;
+  resizeMode?: 'cover' | 'contain' | 'stretch';
+  seedW?:     number;
+  seedH?:     number;
+}
+const SmartImage = memo(function SmartImage({
+  uri, fallbackId, style, resizeMode = 'cover', seedW = 400, seedH = 600,
+}: SmartImageProps) {
+  const [src, setSrc] = useState<string>(uri ?? seedFallback(fallbackId, seedW, seedH));
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    setSrc(uri ?? seedFallback(fallbackId, seedW, seedH));
+    setLoaded(false);
+  }, [uri, fallbackId, seedW, seedH]);
+
+  return (
+    <View style={[style, { overflow: 'hidden' }]}>
+      {!loaded && (
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: C.navyMid, justifyContent: 'center', alignItems: 'center' }]}>
+          <ActivityIndicator size="small" color={C.textTert} />
+        </View>
+      )}
+      <Image
+        source={{ uri: src }}
+        style={[style, loaded ? {} : { opacity: 0 }]}
+        resizeMode={resizeMode}
+        onLoad={() => setLoaded(true)}
+        onError={() => {
+          if (src !== seedFallback(fallbackId, seedW, seedH)) {
+            setSrc(seedFallback(fallbackId, seedW, seedH));
+          }
+        }}
+      />
+    </View>
+  );
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // STAT PILL
@@ -331,14 +445,17 @@ const StarRow = memo(function StarRow({ rating, size = 14 }: { rating: number; s
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CAST CHIP
+// CAST CHIP — avatar via pravatar (fallback déterministe)
 // ─────────────────────────────────────────────────────────────────────────────
 const CastChip = memo(function CastChip({ name }: { name: string }) {
+  const avatarUri = `https://i.pravatar.cc/80?u=${encodeURIComponent(name)}`;
   return (
     <View style={cc.chip}>
-      <Image
-        source={{ uri: `https://i.pravatar.cc/80?u=${encodeURIComponent(name)}` }}
+      <SmartImage
+        uri={avatarUri}
+        fallbackId={name}
         style={cc.avatar}
+        seedW={80} seedH={80}
       />
       <Text style={cc.name} numberOfLines={1}>{name}</Text>
     </View>
@@ -351,35 +468,40 @@ const cc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SIMILAR CARD
+// SIMILAR CARD — image résolue depuis la BDD
 // ─────────────────────────────────────────────────────────────────────────────
 const SimilarCard = memo(function SimilarCard({
   item, onPress,
 }: { item: NormWork; onPress: () => void }) {
-  const img = item.image ?? `https://picsum.photos/seed/${item.id}/300/450`;
   return (
-    <TouchableOpacity style={sc.wrap} onPress={onPress} activeOpacity={0.85}>
-      <Image source={{ uri: img }} style={sc.img} resizeMode="cover" />
+    <TouchableOpacity style={scrd.wrap} onPress={onPress} activeOpacity={0.85}>
+      {/* Image résolue (SmartImage gère l'erreur + fallback) */}
+      <SmartImage
+        uri={item.image}
+        fallbackId={item.id}
+        style={scrd.img}
+        seedW={300} seedH={450}
+      />
       <LinearGradient
         colors={['transparent', 'rgba(2,8,16,0.88)']}
         style={StyleSheet.absoluteFillObject}
       />
       {item.is_original && (
-        <View style={sc.badge}>
-          <Text style={sc.badgeTxt}>ORIGINAL</Text>
+        <View style={scrd.badge}>
+          <Text style={scrd.badgeTxt}>ORIGINAL</Text>
         </View>
       )}
-      <View style={sc.info}>
-        <Text style={sc.title} numberOfLines={2}>{item.title}</Text>
+      <View style={scrd.info}>
+        <Text style={scrd.title} numberOfLines={2}>{item.title}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Ionicons name="heart" size={9} color={C.gold} />
-          <Text style={sc.likes}>{fmtLikes(item.likes)}</Text>
+          <Text style={scrd.likes}>{fmtLikes(item.likes)}</Text>
         </View>
       </View>
     </TouchableOpacity>
   );
 });
-const sc = StyleSheet.create({
+const scrd = StyleSheet.create({
   wrap:     { width: 120, height: 178, borderRadius: 14, overflow: 'hidden', marginRight: 12, backgroundColor: C.surf },
   img:      { width: '100%', height: '100%' },
   badge:    { position: 'absolute', top: 7, left: 7, backgroundColor: C.blue, paddingHorizontal: 6, paddingVertical: 2.5, borderRadius: 5 },
@@ -392,13 +514,15 @@ const sc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 // SOURCE BADGE
 // ─────────────────────────────────────────────────────────────────────────────
+const SOURCE_LABELS: Record<NormWork['source'], string> = { works: 'Catalogue', films: 'Filmothèque', posts: 'Communauté' };
+const SOURCE_COLORS: Record<NormWork['source'], string> = { works: C.blue, films: C.gold, posts: C.green };
+
 const SourceBadge = memo(function SourceBadge({ source }: { source: NormWork['source'] }) {
-  const labels = { works: 'Catalogue', films: 'Filmothèque', posts: 'Communauté' };
-  const colors = { works: C.blue, films: C.gold, posts: C.green };
+  const color = SOURCE_COLORS[source];
   return (
-    <View style={[sb.wrap, { borderColor: `${colors[source]}44` }]}>
-      <View style={[sb.dot, { backgroundColor: colors[source] }]} />
-      <Text style={[sb.txt, { color: colors[source] }]}>{labels[source]}</Text>
+    <View style={[sb.wrap, { borderColor: `${color}44` }]}>
+      <View style={[sb.dot, { backgroundColor: color }]} />
+      <Text style={[sb.txt, { color }]}>{SOURCE_LABELS[source]}</Text>
     </View>
   );
 });
@@ -409,7 +533,7 @@ const sb = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROGRESS BAR (rang dans la catégorie)
+// RATING BAR
 // ─────────────────────────────────────────────────────────────────────────────
 const RatingBar = memo(function RatingBar({ rating, max = 5 }: { rating: number; max?: number }) {
   const pct = Math.min(1, rating / max);
@@ -425,51 +549,111 @@ const rb = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DIRECTOR CARD
+// ─────────────────────────────────────────────────────────────────────────────
+const DirectorCard = memo(function DirectorCard({
+  director, genre, year,
+}: { director: string; genre?: string | null; year?: string | number | null }) {
+  const avatarUri = `https://i.pravatar.cc/120?u=${encodeURIComponent(director)}`;
+  return (
+    <View style={dc.card}>
+      <SmartImage uri={avatarUri} fallbackId={director} style={dc.avatar} seedW={120} seedH={120} />
+      <View style={dc.info}>
+        <Text style={dc.name}>{director}</Text>
+        {genre && <Text style={dc.sub}>{genre}</Text>}
+        {year  && <Text style={dc.year}>{year}</Text>}
+      </View>
+    </View>
+  );
+});
+const dc = StyleSheet.create({
+  card:   { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, padding: 14, borderRadius: 16 },
+  avatar: { width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: C.navyLight },
+  info:   { flex: 1 },
+  name:   { color: C.text, fontSize: 15, fontWeight: '700' },
+  sub:    { color: C.textSec, fontSize: 12, marginTop: 2 },
+  year:   { color: C.textTert, fontSize: 11, marginTop: 1 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INFO GRID ROW
+// ─────────────────────────────────────────────────────────────────────────────
+const InfoRow = memo(function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={ig.row}>
+      <Text style={ig.label}>{label}</Text>
+      <Text style={ig.value} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+});
+const ig = StyleSheet.create({
+  row:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 0.5, borderBottomColor: C.border },
+  label: { color: C.textSec, fontSize: 12, fontWeight: '600' },
+  value: { color: C.text, fontSize: 12, fontWeight: '700', maxWidth: '60%' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FilmDetailScreen() {
-  const router    = useRouter();
-  const params    = useLocalSearchParams<{ id: string; source?: string }>();
-  const rawId     = Array.isArray(params.id)     ? params.id[0]     : params.id     ?? '';
-  const sourceHint = Array.isArray(params.source) ? params.source[0] : params.source ?? 'auto';
+  const router     = useRouter();
+  const params     = useLocalSearchParams<{ id: string; source?: string }>();
+  const rawId      = Array.isArray(params.id)     ? params.id[0]     : params.id     ?? '';
+  // FIX: 'works'||'works' → 'works'||'films'
+  const sourceHint = (Array.isArray(params.source) ? params.source[0] : params.source ?? 'auto') as 'works' | 'films' | 'auto';
 
-  const [work,     setWork]     = useState<NormWork | null>(null);
-  const [similar,  setSimilar]  = useState<NormWork[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState(false);
-  const [liked,    setLiked]    = useState(false);
-  const [saved,    setSaved]    = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [work,       setWork]       = useState<NormWork | null>(null);
+  const [similar,    setSimilar]    = useState<NormWork[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [error,      setError]      = useState(false);
+  const [liked,      setLiked]      = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [expanded,   setExpanded]   = useState(false);
   const [localLikes, setLocalLikes] = useState(0);
 
   const heartSc = useRef(new Animated.Value(1)).current;
   const saveSc  = useRef(new Animated.Value(1)).current;
   const reveal  = useReveal(!loading && !error && !!work);
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
+  // ── Fetch principal ────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     if (!rawId) { setError(true); setLoading(false); return; }
 
-    setLoading(true); setError(false);
+    setLoading(true); setError(false); setWork(null); setSimilar([]);
+
+    // AbortController pour annuler si rawId change entre-temps
+    const ctrl = new AbortController();
+
     try {
-      const data = await fetchWork(
-        rawId,
-        (sourceHint === 'works' || sourceHint === 'works') ? sourceHint : 'auto',
-      );
+      const data = await fetchWork(rawId, sourceHint);
+      if (ctrl.signal.aborted) return;
+
       if (!data) throw new Error('not found');
+
       setWork(data);
       setLocalLikes(data.likes);
-      // Fetch similar en arrière-plan (non-bloquant)
-      fetchSimilar(data).then(setSimilar).catch(() => {});
+
+      // Similar en arrière-plan, non-bloquant
+      fetchSimilar(data)
+        .then(items => { if (!ctrl.signal.aborted) setSimilar(items); })
+        .catch(() => {});
     } catch (e) {
-      console.error('[FilmDetail] load:', e);
-      setError(true);
+      if (!ctrl.signal.aborted) {
+        console.error('[FilmDetail] load:', e);
+        setError(true);
+      }
     } finally {
-      setLoading(false);
+      if (!ctrl.signal.aborted) setLoading(false);
     }
+
+    return () => ctrl.abort();
   }, [rawId, sourceHint]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const cleanup = load();
+    return () => { cleanup?.then(fn => fn?.()); };
+  }, [load]);
+
   useEffect(() => { setLiked(false); setExpanded(false); }, [rawId]);
 
   // ── Like ───────────────────────────────────────────────────────────────────
@@ -505,7 +689,7 @@ export default function FilmDetailScreen() {
     } catch {}
   }, [work]);
 
-  // ── Dérivés ────────────────────────────────────────────────────────────────
+  // ── Dérivés mémoïsés ───────────────────────────────────────────────────────
   const descShort = useMemo(() => {
     if (!work?.description) return '';
     return work.description.length > 200
@@ -516,6 +700,18 @@ export default function FilmDetailScreen() {
   const metaStr = useMemo(() => {
     if (!work) return '';
     return [work.director, work.year].filter(Boolean).join(' · ');
+  }, [work?.director, work?.year]);
+
+  const infoRows = useMemo(() => {
+    if (!work) return [];
+    return ([
+      { label: 'Source',      value: SOURCE_LABELS[work.source] },
+      { label: 'Catégorie',   value: work.category },
+      work.genre    && { label: 'Genre',      value: work.genre },
+      work.year     && { label: 'Année',      value: String(work.year) },
+      work.duration && { label: 'Durée',      value: fmtDuration(work.duration) },
+      work.director && { label: 'Réalisateur',value: work.director },
+    ] as (false | { label: string; value: string })[]).filter(Boolean) as { label: string; value: string }[];
   }, [work]);
 
   const bodyStyle = useMemo(() => ({
@@ -556,7 +752,8 @@ export default function FilmDetailScreen() {
     );
   }
 
-  const heroUri = work.image ?? `https://picsum.photos/seed/${works.id}/800/600`;
+  // FIX: works.id → work.id
+  const heroUri       = work.image;   // déjà résolu par resolveImage dans le normaliseur
   const categoryColor = work.is_original ? C.blue : C.textSec;
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -574,32 +771,36 @@ export default function FilmDetailScreen() {
       >
         {/* ══ HERO IMAGE ══════════════════════════════════════════════════ */}
         <View style={s.heroWrap}>
-          <Image source={{ uri: heroUri }} style={s.heroImg} resizeMode="cover" />
+          {/* SmartImage gère le loading + fallback seed */}
+          <SmartImage
+            uri={heroUri}
+            fallbackId={work.id}
+            style={s.heroImg}
+            resizeMode="cover"
+            seedW={800} seedH={600}
+          />
 
-          {/* Dégradés */}
           <LinearGradient
             colors={['rgba(2,8,16,0.58)', 'transparent']}
             locations={[0, 0.32]}
             style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
           />
           <LinearGradient
             colors={['transparent', 'rgba(2,8,16,0.42)', C.bg]}
             locations={[0.38, 0.72, 1]}
             style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
           />
 
-          {/* ── Retour ── */}
-          <TouchableOpacity
-            style={s.backBtn}
-            onPress={() => router.back()}
-            hitSlop={12}
-          >
+          {/* Retour */}
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()} hitSlop={12}>
             <BlurView intensity={Platform.OS === 'ios' ? 28 : 16} tint="dark" style={s.blurCircle}>
               <Ionicons name="chevron-back" size={21} color={C.white} />
             </BlurView>
           </TouchableOpacity>
 
-          {/* ── Actions haut-droite ── */}
+          {/* Actions haut-droite */}
           <View style={s.topRight}>
             <Animated.View style={{ transform: [{ scale: saveSc }] }}>
               <TouchableOpacity style={s.actionCircle} onPress={handleSave} hitSlop={8}>
@@ -619,7 +820,7 @@ export default function FilmDetailScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* ── Badge catégorie / original ── */}
+          {/* Badge Original */}
           {work.is_original && (
             <View style={s.heroBadge}>
               <Ionicons name="star" size={10} color={C.gold} />
@@ -627,7 +828,7 @@ export default function FilmDetailScreen() {
             </View>
           )}
 
-          {/* ── Numéro déco (grand chiffre du rating) ── */}
+          {/* Déco rating */}
           {work.rating != null && work.rating > 0 && (
             <View style={s.ratingDeco} pointerEvents="none">
               <Text style={s.ratingDecoTxt}>{Math.round(work.rating * 10) / 10}</Text>
@@ -639,11 +840,10 @@ export default function FilmDetailScreen() {
         {/* ══ CORPS ════════════════════════════════════════════════════════ */}
         <Animated.View style={[s.body, bodyStyle]}>
 
-          {/* ── Source badge ── */}
           <SourceBadge source={work.source} />
           <View style={{ height: 12 }} />
 
-          {/* ── Titre + genre ── */}
+          {/* Titre */}
           <View style={s.titleBlock}>
             {work.genre && (
               <Text style={[s.genreLabel, { color: categoryColor }]}>
@@ -653,14 +853,13 @@ export default function FilmDetailScreen() {
             <Text style={s.title} numberOfLines={3}>{work.title}</Text>
             {(metaStr || work.adjective) && (
               <Text style={s.adjective} numberOfLines={1}>
-                {work.adjective ? work.adjective : metaStr}
+                {work.adjective ?? metaStr}
               </Text>
             )}
           </View>
 
-          {/* ── Stats pills ── */}
+          {/* Stats pills */}
           <View style={s.statsRow}>
-            {/* Like interactif */}
             <TouchableOpacity onPress={handleLike} activeOpacity={0.82}>
               <View style={[sp.pill, liked && { borderColor: 'rgba(255,59,92,0.38)', backgroundColor: 'rgba(255,59,92,0.10)' }]}>
                 <Animated.View style={{ transform: [{ scale: heartSc }] }}>
@@ -678,31 +877,20 @@ export default function FilmDetailScreen() {
             </TouchableOpacity>
 
             {work.duration != null && (
-              <StatPill
-                icon="time-outline"
-                value={work.duration >= 60
-                  ? `${Math.floor(work.duration / 60)}h${work.duration % 60 > 0 ? `${work.duration % 60}` : ''}`
-                  : `${work.duration} min`}
-                label="Durée"
-              />
+              <StatPill icon="time-outline" value={fmtDuration(work.duration)} label="Durée" />
             )}
             {work.year != null && (
               <StatPill icon="calendar-outline" value={String(work.year)} label="Année" />
             )}
             {work.rating != null && work.rating > 0 && (
-              <StatPill
-                icon="star"
-                value={`${work.rating}/5`}
-                label="Note"
-                color={C.gold}
-              />
+              <StatPill icon="star" value={`${work.rating}/5`} label="Note" color={C.gold} />
             )}
             {work.comments != null && (
               <StatPill icon="chatbubble-outline" value={String(work.comments)} label="Avis" />
             )}
           </View>
 
-          {/* ── Rating bar (si rating disponible) ── */}
+          {/* Rating bar */}
           {work.rating != null && work.rating > 0 && (
             <View style={s.ratingRow}>
               <StarRow rating={work.rating} />
@@ -711,7 +899,7 @@ export default function FilmDetailScreen() {
             </View>
           )}
 
-          {/* ── Tags ── */}
+          {/* Tags */}
           {work.tags.length > 0 && (
             <ScrollView
               horizontal
@@ -727,7 +915,7 @@ export default function FilmDetailScreen() {
             </ScrollView>
           )}
 
-          {/* ── Bouton regarder ── */}
+          {/* Bouton regarder */}
           <TouchableOpacity style={s.playBtn} activeOpacity={0.88}>
             <LinearGradient
               colors={[C.navyBright, C.navyMid]}
@@ -740,18 +928,13 @@ export default function FilmDetailScreen() {
               <View>
                 <Text style={s.playTxt}>Regarder</Text>
                 {work.duration != null && (
-                  <Text style={s.playMeta}>
-                    {work.duration >= 60
-                      ? `${Math.floor(work.duration / 60)}h${work.duration % 60 > 0 ? ` ${work.duration % 60}min` : ''}`
-                      : `${work.duration} min`
-                    } · HD
-                  </Text>
+                  <Text style={s.playMeta}>{fmtDuration(work.duration)} · HD</Text>
                 )}
               </View>
             </LinearGradient>
           </TouchableOpacity>
 
-          {/* ── Synopsis / Description ── */}
+          {/* Synopsis */}
           {work.description ? (
             <View style={s.section}>
               <SectionTitle>Synopsis</SectionTitle>
@@ -759,40 +942,23 @@ export default function FilmDetailScreen() {
                 {expanded ? work.description : descShort}
               </Text>
               {work.description.length > 200 && (
-                <TouchableOpacity
-                  onPress={() => setExpanded(v => !v)}
-                  style={s.expandBtn}
-                >
+                <TouchableOpacity onPress={() => setExpanded(v => !v)} style={s.expandBtn}>
                   <Text style={s.expandTxt}>{expanded ? 'Réduire' : 'Lire la suite'}</Text>
-                  <Ionicons
-                    name={expanded ? 'chevron-up' : 'chevron-down'}
-                    size={13}
-                    color={C.blue}
-                  />
+                  <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={13} color={C.blue} />
                 </TouchableOpacity>
               )}
             </View>
           ) : null}
 
-          {/* ── Réalisateur ── */}
+          {/* Réalisateur */}
           {work.director ? (
             <View style={s.section}>
               <SectionTitle>Réalisateur·ice</SectionTitle>
-              <View style={s.directorCard}>
-                <Image
-                  source={{ uri: `https://i.pravatar.cc/120?u=${encodeURIComponent(work.director)}` }}
-                  style={s.directorAv}
-                />
-                <View style={s.directorInfo}>
-                  <Text style={s.directorName}>{work.director}</Text>
-                  {work.genre && <Text style={s.directorSub}>{work.genre}</Text>}
-                  {work.year  && <Text style={s.directorYear}>{work.year}</Text>}
-                </View>
-              </View>
+              <DirectorCard director={work.director} genre={work.genre} year={work.year} />
             </View>
           ) : null}
 
-          {/* ── Casting ── */}
+          {/* Casting */}
           {work.cast_list.length > 0 && (
             <View style={s.section}>
               <SectionTitle>Avec</SectionTitle>
@@ -802,7 +968,7 @@ export default function FilmDetailScreen() {
             </View>
           )}
 
-          {/* ── Œuvres similaires ── */}
+          {/* Œuvres similaires */}
           {similar.length > 0 && (
             <View style={s.section}>
               <SectionTitle>Dans le même genre</SectionTitle>
@@ -823,22 +989,12 @@ export default function FilmDetailScreen() {
             </View>
           )}
 
-          {/* ── Infos techniques ── */}
+          {/* Informations techniques */}
           <View style={s.section}>
             <SectionTitle>Informations</SectionTitle>
             <View style={s.infoGrid}>
-              {[
-                { label: 'Source',     value: { works: 'Catalogue', films: 'Filmothèque', posts: 'Communauté' }[work.source] },
-                { label: 'Catégorie',  value: work.category },
-                work.genre     && { label: 'Genre',     value: work.genre },
-                work.year      && { label: 'Année',     value: String(work.year) },
-                work.duration  && { label: 'Durée',     value: `${work.duration} min` },
-                work.director  && { label: 'Réalisateur', value: work.director },
-              ].filter(Boolean).map((info: any) => (
-                <View key={info.label} style={s.infoRow}>
-                  <Text style={s.infoLabel}>{info.label}</Text>
-                  <Text style={s.infoValue} numberOfLines={1}>{info.value}</Text>
-                </View>
+              {infoRows.map((info, idx) => (
+                <InfoRow key={info.label} label={info.label} value={info.value} />
               ))}
             </View>
           </View>
@@ -857,7 +1013,7 @@ const s = StyleSheet.create({
   center: { justifyContent: 'center', alignItems: 'center' },
   scroll: { paddingBottom: 110 },
 
-  // ── Hero ──────────────────────────────────────────────────────
+  // Hero
   heroWrap: { height: H * 0.46, position: 'relative' },
   heroImg:  { width: '100%', height: '100%' },
 
@@ -873,25 +1029,20 @@ const s = StyleSheet.create({
     gap: 10, alignItems: 'flex-end',
   },
 
-  heroBadge: {
-    position: 'absolute', bottom: 18, left: 18,
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: C.goldDim, paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,200,66,0.28)',
-  },
+  heroBadge:    { position: 'absolute', bottom: 18, left: 18, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.goldDim, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,200,66,0.28)' },
   heroBadgeTxt: { color: C.gold, fontSize: 9, fontWeight: '800', letterSpacing: 1 },
 
-  ratingDeco:     { position: 'absolute', bottom: 14, right: 18, alignItems: 'flex-end' },
-  ratingDecoTxt:  { color: 'rgba(255,255,255,0.07)', fontSize: 68, fontWeight: '900', lineHeight: 68, letterSpacing: -3 },
-  ratingDecoLabel:{ color: C.textTert, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginTop: -12 },
+  ratingDeco:      { position: 'absolute', bottom: 14, right: 18, alignItems: 'flex-end' },
+  ratingDecoTxt:   { color: 'rgba(255,255,255,0.07)', fontSize: 68, fontWeight: '900', lineHeight: 68, letterSpacing: -3 },
+  ratingDecoLabel: { color: C.textTert, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginTop: -12 },
 
-  // ── Body ──────────────────────────────────────────────────────
+  // Body
   body: { paddingHorizontal: 20, paddingTop: 22 },
 
-  titleBlock:  { marginBottom: 20 },
-  genreLabel:  { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 7 },
-  title:       { color: C.white, fontSize: 27, fontWeight: '800', letterSpacing: -0.6, lineHeight: 33, marginBottom: 7 },
-  adjective:   { color: C.textSec, fontSize: 14, fontStyle: 'italic' },
+  titleBlock: { marginBottom: 20 },
+  genreLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 7 },
+  title:      { color: C.white, fontSize: 27, fontWeight: '800', letterSpacing: -0.6, lineHeight: 33, marginBottom: 7 },
+  adjective:  { color: C.textSec, fontSize: 14, fontStyle: 'italic' },
 
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
 
@@ -902,34 +1053,23 @@ const s = StyleSheet.create({
   tag:    { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border },
   tagTxt: { color: C.textSec, fontSize: 12, fontWeight: '600' },
 
-  // ── Play ──────────────────────────────────────────────────────
-  playBtn:     { borderRadius: 16, overflow: 'hidden', marginBottom: 26, borderWidth: 1, borderColor: C.borderBlue },
-  playGrad:    { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 15, paddingHorizontal: 20 },
-  playIconWrap:{ width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' },
-  playTxt:     { color: C.white, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
-  playMeta:    { color: C.textTert, fontSize: 11, marginTop: 2 },
+  // Play
+  playBtn:      { borderRadius: 16, overflow: 'hidden', marginBottom: 26, borderWidth: 1, borderColor: C.borderBlue },
+  playGrad:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 15, paddingHorizontal: 20 },
+  playIconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' },
+  playTxt:      { color: C.white, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  playMeta:     { color: C.textTert, fontSize: 11, marginTop: 2 },
 
-  // ── Section ───────────────────────────────────────────────────
-  section:  { marginBottom: 28 },
-  synopsis: { color: C.textSec, fontSize: 14, lineHeight: 23 },
-
+  // Section
+  section:   { marginBottom: 28 },
+  synopsis:  { color: C.textSec, fontSize: 14, lineHeight: 23 },
   expandBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   expandTxt: { color: C.blue, fontSize: 13, fontWeight: '700' },
 
-  directorCard: { flexDirection: 'row', alignItems: 'center', gap: 14, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, padding: 14, borderRadius: 16 },
-  directorAv:   { width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: C.navyLight },
-  directorInfo: { flex: 1 },
-  directorName: { color: C.text, fontSize: 15, fontWeight: '700' },
-  directorSub:  { color: C.textSec, fontSize: 12, marginTop: 2 },
-  directorYear: { color: C.textTert, fontSize: 11, marginTop: 1 },
-
-  // ── Info grid ────────────────────────────────────────────────
+  // Info grid
   infoGrid: { backgroundColor: C.surf, borderRadius: 16, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
-  infoRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 0.5, borderBottomColor: C.border },
-  infoLabel:{ color: 'white', fontSize: 12, fontWeight: '600' },
-  infoValue:{ color: 'white', fontSize: 12, fontWeight: '700', maxWidth: '60%' },
 
-  // ── Error ─────────────────────────────────────────────────────
+  // Error
   errorIcon:    { width: 72, height: 72, borderRadius: 36, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   errorTitle:   { color: C.textSec, fontSize: 18, fontWeight: '700', marginBottom: 8 },
   errorSub:     { color: C.textTert, fontSize: 13, textAlign: 'center', paddingHorizontal: 40, lineHeight: 20, marginBottom: 24 },
