@@ -1057,8 +1057,8 @@ const s = StyleSheet.create({
   playBtn:      { borderRadius: 16, overflow: 'hidden', marginBottom: 26, borderWidth: 1, borderColor: C.borderBlue },
   playGrad:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 15, paddingHorizontal: 20 },
   playIconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' },
-  playTxt:      { color: C.white, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
-  playMeta:     { color: C.textTert, fontSize: 11, marginTop: 2 },
+  playTxt:      { color: 'white', fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },
+  playMeta:     { color: 'white', fontSize: 11, marginTop: 2 },
 
   // Section
   section:   { marginBottom: 28 },

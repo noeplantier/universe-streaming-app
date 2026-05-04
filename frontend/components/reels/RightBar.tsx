@@ -121,12 +121,7 @@ const LeftBar = memo(function LeftBar({
   return (
     <View style={s.bar}>
 
-      {/* Mute */}
-      <IconBtn
-        name={muted ? 'volume-mute' : 'volume-high'}
-        active={muted}
-        onPress={pressMute}
-      />
+   
 
       {/* Like */}
       <IconBtn
@@ -137,9 +132,9 @@ const LeftBar = memo(function LeftBar({
       />
 
       {/* Save / Watchlist */}
+      
       <IconBtn
-        name={saved ? 'bookmark' : 'bookmark-outline'}
-        label="Sauver"
+        name={saved ? 'star' : 'star'}
         active={saved}
         scale={saveSc}
         onPress={pressSave}
@@ -147,15 +142,13 @@ const LeftBar = memo(function LeftBar({
 
       {/* Info */}
       <IconBtn
-        name="information-circle-outline"
-        label="Infos"
+        name="list-outline" 
         onPress={pressInfo}
       />
 
       {/* Partager */}
       <IconBtn
-        name="arrow-redo-outline"
-        label="Partager"
+        name='ellipsis-horizontal'
         onPress={pressShare}
       />
 
