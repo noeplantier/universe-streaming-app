@@ -95,18 +95,19 @@ const BottomCard = memo(function BottomCard({
     }
     setMeta(null); setLoading(true);
     const ctrl = new AbortController();
-    supabase
-      .from('reels')
-      .select('title, director, year, genre, duration, views_count, likes_count')
-      .eq('id', reelId)
-      .abortSignal(ctrl.signal)
-      .single()
-      .then(({ data, error }) => {
-        if (ctrl.signal.aborted || error || !data) { setLoading(false); return; }
-        metaCache.set(reelId, data as ReelMeta);
-        setMeta(data as ReelMeta); setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    Promise.resolve(
+      supabase
+        .from('reels')
+        .select('title, director, year, genre, duration, views_count, likes_count')
+        .eq('id', reelId)
+        .abortSignal(ctrl.signal)
+        .single()
+        .then(({ data, error }) => {
+          if (ctrl.signal.aborted || error || !data) { setLoading(false); return; }
+          metaCache.set(reelId, data as ReelMeta);
+          setMeta(data as ReelMeta); setLoading(false);
+        })
+    ).catch(() => setLoading(false));
     return () => ctrl.abort();
   }, [reelId]);
 

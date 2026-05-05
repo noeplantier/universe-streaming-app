@@ -1,8 +1,3 @@
-/**
- * components/search/Cards.tsx
- * PortraitCard, LandscapeCard, skeletons + usePulse hook.
- */
-
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, Animated,

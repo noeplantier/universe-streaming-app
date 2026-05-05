@@ -1,8 +1,3 @@
-/**
- * components/search/shared.ts
- * Types + design tokens + helpers partagés par tous les composants search.
- */
-
 import { supabase } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────

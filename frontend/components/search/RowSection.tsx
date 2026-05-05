@@ -1,8 +1,3 @@
-/**
- * components/search/RowSection.tsx
- * Section horizontale générique + overlay de recherche.
- */
-
 import React, {
     memo, useCallback, useEffect, useRef, useState,
   } from 'react';

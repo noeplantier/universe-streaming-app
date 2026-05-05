@@ -186,7 +186,7 @@ export interface FilmItem {
   ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-  // 🎞️ MOYENS ET LONGS MÉTRAGES
+  // 🎞️ MOYENS MÉTRAGES x MINI SÉRIES
   // ─────────────────────────────────────────────────────────────────────────────
   export const OWN_EPISODES_MID: ReelItem[] = [
     {

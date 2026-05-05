@@ -87,6 +87,14 @@ export const watchlistAPI = {
   remove: (filmId: string) => request(`/watchlist/${filmId}`, { method: 'DELETE' }),
 };
 
+// Films vus
+export const seenApi = {
+
+  get: (userId: string) => request(`/seen?user_id=${userId}`),
+  add: (filmId: string) => request('/seen', { method: 'POST', body: JSON.stringify({ film_id: filmId }) }),
+
+}
+
 // Comments
 export const commentsAPI = {
   getByPost: (postId: string) => request(`/comments?post_id=${postId}`),

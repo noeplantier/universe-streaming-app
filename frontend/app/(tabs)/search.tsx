@@ -30,27 +30,6 @@ import { T } from '@/components/search/shared';
 
 const { width: W } = Dimensions.get('window');
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CTA BANNER
-// ─────────────────────────────────────────────────────────────────────────────
-const CtaBanner = memo(function CtaBanner({ onPress }: { onPress: () => void }) {
-  return (
-    <TouchableOpacity style={ms.banner} activeOpacity={0.85} onPress={onPress}>
-      <BlurView intensity={25} tint="dark" style={ms.bannerBlur}>
-        <View style={ms.bannerLeft}>
-          <View style={ms.bannerIcon}>
-            <Ionicons name="flame" size={18} color={T.gold} />
-          </View>
-          <View>
-            <Text style={ms.bannerTitle}>Populaires cette semaine</Text>
-            <Text style={ms.bannerSub}>Voir tout le classement</Text>
-          </View>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color={T.blue} />
-      </BlurView>
-    </TouchableOpacity>
-  );
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN SCREEN
@@ -130,7 +109,7 @@ export default function SearchScreen() {
         <View style={ms.stickyInner}>
           <Text style={ms.stickyTitle}>UNIVERSE</Text>
         </View>
-      </Animated.View>
+      
 
       {/* Boutons */}
       <View style={ms.topRight} pointerEvents="box-none">
@@ -139,12 +118,7 @@ export default function SearchScreen() {
           <Ionicons name="search" size={22} color={T.white} />
         </TouchableOpacity>
       </View>
-      <View style={ms.giftPos} pointerEvents="box-none">
-        <TouchableOpacity style={ms.iconBtn} onPress={() => router.push('/cadeau' as any)}>
-          <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <Ionicons name="gift" size={22} color={T.white} />
-        </TouchableOpacity>
-      </View>
+  </Animated.View>
 
       <SearchOverlay
         visible={searchOpen} onClose={() => setSearchOpen(false)}
@@ -187,12 +161,10 @@ export default function SearchScreen() {
               <RowSection title="Moyens métrages" subtitle="60 – 100 min" items={moyenMetrage} loading={loading} variant="landscape" />
             )}
             {(longMetrage.length > 0 || loading) && (
-              <RowSection title="Longs métrages" subtitle="Plus de 100 min" items={longMetrage} loading={loading} variant="landscape" />
+              <RowSection title="Mini-séries" subtitle="Plus de 100 min" items={longMetrage} loading={loading} variant="landscape" />
             )}
-            <CtaBanner onPress={() => router.push('/popular' as any)} />
           </>
         )}
-        <View style={{ height: 40 }} />
       </Animated.ScrollView>
     </View>
   );
@@ -200,7 +172,7 @@ export default function SearchScreen() {
 
 const ms = StyleSheet.create({
   root:        { flex: 1, backgroundColor: T.bg },
-  scroll:      { paddingBottom: 120 },
+  scroll:      { paddingBottom: 60 },
   stickyHeader:{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50, height: Platform.OS === 'ios' ? 90 : 60 },
   stickyInner: { flex: 1, justifyContent: 'flex-end', paddingHorizontal: 20, paddingBottom: 10, marginTop: Platform.OS === 'ios' ? 44 : 0 },
   stickyTitle: { color: T.text, fontSize: 34, fontWeight: '800', letterSpacing: -0.5 },

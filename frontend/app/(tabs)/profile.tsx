@@ -333,7 +333,7 @@ export default function ProfileScreen() {
                 rank={idx + 1}
                 accentColor={idx === 0 ? G.gold : idx === 1 ? '#C0C0C0' : idx === 2 ? '#CD7F32' : 'rgba(255,255,255,0.75)'}
               >
-                <FavCard film={film} onPress={() => goFilm(film)} />
+                <FavCard film={film} onPress={() => goFilm(film)} rank={0} />
               </RankedItem>
             ))}
           </HScrollRow>
@@ -357,6 +357,7 @@ export default function ProfileScreen() {
             {sortedReviews.map((rev, idx) => (
              
                 <CritiqueCard
+                  key={rev.id}
                   review={rev}
                   rank={idx + 1}
                   onPress={() => router.push(`/review/${rev.id}` as any)}
@@ -382,8 +383,7 @@ export default function ProfileScreen() {
         ) : (
           <HScrollRow>
             {sortedSeen.map((film, idx) => (
-            
-                <SeenCard film={film} onPress={() => goFilm(film as any)} />
+              <SeenCard key={film.id} film={film} rank={idx + 1} onPress={() => goFilm(film as any)} />
             ))}
           </HScrollRow>
         )}
@@ -419,8 +419,7 @@ export default function ProfileScreen() {
                 <ReelCard
                   key={item.id}
                   reel={item}
-                  onPress={() => router.push(`${s.itemRoute}${item.id}` as any)}
-                />
+                  onPress={() => router.push(`${s.itemRoute}${item.id}` as any)} rank={0}                />
               ))}
             </HScrollRow>
             {si < sections.length - 1 && <View style={pg.divider} />}
