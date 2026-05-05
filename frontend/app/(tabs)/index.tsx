@@ -1,14 +1,26 @@
 /**
- * app/(reels)/index.tsx — ReelsScreen
+ * app/(reels)/index.tsx — ReelsScreen v4.0
  *
- * Auto-play TikTok-like :
- *  - Double détection activeIndex :
- *      1. onViewableItemsChanged (seuil 75 %) → mise à jour continue pendant le drag
- *      2. onMomentumScrollEnd   → confirmation pixel-perfect au snap final
- *  - isActive passe true → FeedItem joue depuis le début
- *  - isActive passe false → FeedItem stoppe et reset (géré via isActive dans FeedItem)
- *  - isNear précharge ±1 slide pour un démarrage instantané
- *  - Toutes les refs sont stables → zéro re-render parasite
+ * ── CAUSES DES PAGES NOIRES (et fixes) ───────────────────────────────────────
+ *
+ *  ① removeClippedSubviews=true sur Android
+ *     Détache les vues natives hors viewport → flash noir au retour.
+ *     Fix : removeClippedSubviews={false} (désactivé partout).
+ *
+ *  ② windowSize=3 + maxToRenderPerBatch=1 trop agressif
+ *     Les items ne sont pas rendus assez vite au scroll → page noire.
+ *     Fix : windowSize=7, maxToRenderPerBatch=3, initialNumToRender=3.
+ *
+ *  ③ poster_url='' → Image avec uri vide → fond noir
+ *     Fix dans FeedItem : fallback View backgroundColor si poster_url absent.
+ *
+ *  ④ pagingEnabled + snapToInterval conflictuels (déjà corrigé v3)
+ *     Gardé : pagingEnabled seul, decelerationRate="fast".
+ *
+ * ── STALE CLOSURES (déjà corrigés v3, inchangés) ─────────────────────────────
+ *   applyActiveIndex stable (deps vides), lit depuis filmsRef/incrementViewsRef.
+ *   applyActiveIndexRef mis à jour chaque render.
+ *   onViewableItemsChanged stable, délègue via applyActiveIndexRef.current.
  */
 
 import React, {
@@ -29,10 +41,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { StatusBar }                                      from 'expo-status-bar';
-import { SafeAreaView, useSafeAreaInsets }                from 'react-native-safe-area-context';
-import { useWindowDimensions }                            from 'react-native';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { StatusBar }                                       from 'expo-status-bar';
+import { SafeAreaView, useSafeAreaInsets }                 from 'react-native-safe-area-context';
+import { useWindowDimensions }                             from 'react-native';
+import { useFocusEffect, useLocalSearchParams }            from 'expo-router';
 import * as Haptics                                        from 'expo-haptics';
 
 import FeedItem      from '@/components/reels/FeedItem';
@@ -66,18 +78,18 @@ export interface VideoProgress {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAPPER Supabase → FeedFilm (pur, zéro allocation répétée)
+// MAPPER — pur, stable
 // ─────────────────────────────────────────────────────────────────────────────
 function mapReelToFeedFilm(reel: SupabaseReel): FeedFilm {
   return {
     id:               reel.id,
     title:            reel.title,
-    director:         reel.director  || 'Réalisateur inconnu',
-    year:             reel.year      || String(new Date().getFullYear()),
-    genre:            reel.genre     || 'Cinéma',
-    synopsis:         reel.synopsis  || '',
+    director:         reel.director || 'Réalisateur inconnu',
+    year:             reel.year     || String(new Date().getFullYear()),
+    genre:            reel.genre    || 'Cinéma',
+    synopsis:         reel.synopsis || '',
     video_url:        reel.video_url,
-    poster_url:       '',
+    poster_url:       '',             // BottomCard affiche les métas via Supabase
     duration:         String(reel.duration),
     likes_count:      reel.likes_count,
     views_count:      reel.views_count,
@@ -90,21 +102,18 @@ function mapReelToFeedFilm(reel: SupabaseReel): FeedFilm {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HOOK — chargement + realtime + actions optimistes
+// HOOK — fetch + realtime + like optimiste + vues
 // ─────────────────────────────────────────────────────────────────────────────
 function useReelsFeed(feedKey: MenuKey) {
   const [films,   setFilms]   = useState<FeedFilm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
 
-  // ── Fetch initial ──────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
 
-    async function loadFeed() {
-      setLoading(true);
-      setError(null);
-
+    async function load() {
+      setLoading(true); setError(null);
       try {
         let query = supabase
           .from('reels')
@@ -115,76 +124,61 @@ function useReelsFeed(feedKey: MenuKey) {
         if (feedKey === 'following') {
           const { data: { user } } = await supabase.auth.getUser();
           if (user) {
-            const { data: followingIds } = await supabase
+            const { data: ids } = await supabase
               .from('follows')
               .select('following_id')
               .eq('follower_id', user.id);
-
-            const ids = (followingIds ?? []).map(
-              (f: { following_id: string }) => f.following_id,
-            );
-            if (ids.length > 0) query = query.in('user_id', ids);
+            const arr = (ids ?? []).map((f: { following_id: string }) => f.following_id);
+            if (arr.length) query = query.in('user_id', arr);
           }
         }
 
-        const { data, error: fetchError } = await query;
+        const { data, error: err } = await query;
         if (cancelled) return;
-        if (fetchError) throw fetchError;
-
+        if (err) throw err;
         setFilms(data?.length ? data.map(mapReelToFeedFilm) : []);
-      } catch (err) {
+      } catch (e) {
         if (!cancelled) {
-          console.warn('[ReelsFeed] fetch error:', err);
-          setFilms([]);
-          setError('Impossible de charger le feed.');
+          console.warn('[ReelsFeed]', e);
+          setFilms([]); setError('Impossible de charger le feed.');
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
 
-    loadFeed();
+    load();
     return () => { cancelled = true; };
   }, [feedKey]);
 
-  // ── Realtime INSERT — nouveau reel publié (ex. StepPublish) ───────────────
+  // Realtime INSERT
   useEffect(() => {
     const ch = supabase
       .channel('reels:insert')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reels' },
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reels' },
         ({ new: reel }: { new: SupabaseReel }) => {
           const film = mapReelToFeedFilm(reel);
-          // Guard : évite les doublons si le fetch initial était encore en cours
-          setFilms(prev =>
-            prev.some(f => f.id === film.id) ? prev : [film, ...prev],
-          );
+          setFilms(prev => prev.some(f => f.id === film.id) ? prev : [film, ...prev]);
         },
       )
       .subscribe();
-
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  // ── Like optimiste + sync DB ───────────────────────────────────────────────
+  // Like optimiste
   const toggleLike = useCallback((filmId: string) => {
-    setFilms(prev =>
-      prev.map(f => {
-        if (f.id !== filmId) return f;
-        const liked = !f.is_liked;
-        // Fire-and-forget — la UI est déjà à jour
-        supabase
-          .from('reels')
-          .update({ likes_count: f.likes_count + (liked ? 1 : -1) })
-          .eq('id', filmId)
-          .then(({ error }) => { if (error) console.warn('[like sync]', error); });
-        return { ...f, is_liked: liked, likes_count: f.likes_count + (liked ? 1 : -1) };
-      }),
-    );
+    setFilms(prev => prev.map(f => {
+      if (f.id !== filmId) return f;
+      const liked = !f.is_liked;
+      supabase.from('reels')
+        .update({ likes_count: f.likes_count + (liked ? 1 : -1) })
+        .eq('id', filmId)
+        .then(({ error }) => { if (error) console.warn('[like]', error); });
+      return { ...f, is_liked: liked, likes_count: f.likes_count + (liked ? 1 : -1) };
+    }));
   }, []);
 
-  // ── Vues fire-and-forget ───────────────────────────────────────────────────
+  // Vues fire-and-forget
   const incrementViews = useCallback((filmId: string) => {
     supabase.rpc('increment_views', { reel_id: filmId }).then(() => {});
   }, []);
@@ -193,7 +187,7 @@ function useReelsFeed(feedKey: MenuKey) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BANNIÈRE ERREUR
+// ERROR BANNER
 // ─────────────────────────────────────────────────────────────────────────────
 const ErrorBanner = memo(function ErrorBanner({ message }: { message: string }) {
   return (
@@ -202,8 +196,6 @@ const ErrorBanner = memo(function ErrorBanner({ message }: { message: string }) 
     </View>
   );
 });
-ErrorBanner.displayName = 'ErrorBanner';
-
 const eb = StyleSheet.create({
   wrap: {
     position: 'absolute', bottom: 100, left: 20, right: 20, zIndex: 99,
@@ -215,15 +207,14 @@ const eb = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ÉCRAN PRINCIPAL
+// REELS SCREEN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ReelsScreen() {
   const { width: W, height: H } = useWindowDimensions();
-  const insets      = useSafeAreaInsets();
-  const router      = useRouter();
+  const insets    = useSafeAreaInsets();
   const { newReelId } = useLocalSearchParams<{ newReelId?: string }>();
 
-  const ITEM_H = H; // plein écran, pas de safe-area offset
+  const ITEM_H = H;
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [activeIndex,   setActiveIndex]   = useState(0);
@@ -235,54 +226,66 @@ export default function ReelsScreen() {
   // ── Refs ───────────────────────────────────────────────────────────────────
   const flatListRef  = useRef<FlatList>(null);
   const scrollY      = useRef(new Animated.Value(0)).current;
-  // Ref miroir de activeIndex — lisible dans les callbacks sans dépendance stale
   const activeIdxRef = useRef(0);
 
   // ── Feed ───────────────────────────────────────────────────────────────────
   const { films, setFilms, loading, error, toggleLike, incrementViews } =
     useReelsFeed(feedKey);
 
+  // Refs stables (évite deps en cascade dans applyActiveIndex)
+  const filmsRef          = useRef(films);
+  const incrementViewsRef = useRef(incrementViews);
+  filmsRef.current          = films;
+  incrementViewsRef.current = incrementViews;
+
   // ─────────────────────────────────────────────────────────────────────────
-  // MISE À JOUR ACTIVE INDEX
-  // Fonction partagée entre viewability et momentumScrollEnd.
-  // Utilise activeIdxRef pour éviter les stale closures dans les callbacks.
+  // applyActiveIndex — stable, deps vides, lit depuis refs
   // ─────────────────────────────────────────────────────────────────────────
   const applyActiveIndex = useCallback((next: number) => {
     if (next === activeIdxRef.current) return;
     activeIdxRef.current = next;
     setActiveIndex(next);
-    // Incrément de vue au moment du "focus" réel sur la slide
-    if (films[next]) incrementViews(films[next].id);
-  }, [films, incrementViews]);
+    const film = filmsRef.current[next];
+    if (film) incrementViewsRef.current(film.id);
+  }, []); // intentionnellement vide
+
+  // Toujours à jour pour les callbacks FlatList stables
+  const applyActiveIndexRef = useRef(applyActiveIndex);
+  applyActiveIndexRef.current = applyActiveIndex;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // VIEWABILITY — seuil 75 % pour que le reel soit considéré "actif"
-  // Déclenché pendant le drag → mise à jour continue (pas seulement au snap).
+  // VIEWABILITY — 60 % visible = slide active
+  // Callback stable → ne recrée jamais → FlatList ne se plaint pas
   // ─────────────────────────────────────────────────────────────────────────
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 75,
-  }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     const first = viewableItems[0];
-    if (first?.index != null) applyActiveIndex(first.index);
+    if (first?.index != null) applyActiveIndexRef.current(first.index);
   }).current;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // MOMENTUM SCROLL END — confirmation pixel-perfect après le snap
-  // C'est le signal définitif : la FlatList s'est immobilisée.
+  // MOMENTUM SCROLL END — confirmation après snap
   // ─────────────────────────────────────────────────────────────────────────
   const onMomentumScrollEnd = useCallback((e: any) => {
-    const offsetY = e.nativeEvent.contentOffset.y;
-    const snapped = Math.round(offsetY / ITEM_H);
-    applyActiveIndex(snapped);
-  }, [ITEM_H, applyActiveIndex]);
+    const snapped = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
+    applyActiveIndexRef.current(snapped);
+  }, [ITEM_H]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SCROLL PROGRAMMATIQUE vers un newReelId transmis par StepPublish
+  // onEnd — auto-avance en fin de vidéo
+  // ─────────────────────────────────────────────────────────────────────────
+  const handleEnd = useCallback(() => {
+    const next = activeIdxRef.current + 1;
+    if (next >= filmsRef.current.length) return;
+    flatListRef.current?.scrollToIndex({ index: next, animated: true });
+    // activeIndex sera mis à jour par onMomentumScrollEnd/onViewableItemsChanged
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Scroll vers newReelId (depuis StepPublish)
   // ─────────────────────────────────────────────────────────────────────────
   const scrolledToNew = useRef(false);
-
   useEffect(() => {
     if (!newReelId || scrolledToNew.current || !films.length) return;
     const idx = films.findIndex(f => f.id === newReelId);
@@ -292,11 +295,10 @@ export default function ReelsScreen() {
       flatListRef.current?.scrollToIndex({ index: idx, animated: true });
     });
   }, [newReelId, films]);
-
   useEffect(() => { scrolledToNew.current = false; }, [newReelId]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FOCUS SCREEN — pause globale quand l'écran perd le focus
+  // Focus screen
   // ─────────────────────────────────────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
@@ -306,42 +308,33 @@ export default function ReelsScreen() {
   );
 
   // ─────────────────────────────────────────────────────────────────────────
-  // CALLBACKS STABLES
+  // Callbacks stables
   // ─────────────────────────────────────────────────────────────────────────
   const handleInfoPress = useCallback((film: FeedFilm) => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setInfoFilm(film);
   }, []);
-
   const handleInfoClose = useCallback(() => setInfoFilm(null), []);
-
-  // onProgress géré localement par FeedItem — pas de state global nécessaire
-  const handleProgress = useCallback((_: VideoProgress) => {}, []);
-
+  const handleProgress  = useCallback((_: VideoProgress) => {}, []);
   const handleFollowFriend = useCallback((fid: string) => {
     if (Platform.OS !== 'web') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     }
-    setFilms(prev =>
-      prev.map(film => ({
-        ...film,
-        liked_by_friends: film.liked_by_friends.map(f =>
-          f.id === fid ? { ...f, followed: true } : f,
-        ),
-      })),
-    );
+    setFilms(prev => prev.map(film => ({
+      ...film,
+      liked_by_friends: (film.liked_by_friends ?? []).map(f =>
+        f.id === fid ? { ...f, followed: true } : f,
+      ),
+    })));
   }, [setFilms]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER ITEM
   //
-  // isActive  = true  → FeedItem joue la vidéo depuis le début (ou reprend)
-  // isActive  = false → FeedItem stoppe + reset à t=0
-  // isNear    = true  → FeedItem précharge la vidéo (±1 slide)
-  //
-  // La combinaison pagingEnabled + onMomentumScrollEnd garantit que
-  // isActive ne devient true qu'une fois le snap terminé, évitant
-  // les lectures parasites pendant le drag.
+  //   isActive  : index === activeIndex (pas de screenFocused dans le calcul
+  //               → FeedItem gère sa propre logique pause/play)
+  //   isNear    : ±1 slide → précharge la source vidéo
+  //   onEnd     : auto-avance au reel suivant
   // ─────────────────────────────────────────────────────────────────────────
   const renderItem = useCallback(
     ({ item, index }: { item: FeedFilm; index: number }) => (
@@ -357,11 +350,12 @@ export default function ReelsScreen() {
         onLike={toggleLike}
         onInfoPress={handleInfoPress}
         onProgress={handleProgress}
+        onEnd={handleEnd}
       />
     ),
     [
       activeIndex, screenFocused, W, ITEM_H, insets.bottom,
-      handleFollowFriend, toggleLike, handleInfoPress, handleProgress,
+      handleFollowFriend, toggleLike, handleInfoPress, handleProgress, handleEnd,
     ],
   );
 
@@ -372,19 +366,13 @@ export default function ReelsScreen() {
 
   const keyExtractor = useCallback((item: FeedFilm) => item.id, []);
 
-  // Récupération sur échec de scrollToIndex (ex. item pas encore rendu)
-  const onScrollToIndexFailed = useCallback(
-    ({ index }: { index: number }) => {
-      // Scroll offset direct, puis retry après un frame
-      flatListRef.current?.scrollToOffset({ offset: index * ITEM_H, animated: false });
-      InteractionManager.runAfterInteractions(() => {
-        flatListRef.current?.scrollToIndex({ index, animated: true });
-      });
-    },
-    [ITEM_H],
-  );
+  const onScrollToIndexFailed = useCallback(({ index }: { index: number }) => {
+    flatListRef.current?.scrollToOffset({ offset: index * ITEM_H, animated: false });
+    InteractionManager.runAfterInteractions(() => {
+      flatListRef.current?.scrollToIndex({ index, animated: true });
+    });
+  }, [ITEM_H]);
 
-  // scrollY pour TopHeader (opacité, etc.)
   const onScroll = useMemo(
     () => Animated.event(
       [{ nativeEvent: { contentOffset: { y: scrollY } } }],
@@ -400,51 +388,62 @@ export default function ReelsScreen() {
     <View style={s.root}>
       <StatusBar style="light" translucent />
 
-      {/* ── Feed plein écran ─────────────────────────────────────────────── */}
       <FlatList
         ref={flatListRef}
         data={films}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
 
-        // ── Snap TikTok ──────────────────────────────────────────────────
+        // ── Snap TikTok ───────────────────────────────────────────────────
         pagingEnabled
-        snapToInterval={ITEM_H}
-        snapToAlignment="start"
         decelerationRate="fast"
 
-        // ── Double détection activeIndex ─────────────────────────────────
-        // viewability → mise à jour continue pendant le drag
+        // ── Détection activeIndex ─────────────────────────────────────────
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChanged}
-        // momentumScrollEnd → confirmation au pixel après snap
         onMomentumScrollEnd={onMomentumScrollEnd}
 
-        // ── Layout O(1) ──────────────────────────────────────────────────
+        // ── Layout O(1) ───────────────────────────────────────────────────
         getItemLayout={getItemLayout}
         onScrollToIndexFailed={onScrollToIndexFailed}
 
-        // ── Scroll tracking pour TopHeader ───────────────────────────────
+        // ── Tracking scroll (TopHeader) ───────────────────────────────────
         onScroll={onScroll}
         scrollEventThrottle={16}
 
-        // ── Performances ─────────────────────────────────────────────────
-        // windowSize 5 = actif ± 2 slides rendus, le reste est démonté
-        // → évite l'accumulation de décodeurs vidéo en mémoire
-        windowSize={5}
-        maxToRenderPerBatch={2}
-        updateCellsBatchingPeriod={50}
-        initialNumToRender={2}
-        removeClippedSubviews={Platform.OS === 'android'}
+        // ── PERFORMANCES — paramètres clés anti pages-noires ─────────────
+        //
+        //   windowSize={7}
+        //     → 3 items au-dessus + actif + 3 en dessous pré-rendus.
+        //     → Évite les frames non rendus au scroll rapide.
+        //
+        //   maxToRenderPerBatch={3}
+        //     → 3 items rendus par frame JS (était 1 → trop lent).
+        //
+        //   initialNumToRender={3}
+        //     → Démarre avec 3 items rendus (poster + vidéo 0 et 1 prêts).
+        //
+        //   removeClippedSubviews={false}  ← CRITIQUE
+        //     → Sur Android, true détache les vues natives hors-écran →
+        //       flash noir quand elles reviennent. false garde les vues
+        //       attachées en permanence dans le window.
+        //
+        //   updateCellsBatchingPeriod={30} → batches plus fréquents.
+        //
+        windowSize={7}
+        maxToRenderPerBatch={3}
+        updateCellsBatchingPeriod={30}
+        initialNumToRender={3}
+        removeClippedSubviews={false}   // ← JAMAIS true pour un feed vidéo
 
-        // ── Comportement ─────────────────────────────────────────────────
+        // ── Comportement ──────────────────────────────────────────────────
         overScrollMode="never"
         bounces={false}
         showsVerticalScrollIndicator={false}
         directionalLockEnabled
       />
 
-      {/* ── Header flottant ──────────────────────────────────────────────── */}
+      {/* Header flottant */}
       <SafeAreaView edges={['top']} style={s.headerSafe} pointerEvents="box-none">
         <TopHeader
           feedKey={feedKey}
@@ -453,10 +452,10 @@ export default function ReelsScreen() {
         />
       </SafeAreaView>
 
-      {/* ── Bannière erreur ──────────────────────────────────────────────── */}
-      {error && <ErrorBanner message={error} />}
+      {/* Bannière erreur */}
+      {!!error && <ErrorBanner message={error} />}
 
-      {/* ── Sidebar feed ─────────────────────────────────────────────────── */}
+      {/* Dropdown feed */}
       <Modal
         visible={menuOpen}
         transparent
@@ -472,7 +471,7 @@ export default function ReelsScreen() {
         />
       </Modal>
 
-      {/* ── InfoSheet ────────────────────────────────────────────────────── */}
+      {/* InfoSheet */}
       <InfoSheet film={infoFilm} onClose={handleInfoClose} />
     </View>
   );

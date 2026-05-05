@@ -236,7 +236,7 @@ const HeroBanner = memo(function HeroBanner() {
 
   const scrollX  = useRef(new Animated.Value(0)).current;
   const flatRef  = useRef<FlatList<FilmRow>>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const isPaused = useRef(false);
   const curIdx   = useRef(0);
 

@@ -1,13 +1,3 @@
-/**
- * FeedItem.tsx — v3.0
- *
- * ✦ Auto-play dès que isActive=true (reset automatique à t=0)
- * ✦ Reset propre à t=0 quand isActive=false (currentTimeRef = valeur fraîche)
- * ✦ Auto-avance au reel suivant en fin de vidéo (onEnd prop)
- * ✦ Barre de progression seekable — onSeek + duration passés à BottomCard
- * ✦ seekFnRef partagé native/web — zéro re-render lors du seek
- */
-
 import React, {
   memo, useState, useEffect, useRef, useCallback,
 } from 'react';
@@ -15,11 +5,10 @@ import {
   View, Image, StyleSheet, TouchableWithoutFeedback,
   Animated, Platform, TouchableOpacity, Text,
 } from 'react-native';
-import { LinearGradient }  from 'expo-linear-gradient';
-import { BlurView }        from 'expo-blur';
-import { Ionicons }        from '@expo/vector-icons';
-import { useRouter }       from 'expo-router';
-import * as Haptics        from 'expo-haptics';
+import { BlurView }  from 'expo-blur';
+import { Ionicons }  from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import * as Haptics  from 'expo-haptics';
 
 import RightBar   from './RightBar';
 import BottomCard from './BottomCard';
@@ -31,15 +20,15 @@ import type { FeedFilm } from './types';
 // ─────────────────────────────────────────────────────────────────────────────
 let _useVideoPlayer: any = () => ({
   play(){}, pause(){}, seekBy(){}, replace(){},
-  duration: 0, currentTime: 0, muted: false,
-  status: 'idle', playing: false,
+  addListener(){ return { remove(){} }; },
+  duration: 0, currentTime: 0, muted: false, status: 'idle', playing: false,
 });
 let _useEvent:  any = (_p: any, _e: string, def: any) => def;
 let _VideoView: any = () => null;
 
 if (Platform.OS !== 'web') {
   try {
-    const ev       = require('expo-video');
+    const ev        = require('expo-video');
     _useVideoPlayer = ev.useVideoPlayer;
     _VideoView      = ev.VideoView;
     _useEvent       = require('expo').useEvent;
@@ -52,80 +41,65 @@ if (Platform.OS !== 'web') {
 // PROPS
 // ─────────────────────────────────────────────────────────────────────────────
 interface FeedItemProps {
-  film:           FeedFilm;
-  isActive:       boolean;
-  isNear:         boolean;
-  screenFocused:  boolean;
-  itemW:          number;
-  itemH:          number;
-  insetBot:       number;
-  onFollowFriend: (fid: string) => void;
-  onLike?:        (id: string) => void;
-  onInfoPress?:   (film: FeedFilm) => void;
-  onProgress?:    (p: { positionMs: number; durationMs: number }) => void;
-  /** Appelé en fin de vidéo → l'écran parent scroll au reel suivant */
-  onEnd?:         () => void;
+  film:            FeedFilm;
+  isActive:        boolean;
+  isNear:          boolean;
+  screenFocused?:  boolean;
+  itemW:           number;
+  itemH:           number;
+  insetBot:        number;
+  onFollowFriend:  (fid: string) => void;
+  onLike?:         (id: string) => void;
+  onInfoPress?:    (film: FeedFilm) => void;
+  onProgress?:     (p: { positionMs: number; durationMs: number }) => void;
+  onEnd?:          () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LECTEUR WEB — <video> natif, toutes features : seek + ended + reset
+// WEB VIDEO PLAYER
 // ─────────────────────────────────────────────────────────────────────────────
 interface WebVideoProps {
-  src:           string;
-  muted:         boolean;
-  isActive:      boolean;
-  screenFocused: boolean;
-  itemW:         number;
-  itemH:         number;
-  onProgress:    (pct: number) => void;
-  onTimeUpdate?: (posMs: number, durMs: number) => void;
-  onReady:       () => void;
-  onError:       () => void;
-  onEnd:         () => void;
-  /** Ref pour que FeedItem puisse déclencher un seek sans re-render */
-  seekRef:       React.MutableRefObject<((t: number) => void) | null>;
-  /** Ref pour exposer la durée totale */
-  durationRef:   React.MutableRefObject<number>;
+  src:             string;
+  muted:           boolean;
+  isActive:        boolean;
+  itemW:           number;
+  itemH:           number;
+  onProgress:      (pct: number) => void;
+  onTimeUpdate?:   (posMs: number, durMs: number) => void;
+  onReady:         () => void;
+  onError:         () => void;
+  onEnd:           () => void;
+  onPlayingChange: (p: boolean) => void;
+  seekRef:         React.MutableRefObject<((t: number) => void) | null>;
+  playPauseRef:    React.MutableRefObject<(() => void) | null>;
+  durationRef:     React.MutableRefObject<number>;
 }
 
 const WebVideoPlayer = memo(function WebVideoPlayer({
-  src, muted, isActive, screenFocused,
-  itemW, itemH,
+  src, muted, isActive, itemW, itemH,
   onProgress, onTimeUpdate, onReady, onError, onEnd,
-  seekRef, durationRef,
+  onPlayingChange, seekRef, playPauseRef, durationRef,
 }: WebVideoProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
 
-  // Expose la fonction seek au parent via seekRef
   useEffect(() => {
-    seekRef.current = (t: number) => {
-      if (ref.current) ref.current.currentTime = t;
+    seekRef.current      = (t: number) => { if (ref.current) ref.current.currentTime = t; };
+    playPauseRef.current = () => {
+      const v = ref.current; if (!v) return;
+      v.paused ? v.play().catch(() => {}) : v.pause();
     };
-    return () => { seekRef.current = null; };
-  }, [seekRef]);
+    return () => { seekRef.current = null; playPauseRef.current = null; };
+  }, [seekRef, playPauseRef]);
 
-  // Play / pause / reset
   useEffect(() => {
-    const v = ref.current;
-    if (!v) return;
-    if (isActive && screenFocused) {
-      v.play().catch(() => {});
-    } else {
-      v.pause();
-      if (!isActive) v.currentTime = 0;   // reset propre
-    }
-  }, [isActive, screenFocused]);
+    const v = ref.current; if (!v) return;
+    isActive ? v.play().catch(() => {}) : (v.pause(), (v.currentTime = 0));
+  }, [isActive]);
 
-  // Mute
+  useEffect(() => { if (ref.current) ref.current.muted = muted; }, [muted]);
+
   useEffect(() => {
-    if (ref.current) ref.current.muted = muted;
-  }, [muted]);
-
-  // Listeners DOM (stables)
-  useEffect(() => {
-    const v = ref.current;
-    if (!v) return;
-
+    const v = ref.current; if (!v) return;
     const onTime  = () => {
       if (v.duration > 0) {
         durationRef.current = v.duration;
@@ -133,31 +107,25 @@ const WebVideoPlayer = memo(function WebVideoPlayer({
         onTimeUpdate?.(v.currentTime * 1000, v.duration * 1000);
       }
     };
-    const onCan  = () => onReady();
-    const onErr  = () => onError();
-    const onEnded = () => { v.currentTime = 0; onEnd(); };  // reset + avance
-
-    v.addEventListener('timeupdate', onTime);
-    v.addEventListener('canplay',    onCan);
-    v.addEventListener('error',      onErr);
-    v.addEventListener('ended',      onEnded);
+    const onCan   = () => onReady();
+    const onErr   = () => onError();
+    const onEnded = () => { v.currentTime = 0; onEnd(); };
+    const onPlay  = () => onPlayingChange(true);
+    const onPause = () => onPlayingChange(false);
+    v.addEventListener('timeupdate', onTime); v.addEventListener('canplay', onCan);
+    v.addEventListener('error', onErr);       v.addEventListener('ended', onEnded);
+    v.addEventListener('play', onPlay);       v.addEventListener('pause', onPause);
     return () => {
-      v.removeEventListener('timeupdate', onTime);
-      v.removeEventListener('canplay',    onCan);
-      v.removeEventListener('error',      onErr);
-      v.removeEventListener('ended',      onEnded);
+      v.removeEventListener('timeupdate', onTime); v.removeEventListener('canplay', onCan);
+      v.removeEventListener('error', onErr);       v.removeEventListener('ended', onEnded);
+      v.removeEventListener('play', onPlay);       v.removeEventListener('pause', onPause);
     };
-  }, [onProgress, onTimeUpdate, onReady, onError, onEnd, durationRef]);
+  }, [onProgress, onTimeUpdate, onReady, onError, onEnd, onPlayingChange, durationRef]);
 
   return React.createElement('video', {
-    ref,
-    src,
-    autoPlay:    true,
-    loop:        false,    // false : on gère onEnd manuellement
-    playsInline: true,
-    muted,
+    ref, src, autoPlay: true, loop: false, playsInline: true, muted,
     style: {
-      position:  'absolute', top: 0, left: 0,
+      position: 'absolute', top: 0, left: 0,
       width: itemW, height: itemH,
       objectFit: 'cover', display: 'block', background: '#000',
     },
@@ -165,67 +133,74 @@ const WebVideoPlayer = memo(function WebVideoPlayer({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FEEDITEM PRINCIPAL
+// LOADING SPINNER CSS
+// ─────────────────────────────────────────────────────────────────────────────
+const LoadingSpinner = memo(function LoadingSpinner() {
+  const rot = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(rot, { toValue: 1, duration: 900, useNativeDriver: true }),
+    ).start();
+  }, [rot]);
+  const spin = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  return <Animated.View style={[fi.spinner, { transform: [{ rotate: spin }] }]} />;
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEEDITEM
 // ─────────────────────────────────────────────────────────────────────────────
 const FeedItem = memo(function FeedItem({
-  film, isActive, isNear, screenFocused,
+  film, isActive, isNear,
   itemW, itemH, insetBot,
   onFollowFriend, onLike, onInfoPress, onProgress, onEnd,
 }: FeedItemProps) {
   const router = useRouter();
   const isWeb  = Platform.OS === 'web';
+  const src    = film.video_url?.trim().length ? film.video_url.trim() : null;
 
-  const src: string | null =
-    film.video_url?.trim().length > 0 ? film.video_url.trim() : null;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // NATIVE PLAYER
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── NATIVE PLAYER — TOUJOURS null au départ ────────────────────────────────
+  //   replace() dans le sourceLoaded effect ci-dessous.
+  //   → comportement identique slide 0, 1, 2, 3…
   const player = _useVideoPlayer(
-    isWeb ? null : (isNear ? src : null),
+    isWeb ? null : null,    // ← toujours null
     (p: any) => {
       if (!p || isWeb) return;
-      p.loop  = false;    // false → playToEnd déclenche l'auto-avance
+      p.loop  = false;
       p.muted = false;
       try {
         p.bufferOptions = {
-          preferredForwardBufferDuration:  10,
+          preferredForwardBufferDuration:  12,
           preferredBackwardBufferDuration: 0,
         };
       } catch {}
     },
   );
 
-  const { status }      = _useEvent(player, 'statusChange',  { status: player?.status  ?? 'idle'  });
-  const { isPlaying }   = _useEvent(player, 'playingChange', { isPlaying: player?.playing ?? false });
-  const { currentTime } = _useEvent(player, 'timeUpdate',    {
-    currentTime: player?.currentTime ?? 0,
-    bufferedPosition: 0,
-    currentLiveTimestamp: null,
-    currentOffsetFromLive: null,
+  // Events natifs — _useEvent fiable pour playingChange et timeUpdate
+  const { isPlaying }       = _useEvent(player, 'playingChange', { isPlaying: false });
+  const { currentTime }     = _useEvent(player, 'timeUpdate',    {
+    currentTime: 0, bufferedPosition: 0,
+    currentLiveTimestamp: null, currentOffsetFromLive: null,
   });
-
-  // playToEnd → auto-avance (loop=false garantit que cet event est émis)
   const { isPlaybackEnded } = _useEvent(player, 'playToEnd', { isPlaybackEnded: false });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // REFS
-  // ─────────────────────────────────────────────────────────────────────────
-  /** currentTime natif toujours frais — évite le stale sur le reset */
+  // ── REFS ───────────────────────────────────────────────────────────────────
   const currentTimeRef = useRef(0);
-  /** Fonction seek exposée par WebVideoPlayer (web only) */
+  const isActiveRef    = useRef(isActive);   // mis à jour SYNCHRONIQUEMENT ci-dessous
   const webSeekRef     = useRef<((t: number) => void) | null>(null);
-  /** Durée totale exposée par WebVideoPlayer */
+  const webPlayPauseRef= useRef<(() => void) | null>(null);
   const webDurationRef = useRef<number>(0);
+  const sourceLoaded   = useRef(false);
+  const endFiredRef    = useRef(false);
 
-  // Sync ref natif à chaque event timeUpdate
+  // ★ Mise à jour synchrone (pas dans useEffect) → listener async toujours à jour
+  isActiveRef.current = isActive;
+
   useEffect(() => {
     if (!isWeb) currentTimeRef.current = currentTime;
   }, [currentTime, isWeb]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // STATE
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── STATE ──────────────────────────────────────────────────────────────────
   const [liked,       setLiked]       = useState(film.is_liked ?? false);
   const [muted,       setMuted]       = useState(false);
   const [saved,       setSaved]       = useState(film.is_saved ?? false);
@@ -233,23 +208,44 @@ const FeedItem = memo(function FeedItem({
   const [nativeReady, setNativeReady] = useState(false);
   const [webReady,    setWebReady]    = useState(false);
   const [webProgress, setWebProgress] = useState(0);
+  const [webPlaying,  setWebPlaying]  = useState(false);
 
-  const isReady    = isWeb ? webReady : nativeReady;
-  const showLoading = !!src && !isReady && !hasErr;
+  const isReady          = isWeb ? webReady    : nativeReady;
+  const showLoading      = !!src && !isReady && !hasErr;
+  const nativeDuration   = (!isWeb && player?.duration) ? player.duration : 0;
+  const nativeProgress   = nativeDuration > 0 ? Math.min(currentTime / nativeDuration, 1) : 0;
+  const progress         = isWeb ? webProgress : nativeProgress;
+  const duration         = isWeb ? webDurationRef.current : nativeDuration;
+  const currentlyPlaying = isWeb ? webPlaying  : isPlaying;
 
-  // Durée native calculée depuis le player
-  const nativeDuration = (!isWeb && player?.duration) ? player.duration : 0;
-  const nativeProgress = nativeDuration > 0 ? Math.min(currentTime / nativeDuration, 1) : 0;
-  const progress       = isWeb ? webProgress : nativeProgress;
+  // ── STATUS via addListener — fiable même après replace() ──────────────────
+  useEffect(() => {
+    if (isWeb || !player) return;
+    let sub: any;
+    try {
+      sub = player.addListener('statusChange', (event: any) => {
+        const raw  = event?.status ?? event;
+        const stat = typeof raw === 'string' ? raw : (raw?.status ?? '');
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // CHARGEMENT SOURCE — quand isNear devient true pour un player initialisé
-  // avec null (tous les reels sauf le 1er au démarrage).
-  // Sans cet effet, player.status reste 'idle' indéfiniment et
-  // 'readyToPlay' n'est jamais émis → nativeReady reste false → pas de play.
-  // ─────────────────────────────────────────────────────────────────────────
-  const sourceLoaded = useRef(false);
+        if (stat === 'readyToPlay') {
+          setNativeReady(true); setHasErr(false);
+          // ★ Play immédiat si déjà actif (isActiveRef = synchrone) ★
+          if (isActiveRef.current) {
+            const ct = currentTimeRef.current;
+            if (ct > 0.1) try { player.seekBy(-ct); } catch {}
+            try { player.play(); } catch {}
+          }
+        } else if (stat === 'error') {
+          setHasErr(true); setNativeReady(false);
+        } else if (stat === 'loading' || stat === 'idle') {
+          setNativeReady(false);
+        }
+      });
+    } catch (e) { console.warn('[FeedItem] addListener:', e); }
+    return () => { try { sub?.remove(); } catch {} };
+  }, [player, isWeb]);
 
+  // ── CHARGEMENT SOURCE quand isNear devient true ────────────────────────────
   useEffect(() => {
     if (isWeb || !src || !player || sourceLoaded.current) return;
     if (isNear) {
@@ -258,130 +254,105 @@ const FeedItem = memo(function FeedItem({
     }
   }, [isNear, isWeb, src, player]);
 
-  // Reset quand on change de film
-  useEffect(() => { sourceLoaded.current = false; }, [film.id]);
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // STATUS NATIF
-  // ─────────────────────────────────────────────────────────────────────────
+  // Reset guards sur changement de film
   useEffect(() => {
-    if (isWeb) return;
-    if (status === 'error')           { setHasErr(true);  setNativeReady(false); }
-    else if (status === 'readyToPlay') { setNativeReady(true); setHasErr(false); }
-  }, [status, isWeb]);
+    sourceLoaded.current = false;
+    endFiredRef.current  = false;
+    setNativeReady(false); setHasErr(false);
+    setWebReady(false); setWebProgress(0); setWebPlaying(false);
+  }, [film.id]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // AUTO-PLAY + RESET NATIF
-  //
-  // Quand isActive → true  : play depuis t=0 (reset d'abord si nécessaire)
-  // Quand isActive → false : pause + reset à t=0 via currentTimeRef (frais)
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── AUTO-PLAY / PAUSE / RESET (garde complémentaire) ──────────────────────
+  //   Si nativeReady était déjà vrai quand isActive change → play() ici.
+  //   Si nativeReady pas encore vrai → addListener s'en charge dès readyToPlay.
   useEffect(() => {
     if (isWeb || !src || !player) return;
-
-    if (isActive && screenFocused && nativeReady) {
-      // Reset propre avant de jouer (si on revient en arrière)
+    if (isActive && nativeReady) {
       const ct = currentTimeRef.current;
-      if (ct > 0.2) {
-        try { player.seekBy(-ct); } catch {}
-      }
-      // Petit délai pour laisser le seek s'appliquer
-      const t = setTimeout(() => { try { player.play(); } catch {} }, 80);
-      return () => clearTimeout(t);
-    } else {
+      if (ct > 0.1) try { player.seekBy(-ct); } catch {}
+      try { player.play(); } catch {}
+    } else if (!isActive) {
       try { player.pause(); } catch {}
-      if (!isActive) {
-        // Reset à t=0 avec la valeur fraîche du ref
-        const ct = currentTimeRef.current;
-        if (ct > 0.2) {
-          try { player.seekBy(-ct); } catch {}
-        }
-      }
+      const ct = currentTimeRef.current;
+      if (ct > 0.1) try { player.seekBy(-ct); } catch {}
     }
-  }, [isActive, screenFocused, nativeReady, player, src, isWeb]);
+  }, [isActive, nativeReady, player, src, isWeb]);
 
-  // Sync mute natif
+  // Mute natif
   useEffect(() => {
     if (isWeb || !player) return;
     try { player.muted = muted; } catch {}
   }, [muted, player, isWeb]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // AUTO-AVANCE NATIF — playToEnd
-  // ─────────────────────────────────────────────────────────────────────────
-  const endFiredRef = useRef(false);  // évite le double-fire
-
+  // ── AUTO-AVANCE (playToEnd) ────────────────────────────────────────────────
   useEffect(() => {
     if (isWeb || !isPlaybackEnded || endFiredRef.current) return;
     endFiredRef.current = true;
-    // Reset le player pour le prochain play
-    try { player.seekBy(-(currentTimeRef.current)); } catch {}
+    try { player.seekBy(-currentTimeRef.current); } catch {}
     onEnd?.();
   }, [isPlaybackEnded, isWeb, player, onEnd]);
 
-  // Reset le guard quand on change de reel
-  useEffect(() => { endFiredRef.current = false; }, [film.id]);
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // SEEK — fonction unifiée native + web
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── SEEK ──────────────────────────────────────────────────────────────────
   const handleSeek = useCallback((seconds: number) => {
-    if (isWeb) {
-      webSeekRef.current?.(seconds);
-    } else if (player) {
-      const delta = seconds - (currentTimeRef.current);
-      try { player.seekBy(delta); } catch {}
+    if (isWeb) { webSeekRef.current?.(seconds); }
+    else if (player) {
+      try { player.seekBy(seconds - currentTimeRef.current); } catch {}
     }
   }, [isWeb, player]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // DISPATCH PROGRESSION (parent)
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── SKIP ±N s ─────────────────────────────────────────────────────────────
+  const handleSkip = useCallback((delta: number) => {
+    const target = Math.max(0, Math.min(duration, currentTimeRef.current + delta));
+    handleSeek(target);
+    if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, [duration, handleSeek, isWeb]);
+
+  // ── PLAY / PAUSE ──────────────────────────────────────────────────────────
+  const handlePlayPause = useCallback(() => {
+    if (!isWeb && player) { currentlyPlaying ? player.pause() : player.play(); }
+    else { webPlayPauseRef.current?.(); }
+  }, [isWeb, player, currentlyPlaying]);
+
+  // ── DISPATCH PROGRESSION ──────────────────────────────────────────────────
   useEffect(() => {
     if (!isWeb && nativeDuration > 0 && onProgress) {
       onProgress({ positionMs: currentTime * 1000, durationMs: nativeDuration * 1000 });
     }
   }, [currentTime, nativeDuration, isWeb, onProgress]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // CALLBACKS WEB
-  // ─────────────────────────────────────────────────────────────────────────
-  const handleWebProgress  = useCallback((p: number) => setWebProgress(p), []);
-  const handleWebReady     = useCallback(() => { setWebReady(true);  setHasErr(false);  }, []);
-  const handleWebError     = useCallback(() => { setHasErr(true);    setWebReady(false); }, []);
+  // ── CALLBACKS WEB ─────────────────────────────────────────────────────────
+  const handleWebProgress   = useCallback((p: number) => setWebProgress(p), []);
+  const handleWebReady      = useCallback(() => { setWebReady(true);  setHasErr(false);  }, []);
+  const handleWebError      = useCallback(() => { setHasErr(true);    setWebReady(false); }, []);
+  const handleWebPlaying    = useCallback((p: boolean) => setWebPlaying(p), []);
   const handleWebTimeUpdate = useCallback((posMs: number, durMs: number) => {
     onProgress?.({ positionMs: posMs, durationMs: durMs });
   }, [onProgress]);
-  const handleWebEnd       = useCallback(() => { onEnd?.(); }, [onEnd]);
+  const handleWebEnd = useCallback(() => onEnd?.(), [onEnd]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RETRY
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── RETRY ─────────────────────────────────────────────────────────────────
   const handleRetry = useCallback(() => {
-    setHasErr(false);
-    setNativeReady(false);
-    setWebReady(false);
-    endFiredRef.current = false;
+    setHasErr(false); setNativeReady(false); setWebReady(false);
+    endFiredRef.current = false; sourceLoaded.current = false;
     if (!isWeb && src && player) {
       try { player.replace({ uri: src }); } catch {}
       setTimeout(() => { try { player.play(); } catch {} }, 200);
     }
   }, [isWeb, src, player]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // DOUBLE TAP → like / single tap → play-pause
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── TAP : simple = play/pause / double = like ─────────────────────────────
   const lastTap   = useRef(0);
   const heartAnim = useRef(new Animated.Value(0)).current;
 
   const handleTap = useCallback(() => {
-    const now = Date.now();
-    if (now - lastTap.current < 290) {
-      // Double tap → like
+    const now      = Date.now();
+    const isDouble = now - lastTap.current < 290;
+    lastTap.current = now;
+
+    if (isDouble) {
       if (!liked) {
-        setLiked(true);
-        onLike?.(film.id);
-        if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+        setLiked(true); onLike?.(film.id);
+        if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
       }
       Animated.sequence([
         Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 24, bounciness: 14 }),
@@ -389,75 +360,51 @@ const FeedItem = memo(function FeedItem({
         Animated.timing(heartAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
       ]).start();
     } else {
-      // Single tap → play/pause
-      if (!isWeb && player) {
-        isPlaying ? player.pause() : player.play();
-      }
+      handlePlayPause();
     }
-    lastTap.current = now;
-  }, [liked, heartAnim, isPlaying, player, isWeb, film.id, onLike]);
+  }, [liked, heartAnim, isWeb, film.id, onLike, handlePlayPause]);
 
   const heartScale = heartAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1.3, 1] });
   const heartOpac  = heartAnim.interpolate({ inputRange: [0, 0.15, 0.85, 1], outputRange: [0, 1, 1, 0] });
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // ACTIONS BARRE DROITE
-  // ─────────────────────────────────────────────────────────────────────────
-  const handleLike = useCallback(() => {
-    setLiked(p => {
-      const next = !p;
-      onLike?.(film.id);
-      return next;
-    });
-  }, [film.id, onLike]);
-
-  const handleMute  = useCallback(() => setMuted(p => !p), []);
-  const handleSave  = useCallback(() => setSaved(p => !p), []);
-
-  const handleInfo  = useCallback(() => {
+  // ── ACTIONS DROITE ────────────────────────────────────────────────────────
+  const handleLike = useCallback(() => { setLiked(p => { onLike?.(film.id); return !p; }); }, [film.id, onLike]);
+  const handleMute = useCallback(() => setMuted(p => !p), []);
+  const handleSave = useCallback(() => setSaved(p => !p), []);
+  const handleInfo = useCallback(() => {
     if (onInfoPress) onInfoPress(film);
     else router.push(`/film/${film.id}`);
   }, [film, router, onInfoPress]);
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // DURÉE EXPOSÉE POUR BOTTOMCARD
-  // ─────────────────────────────────────────────────────────────────────────
-  const duration = isWeb ? webDurationRef.current : nativeDuration;
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <TouchableWithoutFeedback onPress={handleTap}>
-      <View style={{ width: itemW, height: itemH, backgroundColor: '#000', overflow: 'hidden' }}>
+      <View style={{ width: itemW, height: itemH, overflow: 'hidden', backgroundColor: '#0D0D1A' }}>
 
-        {/* Poster — affiché pendant le chargement */}
-        <Image
-          source={{ uri: film.poster_url }}
-          style={[StyleSheet.absoluteFill, { width: itemW, height: itemH }]}
-          resizeMode="cover"
-        />
+        {/* Poster / fallback fond sombre */}
+        {!!film.poster_url ? (
+          <Image
+            source={{ uri: film.poster_url }}
+            style={[StyleSheet.absoluteFill, { width: itemW, height: itemH }]}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: '#0D0D1A' }]} />
+        )}
 
-        {/* ── LECTEUR WEB ────────────────────────────────────────────── */}
+        {/* ── WEB ──────────────────────────────────────────────────── */}
         {isWeb && !!src && !hasErr && (
           <WebVideoPlayer
-            src={src}
-            muted={muted}
-            isActive={isActive}
-            screenFocused={screenFocused}
-            itemW={itemW}
-            itemH={itemH}
-            onProgress={handleWebProgress}
-            onTimeUpdate={handleWebTimeUpdate}
-            onReady={handleWebReady}
-            onError={handleWebError}
-            onEnd={handleWebEnd}
-            seekRef={webSeekRef}
-            durationRef={webDurationRef}
+            src={src} muted={muted} isActive={isActive}
+            itemW={itemW} itemH={itemH}
+            onProgress={handleWebProgress} onTimeUpdate={handleWebTimeUpdate}
+            onReady={handleWebReady} onError={handleWebError} onEnd={handleWebEnd}
+            onPlayingChange={handleWebPlaying}
+            seekRef={webSeekRef} playPauseRef={webPlayPauseRef} durationRef={webDurationRef}
           />
         )}
 
-        {/* ── LECTEUR NATIF ──────────────────────────────────────────── */}
+        {/* ── NATIF ────────────────────────────────────────────────── */}
         {!isWeb && isNear && !!src && !hasErr && (
           <_VideoView
             player={player}
@@ -469,68 +416,59 @@ const FeedItem = memo(function FeedItem({
           />
         )}
 
-        {/* ── LOADING ────────────────────────────────────────────────── */}
+        {/* ── LOADING ──────────────────────────────────────────────── */}
         {showLoading && (
-          <View style={s.loadWrap} pointerEvents="none">
-            <View style={s.loadRing}>
-              <View style={s.loadDot} />
-            </View>
+          <View style={fi.loadWrap} pointerEvents="none">
+            <LoadingSpinner />
           </View>
         )}
 
-        {/* ── ERREUR ─────────────────────────────────────────────────── */}
+        {/* ── ERREUR ───────────────────────────────────────────────── */}
         {hasErr && (
-          <View style={s.errWrap}>
-            <Ionicons name="warning-outline" size={38} color={P.primL} />
-            <Text style={s.errTxt}>Impossible de charger la vidéo</Text>
-            <TouchableOpacity onPress={handleRetry} style={s.retryBtn} activeOpacity={0.85}>
+          <View style={fi.errWrap}>
+            <Ionicons name="warning-outline" size={36} color={P.primL} />
+            <Text style={fi.errTxt}>Impossible de charger la vidéo</Text>
+            <TouchableOpacity onPress={handleRetry} style={fi.retryBtn} activeOpacity={0.85}>
               <Ionicons name="refresh" size={16} color="#fff" />
-              <Text style={s.retryTxt}>Réessayer</Text>
+              <Text style={fi.retryTxt}>Réessayer</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* ── COEUR DOUBLE TAP ───────────────────────────────────────── */}
-        <Animated.View
-          style={[s.bigHeart, { opacity: heartOpac, transform: [{ scale: heartScale }] }]}
-          pointerEvents="none"
-        >
-          <Ionicons name="heart" size={100} color={P.red} />
-        </Animated.View>
-
-        {/* ── INDICATEUR PAUSE ───────────────────────────────────────── */}
-        {!isWeb && !isPlaying && nativeReady && (
-          <View style={s.pauseWrap} pointerEvents="none">
-            <BlurView intensity={22} tint="dark" style={s.pauseBlur}>
-              <Ionicons name="pause" size={32} color="rgba(255,255,255,0.90)" />
+        {/* ── INDICATEUR PAUSE ─────────────────────────────────────── */}
+        {!isWeb && nativeReady && !isPlaying && (
+          <View style={fi.pauseWrap} pointerEvents="none">
+            <BlurView intensity={20} tint="dark" style={fi.pauseBlur}>
+              <Ionicons name="pause" size={28} color="rgba(255,255,255,0.88)" />
             </BlurView>
           </View>
         )}
 
-        {/* ── BARRE DROITE ───────────────────────────────────────────── */}
+        {/* ── CŒUR DOUBLE TAP ──────────────────────────────────────── */}
+        <Animated.View
+          style={[fi.bigHeart, { opacity: heartOpac, transform: [{ scale: heartScale }] }]}
+          pointerEvents="none"
+        >
+          <Ionicons name="heart" size={90} color={P.red} />
+        </Animated.View>
+
+        {/* ── BARRE DROITE ─────────────────────────────────────────── */}
         <RightBar
-          film={film}
-          liked={liked}
-          muted={muted}
-          saved={saved}
-          onLike={handleLike}
-          onMute={handleMute}
-          onInfo={handleInfo}
-          onSave={handleSave}
+          film={film} liked={liked} muted={muted} saved={saved}
+          onLike={handleLike} onMute={handleMute} onInfo={handleInfo} onSave={handleSave}
         />
 
-        {/* ── BOTTOM CARD + PROGRESS BAR SEEKABLE ────────────────────── */}
-        {/*
-          BottomCard reçoit :
-            progress  → 0-1 pour la largeur de la barre
-            duration  → durée totale en secondes (seek absolu)
-            onSeek    → callback(seconds) pour repositionner la lecture
-        */}
+        {/* ── BOTTOM CARD — FUSION COMPLÈTE ────────────────────────── */}
         <BottomCard
           reelId={film.id}
           progress={progress}
           duration={duration}
+          isPlaying={currentlyPlaying}
+          isReady={isReady}
+          insetBot={insetBot}
           onSeek={handleSeek}
+          onPlayPause={handlePlayPause}
+          onSkip={handleSkip}
         />
 
       </View>
@@ -543,45 +481,23 @@ export default FeedItem;
 // ─────────────────────────────────────────────────────────────────────────────
 // STYLES
 // ─────────────────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  // Loading
-  loadWrap: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center', justifyContent: 'center',
+const fi = StyleSheet.create({
+  loadWrap:  { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  spinner:   {
+    width: 34, height: 34, borderRadius: 17,
+    borderWidth: 2.5,
+    borderColor: 'transparent',
+    borderTopColor: 'rgba(255,255,255,0.85)',
+    borderRightColor: 'rgba(255,255,255,0.2)',
   },
-  loadRing: {
-    width: 44, height: 44, borderRadius: 22,
-    borderWidth: 2, borderColor: 'rgba(23,29,74,0.7)',
-    alignItems: 'center', justifyContent: 'center',
+  errWrap:  {
+    ...StyleSheet.absoluteFillObject, alignItems: 'center',
+    justifyContent: 'center', backgroundColor: 'rgba(7,0,15,0.8)', gap: 12,
   },
-  loadDot: {
-    width: 8, height: 8, borderRadius: 4,
-    backgroundColor: 'rgba(23,29,74,0.7)',
-  },
-
-  // Erreur
-  errWrap: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(7,0,15,0.78)', gap: 14,
-  },
-  errTxt:  { color: P.t2, fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
-  retryBtn:{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: P.primary, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 11 },
-  retryTxt:{ color: '#fff', fontSize: 14, fontWeight: '700' },
-
-  // Double tap heart
-  bigHeart: {
-    position: 'absolute', top: '50%', left: '50%',
-    marginTop: -50, marginLeft: -50,
-  },
-
-  // Pause indicator
-  pauseWrap: {
-    position: 'absolute', top: '50%', left: '50%',
-    marginTop: -32, marginLeft: -32,
-  },
-  pauseBlur: {
-    width: 64, height: 64, borderRadius: 32,
-    overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
-  },
+  errTxt:   { color: '#ccc', fontSize: 13, textAlign: 'center', paddingHorizontal: 24 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: P.primary, borderRadius: 12, paddingHorizontal: 18, paddingVertical: 10 },
+  retryTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  pauseWrap:{ position: 'absolute', top: '50%', left: '50%', marginTop: -30, marginLeft: -30 },
+  pauseBlur:{ width: 60, height: 60, borderRadius: 30, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  bigHeart: { position: 'absolute', top: '50%', left: '50%', marginTop: -45, marginLeft: -45 },
 });
