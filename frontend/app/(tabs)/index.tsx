@@ -16,7 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import FeedItem from '../../components/reels/FeedItem';
 import { supabase } from '../../lib/supabase';
 import { FeedFilm } from '../../lib/supabaseReels';
-import { Reel } from '../../types';
+import type { Reel } from '../../lib/supabaseReels';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mapper Supabase → FeedFilm

@@ -1,28 +1,32 @@
 /**
  * components/reels/FeedItem.tsx
  *
- * Priorité absolue : LECTURE VIDÉO FIABLE
+ * ── CAUSES IDENTIFIÉES DU POSTER FIGÉ ───────────────────────────────────────
  *
- * Architecture simplifiée au maximum :
+ *  A. useEvent importé depuis 'expo' → ne fonctionne PAS avec expo-video 2.x
+ *     Doit venir de 'expo-video' directement.
  *
- *   COUCHE 1 — fond sombre
- *   COUCHE 2 — VideoView natif (opacity=1 fixe, JAMAIS wrappé)
- *   COUCHE 3 — Image poster en overlay (fondu 1→0 révèle la vidéo)
- *   COUCHE 4 — Zones de geste (gauche / centre / droite)
- *   COUCHE 5 — UI (spinner, erreur, indicateur pause, like, BottomCard)
+ *  B. player.replace({ uri: src }) → ignoré silencieusement sur certaines
+ *     versions. La nouvelle API attend une string ou un objet VideoSource.
  *
- * Auto-play garanti — pattern pendingPlay :
+ *  C. Architecture trop complexe : readyToPlay → pendingPlay → play()
+ *     En expo-video 2.x, player.play() est une "intent" mise en queue.
+ *     Il N'EST PAS nécessaire d'attendre readyToPlay pour appeler play().
+ *     Le lecteur démarre dès qu'il est prêt, automatiquement.
  *
- *   isActive=true
- *     → replace(src) si pas encore chargé
- *     → si readyToPlay  → play() + revealVideo() immédiat
- *     → sinon           → pendingPlay=true → déclenché par statusChange
+ * ── SOLUTION ────────────────────────────────────────────────────────────────
  *
- *   statusChange → 'readyToPlay'
- *     → si pendingPlay || isActive → play() + revealVideo()
+ *  1. Source passée directement à useVideoPlayer (string).
+ *     Quand isNear passe à true, la source change → expo-video charge.
+ *     Quand isNear passe à false, source = null → expo-video libère.
  *
- *   isActive=false
- *     → showPoster() → pause() après 160ms → seekBy(-t) après pause
+ *  2. isActive=true  → player.play()   (mis en queue par expo-video si pas prêt)
+ *     isActive=false → player.pause()  + reset position
+ *
+ *  3. Crossfade poster basé sur l'événement isPlaying réel
+ *     (pas sur un statut synthétique pendingPlay).
+ *     Poster 1→0 quand la vidéo commence vraiment à jouer.
+ *     Poster 0→1 quand la vidéo s'arrête.
  */
 
 import React, {
@@ -42,24 +46,34 @@ import { P } from './types';
 import type { FeedFilm } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// expo-video — chargement conditionnel (web safe)
+// expo-video — imports sécurisés
+//
+// CRITIQUE : useEvent doit venir de 'expo-video', PAS de 'expo'
+// En expo-video 2.x, useEvent a été déplacé dans le package expo-video.
 // ─────────────────────────────────────────────────────────────────────────────
-let _useVideoPlayer: any = (_: any, __: any) => ({
-  play(){}, pause(){}, seekBy(){}, replace(){},
-  addListener(){ return { remove(){} }; },
-  get duration(){ return 0; },
-  muted: false, playing: false,
-});
-let _useEvent:  any = (_p: any, _e: string, def: any) => def;
+let _useVideoPlayer: (source: any, setup?: (p: any) => void) => any =
+  (_src: any, _cb?: any) => ({
+    play(){}, pause(){}, seekBy(){},
+    get duration(){ return 0; },
+    get status(){ return ''; },
+    muted: false,
+  });
+
+let _useEvent: (player: any, event: string, initial: any) => any =
+  (_p: any, _e: string, def: any) => def;
+
 let _VideoView: any = () => null;
 
 if (Platform.OS !== 'web') {
   try {
-    const ev = require('expo-video');
-    _useVideoPlayer = ev.useVideoPlayer;
-    _VideoView      = ev.VideoView;
-    _useEvent       = require('expo').useEvent;
-  } catch (e) { console.warn('[FeedItem] expo-video:', e); }
+    const expoVideo      = require('expo-video');
+    _useVideoPlayer      = expoVideo.useVideoPlayer;
+    _VideoView           = expoVideo.VideoView;
+    // ★ FIX A : useEvent depuis expo-video, pas depuis expo
+    _useEvent            = expoVideo.useEvent;
+  } catch (e) {
+    console.warn('[FeedItem] expo-video non disponible:', e);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,8 +81,8 @@ if (Platform.OS !== 'web') {
 // ─────────────────────────────────────────────────────────────────────────────
 interface Props {
   film:     FeedFilm;
-  isActive: boolean;   // cette slide est centrée + écran visible
-  isNear:   boolean;   // ±1 slide → préchargement
+  isActive: boolean;
+  isNear:   boolean;
   itemW:    number;
   itemH:    number;
   insetBot: number;
@@ -76,20 +90,18 @@ interface Props {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Spinner de buffering
+// Spinner
 // ─────────────────────────────────────────────────────────────────────────────
 const Spinner = memo(function Spinner() {
   const rot = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(Animated.timing(rot, {
-      toValue: 1, duration: 900, useNativeDriver: true,
-    })).start();
+    Animated.loop(
+      Animated.timing(rot, { toValue: 1, duration: 900, useNativeDriver: true }),
+    ).start();
+    return () => rot.stopAnimation();
   }, [rot]);
-  return (
-    <Animated.View style={[fi.spinner, {
-      transform: [{ rotate: rot.interpolate({ inputRange: [0,1], outputRange: ['0deg','360deg'] }) }],
-    }]} />
-  );
+  const spin = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  return <Animated.View style={[fi.spinner, { transform: [{ rotate: spin }] }]} />;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -102,64 +114,42 @@ const FeedItem = memo(function FeedItem({
   const isWeb  = Platform.OS === 'web';
   const src    = film.video_url?.trim() || null;
 
-  // ── Poster overlay — Animated.Value ──────────────────────────────────────
-  // 1 = poster visible (couvre la vidéo)
-  // 0 = poster transparent (vidéo visible)
-  const posterOp   = useRef(new Animated.Value(1)).current;
-  const animRef    = useRef<Animated.CompositeAnimation>();
+  // ── Source réactive ───────────────────────────────────────────────────────
+  //
+  // ★ FIX B+C : on passe la source DIRECTEMENT à useVideoPlayer
+  //   • String (pas d'objet { uri }) — compatibilité maximale expo-video 2.x
+  //   • isNear ? src : null → expo-video charge quand nécessaire, libère sinon
+  //   • Quand isNear change, expo-video remplace la source en interne
+  //   • PAS de player.replace() manuel nécessaire
+  //
+  const source = isWeb ? null : (isNear && src ? src : null);
 
-  const revealVideo = useCallback(() => {
-    animRef.current?.stop();
-    animRef.current = Animated.timing(posterOp, {
-      toValue: 0, duration: 280, useNativeDriver: true,
-    });
-    animRef.current.start();
-  }, [posterOp]);
-
-  const showPoster = useCallback((fast = false) => {
-    animRef.current?.stop();
-    animRef.current = Animated.timing(posterOp, {
-      toValue: 1, duration: fast ? 0 : 160, useNativeDriver: true,
-    });
-    animRef.current.start();
-  }, [posterOp]);
-
-  // ── Player — TOUJOURS null au départ ─────────────────────────────────────
-  // Ne pas passer src directement à useVideoPlayer :
-  // expo-video crée le player UNE FOIS avec la valeur initiale.
-  // replace() via useEffect est le seul moyen fiable de charger la source.
-  const player = _useVideoPlayer(null, (p: any) => {
+  const player = _useVideoPlayer(source, (p: any) => {
     if (!p || isWeb) return;
     p.loop  = false;
     p.muted = false;
     try {
       p.bufferOptions = {
-        preferredForwardBufferDuration:  10,
+        preferredForwardBufferDuration:  12,
         preferredBackwardBufferDuration: 0,
       };
     } catch {}
   });
 
-  // Événements expo-video
+  // ── Events expo-video ─────────────────────────────────────────────────────
+  // useEvent depuis expo-video (fix A)
   const { isPlaying }       = _useEvent(player, 'playingChange', { isPlaying: false });
-  const { currentTime }     = _useEvent(player, 'timeUpdate', {
+  const { currentTime }     = _useEvent(player, 'timeUpdate',    {
     currentTime: 0, bufferedPosition: 0,
     currentLiveTimestamp: null, currentOffsetFromLive: null,
   });
   const { isPlaybackEnded } = _useEvent(player, 'playToEnd', { isPlaybackEnded: false });
 
-  // ── Refs synchrones (pas de stale closure) ───────────────────────────────
-  const currentTimeRef  = useRef(0);
-  const isActiveRef     = useRef(isActive);
-  const replacedRef     = useRef(false);   // replace() appelé ?
-  const pendingPlayRef  = useRef(false);   // play() en attente de readyToPlay ?
-  const statusRef       = useRef('');      // dernier status connu
-  const endFiredRef     = useRef(false);
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const currentTimeRef = useRef(0);
+  const endFiredRef    = useRef(false);
 
-  isActiveRef.current = isActive;
-  useEffect(() => {
-    if (!isWeb) currentTimeRef.current = currentTime;
-  }, [currentTime, isWeb]);
+  useEffect(() => { if (!isWeb) currentTimeRef.current = currentTime; }, [currentTime, isWeb]);
 
   // ── State UI ──────────────────────────────────────────────────────────────
   const [liked,       setLiked]       = useState(film.is_liked ?? false);
@@ -167,32 +157,30 @@ const FeedItem = memo(function FeedItem({
   const [hasErr,      setHasErr]      = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
 
-  const nativeDur  = !isWeb && player?.duration ? player.duration : 0;
-  const progress   = nativeDur > 0 ? Math.min(currentTime / nativeDur, 1) : 0;
-  const isReady    = statusRef.current === 'readyToPlay' && !hasErr;
+  const nativeDur = !isWeb && player?.duration ? player.duration : 0;
+  const progress  = nativeDur > 0 ? Math.min(currentTime / nativeDur, 1) : 0;
 
-  // ── ÉTAPE 1 : Chargement source quand isNear ─────────────────────────────
-  useEffect(() => {
-    if (isWeb || !src || !player || replacedRef.current || !isNear) return;
-    replacedRef.current = true;
-    try { player.replace({ uri: src }); } catch (e) {
-      console.warn('[FeedItem] replace:', e);
-    }
-  }, [isNear, isWeb, src, player]);
+  // ── Poster overlay ────────────────────────────────────────────────────────
+  const posterOp  = useRef(new Animated.Value(1)).current;
+  const posterRef = useRef<Animated.CompositeAnimation>();
 
-  // ── ÉTAPE 2 : Reset quand le film change ─────────────────────────────────
-  useEffect(() => {
-    replacedRef.current  = false;
-    pendingPlayRef.current = false;
-    endFiredRef.current  = false;
-    statusRef.current    = '';
-    setHasErr(false); setIsBuffering(false);
-    posterOp.setValue(1);   // poster visible immédiatement
-  }, [film.id, posterOp]);
+  const revealVideo = useCallback(() => {
+    posterRef.current?.stop();
+    posterRef.current = Animated.timing(posterOp, {
+      toValue: 0, duration: 280, useNativeDriver: true,
+    });
+    posterRef.current.start();
+  }, [posterOp]);
 
-  // ── ÉTAPE 3 : statusChange listener ──────────────────────────────────────
-  // play() n'est appelé QUE depuis ici (readyToPlay confirmé)
-  // ou directement si le lecteur est déjà prêt (voir étape 4).
+  const showPoster = useCallback((instant = false) => {
+    posterRef.current?.stop();
+    posterRef.current = Animated.timing(posterOp, {
+      toValue: 1, duration: instant ? 0 : 160, useNativeDriver: true,
+    });
+    posterRef.current.start();
+  }, [posterOp]);
+
+  // ── Status listener (buffering + erreur UI uniquement) ────────────────────
   useEffect(() => {
     if (isWeb || !player) return;
     let sub: any;
@@ -200,63 +188,52 @@ const FeedItem = memo(function FeedItem({
       sub = player.addListener('statusChange', (ev: any) => {
         const raw  = ev?.status ?? ev;
         const stat = typeof raw === 'string' ? raw : (raw?.status ?? '');
-        statusRef.current = stat;
-
-        if (stat === 'loading')      { setIsBuffering(true); }
-        if (stat === 'idle')         { setIsBuffering(false); }
-        if (stat === 'error')        { setHasErr(true); setIsBuffering(false); pendingPlayRef.current = false; }
-
-        if (stat === 'readyToPlay') {
-          setIsBuffering(false); setHasErr(false);
-          // ★ Déclenchement garanti si isActive était true avant readyToPlay
-          if (pendingPlayRef.current || isActiveRef.current) {
-            pendingPlayRef.current = false;
-            try { player.play(); } catch {}
-            revealVideo();
-          }
-        }
+        if (stat === 'loading')      setIsBuffering(true);
+        if (stat === 'readyToPlay')  { setIsBuffering(false); setHasErr(false); }
+        if (stat === 'error')        { setHasErr(true); setIsBuffering(false); }
+        if (stat === 'idle')         setIsBuffering(false);
       });
-    } catch (e) { console.warn('[FeedItem] listener:', e); }
+    } catch {}
     return () => { try { sub?.remove(); } catch {} };
-  }, [player, isWeb, revealVideo]);
+  }, [player, isWeb]);
 
-  // ── ÉTAPE 4 : Auto-play / Auto-pause sur changement de isActive ──────────
+  // ── Crossfade basé sur isPlaying réel ────────────────────────────────────
+  //
+  // On n'essaie plus de deviner quand la vidéo va jouer.
+  // On réagit à ce qui se passe réellement :
+  //   isPlaying=true  → la vidéo joue  → poster disparaît
+  //   isPlaying=false → la vidéo s'arrête → poster réapparaît
+  //
+  useEffect(() => {
+    if (isPlaying) revealVideo();
+    else           showPoster();
+  }, [isPlaying, revealVideo, showPoster]);
+
+  // ── ★ AUTO-PLAY / AUTO-PAUSE — Le plus simple possible ★ ─────────────────
+  //
+  // En expo-video 2.x, player.play() est une INTENTION mise en file d'attente.
+  // Pas besoin d'attendre readyToPlay : expo-video démarre dès que prêt.
+  //
+  // isActive=true  → play() en queue → démarre dès buffering OK
+  // isActive=false → pause() immédiat + reset position
+  //
   useEffect(() => {
     if (isWeb || !player) return;
 
     if (isActive) {
-      // Charger la source si pas encore fait (cas slide 0 au mount)
-      if (!replacedRef.current && src) {
-        replacedRef.current = true;
-        try { player.replace({ uri: src }); } catch {}
-      }
-
-      if (statusRef.current === 'readyToPlay') {
-        // Prêt → play immédiat
-        pendingPlayRef.current = false;
-        try { player.play(); } catch {}
-        revealVideo();
-      } else {
-        // Pas encore prêt → pendingPlay déclenchera depuis statusChange
-        pendingPlayRef.current = true;
+      try { player.play(); } catch (e) {
+        console.warn('[FeedItem] play():', e);
       }
     } else {
-      // ── Séquence pause sans glitch ───────────────────────────────────────
-      // 1. Poster visible (visuellement instantané)
-      pendingPlayRef.current = false;
-      showPoster();
-      // 2. Pause après le fondu (évite glitch audio/image)
-      const t = setTimeout(() => {
-        try { player.pause(); } catch {}
-        // 3. Reset à t=0 dans le prochain tick
-        const ct = currentTimeRef.current;
-        setTimeout(() => {
-          if (ct > 0.3) { try { player.seekBy(-ct); } catch {} }
-        }, 0);
-      }, 160);
+      try { player.pause(); } catch {}
+      // Reset position dans le tick suivant (évite conflit thread natif)
+      const ct = currentTimeRef.current;
+      const t  = setTimeout(() => {
+        if (ct > 0.5) { try { player.seekBy(-ct); } catch {} }
+      }, 50);
       return () => clearTimeout(t);
     }
-  }, [isActive, player, isWeb, src, revealVideo, showPoster]);
+  }, [isActive, player, isWeb]);
 
   // Mute
   useEffect(() => {
@@ -268,41 +245,48 @@ const FeedItem = memo(function FeedItem({
   useEffect(() => {
     if (isWeb || !isPlaybackEnded || endFiredRef.current) return;
     endFiredRef.current = true;
-    try { player.seekBy(-currentTimeRef.current); } catch {}
+    const ct = currentTimeRef.current;
+    setTimeout(() => { try { player.seekBy(-ct); } catch {} }, 0);
   }, [isPlaybackEnded, isWeb, player]);
+
+  // Reset quand film change
+  useEffect(() => {
+    endFiredRef.current = false;
+    setHasErr(false);
+    setIsBuffering(false);
+    posterOp.setValue(1);
+  }, [film.id, posterOp]);
 
   // ── Seek ──────────────────────────────────────────────────────────────────
   const handleSeek = useCallback((s: number) => {
-    if (player && !isWeb) { try { player.seekBy(s - currentTimeRef.current); } catch {} }
+    if (!isWeb && player) { try { player.seekBy(s - currentTimeRef.current); } catch {} }
   }, [isWeb, player]);
 
-  // ── Play/pause manuel (tap centre) ───────────────────────────────────────
   const handlePlayPause = useCallback(() => {
-    if (!isWeb && player) { try { isPlaying ? player.pause() : player.play(); } catch {} }
+    if (!isWeb && player) {
+      try { isPlaying ? player.pause() : player.play(); } catch {}
+    }
     if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   }, [isWeb, player, isPlaying]);
 
-  // ── Retry ─────────────────────────────────────────────────────────────────
   const handleRetry = useCallback(() => {
-    setHasErr(false); setIsBuffering(false);
-    replacedRef.current   = false;
-    pendingPlayRef.current = false;
-    statusRef.current     = '';
-    endFiredRef.current   = false;
+    setHasErr(false);
+    setIsBuffering(false);
+    endFiredRef.current = false;
     posterOp.setValue(1);
-    if (!isWeb && src && player) {
-      try { player.replace({ uri: src }); } catch {}
-    }
-  }, [isWeb, src, player, posterOp]);
+    // La source est réactive → si isNear=true, le player rechargera automatiquement
+    // via le changement de props. Pas besoin d'appeler replace() manuellement.
+  }, [posterOp]);
 
-  // ── Gestes ────────────────────────────────────────────────────────────────
+  // ── Gestes (tiers gauche / centre / droite) ───────────────────────────────
   const heartAnim  = useRef(new Animated.Value(0)).current;
   const heartScale = heartAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1.3, 1] });
   const heartOpac  = heartAnim.interpolate({ inputRange: [0, 0.15, 0.85, 1], outputRange: [0, 1, 1, 0] });
 
   const triggerLike = useCallback(() => {
     if (!liked) {
-      setLiked(true); onLike?.(film.id);
+      setLiked(true);
+      onLike?.(film.id);
       if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     }
     Animated.sequence([
@@ -314,10 +298,10 @@ const FeedItem = memo(function FeedItem({
 
   const tL = useRef(0), tC = useRef(0), tR = useRef(0);
 
-  const onLeft   = useCallback(() => {
+  const onLeft = useCallback(() => {
     const n = Date.now();
     if (n - tL.current < 300) triggerLike();
-    else if (player && !isWeb) { try { player.seekBy(-10); } catch {} }
+    else if (!isWeb && player) { try { player.seekBy(-10); } catch {} }
     tL.current = n;
   }, [triggerLike, player, isWeb]);
 
@@ -328,20 +312,20 @@ const FeedItem = memo(function FeedItem({
     tC.current = n;
   }, [triggerLike, handlePlayPause]);
 
-  const onRight  = useCallback(() => {
+  const onRight = useCallback(() => {
     const n = Date.now();
     if (n - tR.current < 300) triggerLike();
-    else if (player && !isWeb) { try { player.seekBy(10); } catch {} }
+    else if (!isWeb && player) { try { player.seekBy(10); } catch {} }
     tR.current = n;
   }, [triggerLike, player, isWeb]);
 
   const handleLike = useCallback(() => {
-    setLiked(p => !p); onLike?.(film.id);
+    setLiked(p => !p);
+    onLike?.(film.id);
   }, [film.id, onLike]);
 
   const handleMute = useCallback(() => setMuted(p => !p), []);
 
-  // Poster URL garanti non-vide
   const posterUri = film.poster_url?.trim()
     || `https://picsum.photos/seed/reel_${film.id}/400/700`;
 
@@ -349,6 +333,11 @@ const FeedItem = memo(function FeedItem({
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
+  //   1. Fond sombre
+  //   2. VideoView natif (opacity=1 fixe, JAMAIS dans Animated.View)
+  //   3. Image poster en overlay (fondu piloté par isPlaying)
+  //   4. Zones de geste
+  //   5. UI (spinner, erreur, pause, cœur, sidebar, bottomcard)
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={[fi.root, { width: itemW, height: itemH }]}>
@@ -356,7 +345,7 @@ const FeedItem = memo(function FeedItem({
       {/* 1 — Fond */}
       <View style={[StyleSheet.absoluteFill, fi.bg]} />
 
-      {/* 2 — VideoView NATIF — JAMAIS dans Animated.View */}
+      {/* 2 — VideoView natif — JAMAIS dans Animated.View */}
       {!isWeb && isNear && !!src && !hasErr && (
         <_VideoView
           player={player}
@@ -368,29 +357,30 @@ const FeedItem = memo(function FeedItem({
         />
       )}
 
-      {/* 3 — Poster overlay (crossfade : opacity 1→0 révèle la vidéo) */}
+      {/* 3 — Poster overlay (suit isPlaying via useEffect) */}
       <Animated.View
         style={[StyleSheet.absoluteFill, { opacity: posterOp }]}
         pointerEvents="none"
       >
-        <Image source={{ uri: posterUri }} style={{ width: itemW, height: itemH }} resizeMode="cover" />
-        {/* Dégradé bas pour lisibilité du texte sur le poster */}
+        <Image
+          source={{ uri: posterUri }}
+          style={{ width: itemW, height: itemH }}
+          resizeMode="cover"
+        />
         <View style={fi.posterGrad} />
       </Animated.View>
 
       {/* 4 — Zones de geste */}
-      <TouchableOpacity style={[fi.zone, { left: 0 }]}    onPress={onLeft}   activeOpacity={1} hitSlop={{ top: 0, bottom: 0, left: 0, right: 0 }} />
+      <TouchableOpacity style={[fi.zone, { left: 0 }]}    onPress={onLeft}   activeOpacity={1} />
       <TouchableOpacity style={[fi.zone, { left: zW }]}   onPress={onCenter} activeOpacity={1} />
       <TouchableOpacity style={[fi.zone, { left: zW*2 }]} onPress={onRight}  activeOpacity={1} />
 
-      {/* 5 — Buffering spinner */}
+      {/* 5a — Buffering */}
       {isActive && isBuffering && !hasErr && (
-        <View style={fi.center} pointerEvents="none">
-          <Spinner />
-        </View>
+        <View style={fi.center} pointerEvents="none"><Spinner /></View>
       )}
 
-      {/* 6 — Erreur */}
+      {/* 5b — Erreur */}
       {hasErr && (
         <View style={fi.errWrap}>
           <Ionicons name="warning-outline" size={32} color={P.hot} />
@@ -402,8 +392,8 @@ const FeedItem = memo(function FeedItem({
         </View>
       )}
 
-      {/* 7 — Indicateur pause (visible seulement si actif + en pause manuelle) */}
-      {isActive && !isPlaying && !isBuffering && !hasErr && statusRef.current === 'readyToPlay' && (
+      {/* 5c — Indicateur pause (vidéo prête mais en pause) */}
+      {isActive && !isPlaying && !isBuffering && !hasErr && isNear && !!src && (
         <View style={fi.center} pointerEvents="none">
           <BlurView intensity={18} tint="dark" style={fi.pauseBlur}>
             <Ionicons name="play" size={24} color="rgba(255,255,255,0.92)" style={{ marginLeft: 3 }} />
@@ -411,7 +401,7 @@ const FeedItem = memo(function FeedItem({
         </View>
       )}
 
-      {/* 8 — Cœur double-tap */}
+      {/* 5d — Cœur double-tap */}
       <Animated.View
         style={[fi.heart, { opacity: heartOpac, transform: [{ scale: heartScale }] }]}
         pointerEvents="none"
@@ -419,26 +409,21 @@ const FeedItem = memo(function FeedItem({
         <Ionicons name="heart" size={80} color={P.red} />
       </Animated.View>
 
-      {/* 9 — Actions droite */}
+      {/* 5e — Barre droite */}
       <View style={fi.sideBar} pointerEvents="box-none">
-        {/* Like */}
         <TouchableOpacity style={fi.sideBtn} onPress={handleLike}>
           <Ionicons name={liked ? 'heart' : 'heart-outline'} size={28} color={liked ? P.red : '#fff'} />
           <Text style={fi.sideBtnTxt}>{film.likes_count || 0}</Text>
         </TouchableOpacity>
-
-        {/* Mute */}
         <TouchableOpacity style={fi.sideBtn} onPress={handleMute}>
           <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={24} color="#fff" />
         </TouchableOpacity>
-
-        {/* Info film */}
         <TouchableOpacity style={fi.sideBtn} onPress={() => router.push(`/film/${film.id}` as any)}>
           <Ionicons name="information-circle-outline" size={26} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      {/* 10 — BottomCard (métadonnées + seek) */}
+      {/* 5f — BottomCard */}
       <BottomCard
         reelId={film.id}
         title={film.title}
@@ -449,7 +434,7 @@ const FeedItem = memo(function FeedItem({
         viewsCount={film.views_count}
         progress={progress}
         duration={nativeDur}
-        isReady={isReady}
+        isReady={!isBuffering && !hasErr && isNear && !!src}
         insetBot={insetBot}
         onSeek={handleSeek}
       />
@@ -462,41 +447,33 @@ export default FeedItem;
 const fi = StyleSheet.create({
   root:       { overflow: 'hidden' },
   bg:         { backgroundColor: '#07000F' },
-  posterGrad: { position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%',
-                backgroundColor: 'rgba(0,0,0,0.40)' },
-
-  // zones de geste (tiers horizontaux, plein écran vertical)
-  zone: { position: 'absolute', top: 0, bottom: 0, width: '33.33%', zIndex: 10 },
-
-  center: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', zIndex: 20 },
-
-  spinner: {
+  posterGrad: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%',
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  zone:     { position: 'absolute', top: 0, bottom: 0, width: '33.33%', zIndex: 10 },
+  center:   { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', zIndex: 20 },
+  spinner:  {
     width: 36, height: 36, borderRadius: 18, borderWidth: 2.5,
     borderColor: 'transparent',
-    borderTopColor:   'rgba(255,255,255,0.85)',
+    borderTopColor: 'rgba(255,255,255,0.85)',
     borderRightColor: 'rgba(255,255,255,0.15)',
   },
-
-  errWrap:  { ...StyleSheet.absoluteFillObject, zIndex: 20,
-              alignItems: 'center', justifyContent: 'center',
-              backgroundColor: 'rgba(7,0,15,0.88)', gap: 10 },
-  errTxt:   { color: 'rgba(255,255,255,0.65)', fontSize: 13 },
-  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 7,
-              backgroundColor: P.primary, borderRadius: 10,
-              paddingHorizontal: 16, paddingVertical: 9 },
-  retryTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
-
-  pauseBlur: { width: 54, height: 54, borderRadius: 27, overflow: 'hidden',
-               alignItems: 'center', justifyContent: 'center' },
-
-  heart: { position: 'absolute', top: '50%', left: '50%',
-           marginTop: -40, marginLeft: -40, zIndex: 20 },
-
-  // Barre d'actions droite (like, mute, info)
-  sideBar: {
-    position: 'absolute', right: 12, bottom: 120,
-    alignItems: 'center', gap: 22, zIndex: 15,
+  errWrap:  {
+    ...StyleSheet.absoluteFillObject, zIndex: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(7,0,15,0.9)', gap: 10,
   },
-  sideBtn:    { alignItems: 'center', gap: 4 },
-  sideBtnTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  errTxt:   { color: 'rgba(255,255,255,0.65)', fontSize: 13 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: P.primary, borderRadius: 10,
+    paddingHorizontal: 16, paddingVertical: 9,
+  },
+  retryTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  pauseBlur:{ width: 54, height: 54, borderRadius: 27, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  heart:    { position: 'absolute', top: '50%', left: '50%', marginTop: -40, marginLeft: -40, zIndex: 20 },
+  sideBar:  { position: 'absolute', right: 12, bottom: 120, alignItems: 'center', gap: 22, zIndex: 15 },
+  sideBtn:  { alignItems: 'center', gap: 4 },
+  sideBtnTxt:{ color: '#fff', fontSize: 12, fontWeight: '700' },
 });
