@@ -1,238 +1,205 @@
-import React, { memo, useEffect, useState, useCallback } from 'react';
+import React, {
+  memo, useCallback, useEffect, useRef, useState,
+} from 'react';
 import {
-  View, Text, Animated, StyleSheet,
+  Animated, PanResponder, StyleSheet, Text, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { supabase } from '@/lib/supabase';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🔧 HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-function formatViews(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
-  return `${n}`;
-}
-
-function formatLikes(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return `${n}`;
-}
-
-function formatDuration(raw: string | number | undefined): string {
-  if (!raw) return '';
-  const secs = typeof raw === 'string' ? parseInt(raw, 10) : raw;
-  if (isNaN(secs) || secs <= 0) return '';
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return s > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${m} min`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📦 TYPES
-// ─────────────────────────────────────────────────────────────────────────────
-interface ReelMeta {
-  title:       string;
-  director?:   string;
-  year?:       string | number;
-  genre?:      string;
-  duration?:   string | number;
-  views_count: number;
-  likes_count: number;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📊 VIDEO PROGRESS BAR
-// ─────────────────────────────────────────────────────────────────────────────
-interface VideoProgressBarProps {
-  progress: Animated.Value | number;
-}
-
-const VideoProgressBar = memo(({ progress }: VideoProgressBarProps) => {
-  const isAnimated = progress && typeof (progress as any).interpolate === 'function';
-
-  const width = isAnimated
-    ? (progress as Animated.Value).interpolate({
-        inputRange:  [0, 1],
-        outputRange: ['0%', '100%'],
-        extrapolate: 'clamp',
-      })
-    : `${Math.min(Math.max(Number(progress) || 0, 0), 1) * 100}%`;
-
-  return (
-    <View style={pb.track} pointerEvents="none">
-      <Animated.View style={[pb.fill, { width: width as any }]} />
-      <Animated.View style={[pb.thumb, { left: width as any }]} />
-    </View>
-  );
-});
-VideoProgressBar.displayName = 'VideoProgressBar';
-
-const pb = StyleSheet.create({
-  track: {
-    height:          3,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    width:           '100%',
-    position:        'relative',
-    borderRadius:     2,
-    marginTop:       12,
-  },
-  fill: {
-    height:          '100%',
-    backgroundColor: '#FFFFFF',
-    position:        'absolute',
-    left:             0,
-    top:              0,
-    borderRadius:     2,
-  },
-  thumb: {
-    position:        'absolute',
-    top:             -2,
-    marginLeft:      -3.5,
-    width:            7,
-    height:           7,
-    borderRadius:     3.5,
-    backgroundColor: '#FFFFFF',
-    shadowColor:     '#FFF',
-    shadowOffset:    { width: 0, height: 0 },
-    shadowOpacity:   1,
-    shadowRadius:    6,
-    elevation:        4,
-  },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 🌌 BOTTOM CARD
+// Props
 // ─────────────────────────────────────────────────────────────────────────────
 export interface BottomCardProps {
-  /** ID du reel Supabase en cours de lecture */
-  reelId:   string | number;
-  progress: Animated.Value | number;
+  reelId:     string;
+  title?:     string | null;
+  director?:  string | null;
+  genre?:     string | null;
+  year?:      string | null;
+  likesCount: number;
+  viewsCount: number;
+  progress:   number;    // 0–1
+  duration:   number;    // secondes
+  isReady:    boolean;
+  insetBot:   number;
+  onSeek:     (seconds: number) => void;
 }
 
-const BottomCard = memo(({ reelId, progress }: BottomCardProps) => {
-  const [meta, setMeta] = useState<ReelMeta | null>(null);
+// ─────────────────────────────────────────────────────────────────────────────
+// Formatters
+// ─────────────────────────────────────────────────────────────────────────────
+const fmt = (s: number) => {
+  if (!isFinite(s) || s < 0) return '0:00';
+  const m   = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+};
+const fmtN = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M`
+  : n >= 1_000   ? `${Math.round(n / 1_000)}K`
+  : String(n);
 
-  // ── Fetch minimal depuis Supabase ──────────────────────────────────────────
-  const fetchMeta = useCallback(async () => {
-    if (!reelId) return;
-    try {
-      const { data, error } = await supabase
-        .from('reels')                          // adapte si ta table s'appelle autrement
-        .select('title, director, year, genre, duration, views_count, likes_count')
-        .eq('id', reelId)
-        .single();
+// ─────────────────────────────────────────────────────────────────────────────
+// BottomCard
+// ─────────────────────────────────────────────────────────────────────────────
+const BottomCard = memo(function BottomCard({
+  title, director, genre, year,
+  likesCount, viewsCount,
+  progress, duration, isReady, insetBot, onSeek,
+}: BottomCardProps) {
 
-      if (error || !data) return;
-      setMeta(data as ReelMeta);
-    } catch {
-      // silently ignore — la carte reste vide plutôt que de crasher
-    }
-  }, [reelId]);
+  // ── Seek bar ───────────────────────────────────────────────────────────────
+  const [trackW,     setTrackW]     = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragPct,    setDragPct]    = useState(0);
 
+  const trackWRef = useRef(1);
+  const durRef    = useRef(duration);
+  trackWRef.current = trackW;
+  durRef.current    = duration;
+
+  const thumbSc = useRef(new Animated.Value(0)).current;
+  const trackH  = useRef(new Animated.Value(2)).current;
+
+  const displayPct = isDragging ? dragPct : Math.min(progress, 0.9999);
+  const currentSec = displayPct * (duration || 0);
+
+  const expand = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(trackH,  { toValue: 4, useNativeDriver: false, tension: 250, friction: 14 }),
+      Animated.spring(thumbSc, { toValue: 1, useNativeDriver: true,  tension: 250, friction: 14 }),
+    ]).start();
+  }, [trackH, thumbSc]);
+
+  const collapse = useCallback(() => {
+    Animated.parallel([
+      Animated.spring(trackH,  { toValue: 2, useNativeDriver: false, tension: 250, friction: 14 }),
+      Animated.spring(thumbSc, { toValue: 0, useNativeDriver: true,  tension: 250, friction: 14 }),
+    ]).start();
+  }, [trackH, thumbSc]);
+
+  const clamp = (lx: number) =>
+    Math.max(0, Math.min(1, lx / Math.max(trackWRef.current, 1)));
+
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder:        () => true,
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponder:         () => true,
+    onMoveShouldSetPanResponderCapture:  () => true,
+    onPanResponderGrant: (e) => {
+      const p = clamp(e.nativeEvent.locationX);
+      setDragPct(p); setIsDragging(true); expand();
+      onSeek(p * durRef.current);
+    },
+    onPanResponderMove: (e) => {
+      const p = clamp(e.nativeEvent.locationX);
+      setDragPct(p); onSeek(p * durRef.current);
+    },
+    onPanResponderRelease: (e) => {
+      onSeek(clamp(e.nativeEvent.locationX) * durRef.current);
+      setIsDragging(false); collapse();
+    },
+    onPanResponderTerminate: () => { setIsDragging(false); collapse(); },
+  })).current;
+
+  // Fade-in contrôles quand isReady
+  const ctrlOpacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    setMeta(null);   // reset entre deux reels
-    fetchMeta();
-  }, [fetchMeta]);
+    Animated.timing(ctrlOpacity, {
+      toValue: isReady ? 1 : 0, duration: 300, useNativeDriver: true,
+    }).start();
+  }, [isReady, ctrlOpacity]);
 
-  // ── Méta ligne discrète ───────────────────────────────────────────────────
-  const metaParts = [
-    meta?.director,
-    meta?.year ? String(meta.year) : undefined,
-    meta?.genre,
-    meta?.duration ? formatDuration(meta.duration) : undefined,
-  ].filter(Boolean).join('  ·  ');
+  // Ligne de méta (director · year · genre)
+  const metaLine = [director, year, genre].filter(Boolean).join(' · ');
 
+  // ── RENDER ─────────────────────────────────────────────────────────────────
   return (
-    <View style={s.wrapper} pointerEvents="box-none">
-      {/* Dégradé bas de page pour la lisibilité */}
+    <View style={[bc.wrapper, { paddingBottom: insetBot + 16 }]} pointerEvents="box-none">
       <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.55)']}
+        colors={['transparent', 'rgba(0,0,0,0.38)', 'rgba(0,0,0,0.78)']}
+        locations={[0, 0.3, 1]}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
-      <View style={s.inner}>
-        {/* Titre */}
-        {!!meta?.title && (
-          <Text style={s.title} numberOfLines={1}>{meta.title}</Text>
-        )}
+      <View style={bc.inner} pointerEvents="box-none">
 
-        {/* Métadonnées en ligne */}
-        {!!metaParts && (
-          <Text style={s.meta} numberOfLines={1}>{metaParts}</Text>
-        )}
-
-        {/* Stats minimalistes */}
-        {!!meta && (
-          <View style={s.stats}>
-            <Text style={s.stat}>👁 {formatViews(meta.views_count)}</Text>
-            <Text style={s.dot}>·</Text>
-            <Text style={s.stat}>♥ {formatLikes(meta.likes_count)}</Text>
+        {/* Titre + méta */}
+        {(title || metaLine) && (
+          <View style={bc.meta} pointerEvents="none">
+            {!!title     && <Text style={bc.title}    numberOfLines={1}>{title}</Text>}
+            {!!metaLine  && <Text style={bc.metaLine} numberOfLines={1}>{metaLine}</Text>}
+            <View style={bc.statsRow}>
+              {!!viewsCount && <Text style={bc.stat}>👁 {fmtN(viewsCount)}</Text>}
+              {!!viewsCount && !!likesCount && <Text style={bc.dot}>·</Text>}
+              {!!likesCount && <Text style={bc.stat}>♥ {fmtN(likesCount)}</Text>}
+            </View>
           </View>
         )}
 
-        {/* Barre de progression */}
-        <VideoProgressBar progress={progress} />
+        {/* Seek bar + chrono */}
+        <Animated.View
+          style={[bc.seekWrap, { opacity: ctrlOpacity }]}
+          pointerEvents={isReady ? 'box-none' : 'none'}
+        >
+          {/* Chrono */}
+          <View style={bc.timeRow} pointerEvents="none">
+            <Text style={bc.timeCurr}>{fmt(currentSec)}</Text>
+            <Text style={bc.timeTot}>{fmt(duration)}</Text>
+          </View>
+
+          {/* Track */}
+          <View
+            style={bc.trackHit}
+            onLayout={e => {
+              setTrackW(e.nativeEvent.layout.width);
+              trackWRef.current = e.nativeEvent.layout.width;
+            }}
+            {...pan.panHandlers}
+          >
+            <Animated.View style={[bc.track, { height: trackH }]}>
+              <View style={bc.trackBg} />
+              <View style={[bc.trackFill, { width: `${displayPct * 100}%` as any }]} />
+              <Animated.View style={[bc.thumb, {
+                left: `${displayPct * 100}%` as any,
+                transform: [{ scale: thumbSc }],
+              }]} />
+            </Animated.View>
+          </View>
+        </Animated.View>
+
       </View>
     </View>
   );
 });
-BottomCard.displayName = 'BottomCard';
+
 export default BottomCard;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 💅 STYLES
-// ─────────────────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  wrapper: {
-    position:     'absolute',
-    bottom:        0,
-    left:          0,
-    right:         0,
-    paddingBottom: 90,
-  },
+const bc = StyleSheet.create({
+  wrapper:  { position: 'absolute', bottom: 0, left: 0, right: 0 },
+  inner:    { paddingHorizontal: 18, paddingTop: 52 },
 
-  inner: {
-    paddingHorizontal: 24,
-    paddingTop:        32,
-    paddingBottom:     0,
-  },
+  meta:     { marginBottom: 14 },
+  title:    { color: 'rgba(255,255,255,0.95)', fontSize: 15, fontWeight: '700',
+              letterSpacing: -0.2, marginBottom: 3 },
+  metaLine: { color: 'rgba(255,255,255,0.40)', fontSize: 11, marginBottom: 5 },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stat:     { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
+  dot:      { color: 'rgba(255,255,255,0.18)', fontSize: 11 },
 
-  title: {
-    color:            'rgba(255,255,255,0.95)',
-    fontSize:          16,
-    fontWeight:       '700',
-    letterSpacing:    -0.3,
-    marginBottom:      3,
-    textShadowColor:  'rgba(0,0,0,0.4)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius:  4,
-  },
+  seekWrap:  { gap: 4, paddingBottom: 2 },
+  timeRow:   { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 1 },
+  timeCurr:  { color: 'rgba(255,255,255,0.82)', fontSize: 11, fontWeight: '700' },
+  timeTot:   { color: 'rgba(255,255,255,0.35)', fontSize: 11 },
 
-  meta: {
-    color:       'rgba(255,255,255,0.45)',
-    fontSize:     11,
-    fontWeight:  '500',
-    letterSpacing: 0.2,
-    marginBottom:  6,
-  },
-
-  stats: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:            6,
-  },
-
-  stat: {
-    color:      'rgba(255,255,255,0.40)',
-    fontSize:    11,
-    fontWeight: '500',
-  },
-
-  dot: {
-    color:    'rgba(255,255,255,0.20)',
-    fontSize:  11,
+  trackHit: { height: 28, justifyContent: 'center' },
+  track:    { width: '100%', borderRadius: 3, justifyContent: 'center', overflow: 'visible' },
+  trackBg:  { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: 3 },
+  trackFill:{ height: '100%', backgroundColor: '#FFFFFF', borderRadius: 3 },
+  thumb: {
+    position: 'absolute', width: 13, height: 13, borderRadius: 6.5,
+    backgroundColor: '#FFFFFF', marginLeft: -6.5, top: '50%', marginTop: -6.5,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.35, shadowRadius: 3, elevation: 4,
   },
 });

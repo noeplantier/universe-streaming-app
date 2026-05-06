@@ -1,10 +1,23 @@
+/**
+ * Card.tsx — v2.0
+ *
+ * Changements :
+ *   • FavCard   : le grand numéro de rang n'est plus affiché à l'intérieur de la carte.
+ *                 La gestion du rang est entièrement confiée au composant RankedItem
+ *                 du parent (profile.tsx). Le ring coloré ≤ 3 est conservé.
+ *   • SeenCard  : onPress obligatoire → navigation vers /film/:id
+ *   • ReelCard  : compatible avec données Supabase (posterUrl OU image)
+ *   • Tous les composants sont memo + displayName.
+ */
+
 import React, { memo, useEffect, useRef } from 'react';
 import {
   Animated, Easing, StyleSheet, Text, TouchableOpacity, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { BlurView }       from 'expo-blur';
+import { Ionicons }       from '@expo/vector-icons';
+
 import {
   G, CARD_W, CARD_H, CARD_RADIUS,
 } from './theme';
@@ -24,87 +37,56 @@ export const StarRating = memo(({ rating, size = 9 }: { rating: number; size?: n
 StarRating.displayName = 'StarRating';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎨 Shared card shell styles
+// 🎨 Shared shell styles
 // ─────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   card: {
-    width: CARD_W,
-    height: CARD_H,
-    borderRadius: CARD_RADIUS,
-    overflow: 'hidden',
-    backgroundColor: G.surface,
+    width: CARD_W, height: CARD_H, borderRadius: CARD_RADIUS,
+    overflow: 'hidden', backgroundColor: G.surface,
   },
-  // Subtle Apple TV inner border (gives depth without looking cheap)
   innerBorder: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: CARD_RADIUS,
-    borderWidth: 0.6,
+    borderRadius: CARD_RADIUS, borderWidth: 0.6,
     borderColor: 'rgba(255,255,255,0.08)',
   },
-  // Generic bottom overlay (used by all cards except FavCard)
   overlay: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 8, paddingTop: 32, paddingBottom: 8,
-    gap: 3,
+    paddingHorizontal: 8, paddingTop: 32, paddingBottom: 8, gap: 3,
   },
   title: {
     color: G.text, fontSize: 10, fontWeight: '800', lineHeight: 13,
-    textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+    textShadowColor: 'rgba(0,0,0,0.9)',
+    textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
   },
-  meta: {
-    color: G.textTer, fontSize: 8, fontStyle: 'italic',
-  },
-  pill: {
-    position: 'absolute', top: 7, right: 7,
-    borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2.5,
-    backgroundColor: 'rgba(0,0,0,0.70)',
-  },
-  pillTxt: {
-    color: 'rgba(255,255,255,0.72)', fontSize: 7, fontWeight: '700', letterSpacing: 0.2,
-  },
+  meta:    { color: G.textTer, fontSize: 8, fontStyle: 'italic' },
+  pill:    { position: 'absolute', top: 7, right: 7, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2.5, backgroundColor: 'rgba(0,0,0,0.70)' },
+  pillTxt: { color: 'rgba(255,255,255,0.72)', fontSize: 7, fontWeight: '700', letterSpacing: 0.2 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🏆 FavCard
-//   Rank number sits INSIDE the card — bottom-left corner, large, with a
-//   clear vertical gap between itself and the star/title block above it.
-//   Cards are meant to be ordered by favourite priority (1 = top pick).
+//
+//   CHANGEMENT v2 : le grand numéro de rang a été supprimé de l'intérieur
+//   de la carte. Le rang est maintenant affiché par le RankedItem parent.
+//   Le ring coloré (or / argent / bronze) est conservé.
 // ─────────────────────────────────────────────────────────────────────────────
-interface FavCardProps { film: FilmItem; rank: number; onPress: () => void; }
+export interface FavCardProps { film: FilmItem; rank: number; onPress: () => void; }
 
 export const FavCard = memo(({ film, rank, onPress }: FavCardProps) => {
-  // Rank colour hierarchy: gold → silver → amber → ghost
-  const rankColor =
-    rank === 1 ? G.gold :
-    rank === 2 ? G.silver :
-    rank === 3 ? G.amber :
-    'rgba(255,255,255,0.22)';
-
-  // Digits ≥ 10 are slightly smaller so they don't blow out the card
-  const numFontSize = rank < 10 ? 86 : 68;
-
-  // Subtle pulse for #1
+  // Pulse douce sur #1
   const pulseScl = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (rank !== 1) return;
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseScl, { toValue: 1.014, duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(pulseScl, { toValue: 1,     duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    ).start();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const glowOp   = useRef(new Animated.Value(0.35)).current;
 
-  // Glow ring opacity for #1
-  const glowOp = useRef(new Animated.Value(0.35)).current;
   useEffect(() => {
     if (rank !== 1) return;
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowOp, { toValue: 1,    duration: 2400, useNativeDriver: true }),
-        Animated.timing(glowOp, { toValue: 0.35, duration: 2400, useNativeDriver: true }),
-      ]),
-    ).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseScl, { toValue: 1.014, duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(pulseScl, { toValue: 1,     duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ])).start();
+    Animated.loop(Animated.sequence([
+      Animated.timing(glowOp, { toValue: 1,    duration: 2400, useNativeDriver: true }),
+      Animated.timing(glowOp, { toValue: 0.35, duration: 2400, useNativeDriver: true }),
+    ])).start();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
@@ -112,26 +94,24 @@ export const FavCard = memo(({ film, rank, onPress }: FavCardProps) => {
       <Animated.View style={[s.card, rank === 1 && { transform: [{ scale: pulseScl }] }]}>
         <ImageWithFallback uri={film.posterUrl} style={StyleSheet.absoluteFillObject} />
 
-        {/* Genre pill — top right */}
+        {/* Genre pill */}
         <View style={s.pill}>
           <Text style={s.pillTxt} numberOfLines={1}>{film.genre}</Text>
         </View>
 
-        {/* #1 animated glow ring */}
+        {/* Rings de rang — uniquement cosmétiques, plus de chiffre intégré */}
         {rank === 1 && (
           <Animated.View style={[
             StyleSheet.absoluteFillObject,
             { borderRadius: CARD_RADIUS, borderWidth: 1.5, borderColor: G.gold, opacity: glowOp },
           ]} />
         )}
-        {/* #2 silver ring */}
         {rank === 2 && (
           <View style={[
             StyleSheet.absoluteFillObject,
             { borderRadius: CARD_RADIUS, borderWidth: 1, borderColor: 'rgba(232,232,240,0.45)' },
           ]} />
         )}
-        {/* #3 amber ring */}
         {rank === 3 && (
           <View style={[
             StyleSheet.absoluteFillObject,
@@ -139,50 +119,20 @@ export const FavCard = memo(({ film, rank, onPress }: FavCardProps) => {
           ]} />
         )}
 
-        {/*
-          ── Bottom overlay ──────────────────────────────────────────────────
-          The gradient is taller on the left so the rank number reads cleanly.
-          Layout inside:
-            ROW
-            ├─ Rank number  (bottom-left, anchored to baseline)
-            ├─ 12px gap
-            └─ Info column  (stars · title · meta)
-        */}
+        {/* Info en bas */}
         <LinearGradient
-          colors={['transparent', 'rgba(13,13,18,0.40)', 'rgba(13,13,18,0.98)']}
-          style={fc.overlay}
+          colors={['transparent', 'rgba(13,13,18,0.5)', 'rgba(13,13,18,0.96)']}
+          style={s.overlay}
         >
-          <View style={fc.row}>
-
-            {/* ── Rank number ── */}
-            <Text
-              style={[fc.rank, {
-                fontSize: numFontSize,
-                lineHeight: numFontSize + 2,
-                color: rankColor,
-              }]}
-            >
-              {rank}
+          <StarRating rating={film.rating} size={9} />
+          <Text style={s.title} numberOfLines={2}>{film.title}</Text>
+          {film.director && (
+            <Text style={s.meta} numberOfLines={1}>
+              {film.director}{film.year ? ` · ${film.year}` : ''}
             </Text>
-
-            {/* ── Vertical divider — provides visual breathing room ── */}
-            <View style={fc.divider} />
-
-            {/* ── Info block ── */}
-            <View style={fc.info}>
-              <StarRating rating={film.rating} size={9} />
-              <Text style={s.title} numberOfLines={2}>{film.title}</Text>
-              {film.director && (
-                <Text style={s.meta} numberOfLines={1}>
-                  {film.director}{film.year ? ` · ${film.year}` : ''}
-                </Text>
-              )}
-            </View>
-
-          </View>
+          )}
         </LinearGradient>
 
-        {/* Apple TV inner border */}
         <View style={s.innerBorder} pointerEvents="none" />
       </Animated.View>
     </TouchableOpacity>
@@ -190,62 +140,26 @@ export const FavCard = memo(({ film, rank, onPress }: FavCardProps) => {
 });
 FavCard.displayName = 'FavCard';
 
-const fc = StyleSheet.create({
-  overlay: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    paddingHorizontal: 8,
-    paddingTop: 44,   // taller gradient so number is well-lit
-    paddingBottom: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',  // both children sit on the same baseline
-    gap: 0,                   // spacing handled by divider
-  },
-  rank: {
-    fontWeight: '900',
-    letterSpacing: -5,
-    opacity: 0.92,
-    // Text shadow gives the illusion of depth (ATV outline style)
-    textShadowColor: G.bg,
-    textShadowOffset: { width: 2, height: 3 },
-    textShadowRadius: 0,
-    // Pull the bottom of the glyph flush with the card edge
-    marginBottom: -2,
-  },
-  divider: {
-    width: 12,   // explicit horizontal gap between number and info block
-  },
-  info: {
-    flex: 1,
-    gap: 3,
-    paddingBottom: 2,
-  },
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
-// ✍️ CritiqueCard  (no rank number)
+// ✍️ CritiqueCard
 // ─────────────────────────────────────────────────────────────────────────────
-interface CritiqueCardProps { review: ReviewItem; rank: number; onPress: () => void; }
+export interface CritiqueCardProps { review: ReviewItem; onPress: () => void; }
 
-export const CritiqueCard = memo(({ review, rank: _rank, onPress }: CritiqueCardProps) => {
+export const CritiqueCard = memo(({ review, onPress }: CritiqueCardProps) => {
   const film = review.film;
-
   return (
     <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
       <View style={s.card}>
         {film && <ImageWithFallback uri={film.posterUrl} style={StyleSheet.absoluteFillObject} />}
-
-        {/* Amber tint overlay to distinguish critiques */}
         <View style={[StyleSheet.absoluteFillObject, { backgroundColor: 'rgba(120,55,0,0.16)' }]} />
 
-        {/* Critique badge — top left */}
+        {/* Badge critique */}
         <BlurView intensity={22} tint="dark" style={cc.badge}>
           <Ionicons name="pencil" size={8} color={G.gold} />
           <Text style={cc.badgeTxt}>Critique</Text>
         </BlurView>
 
-        {/* Likes — top right */}
+        {/* Likes */}
         <BlurView intensity={22} tint="dark" style={cc.likes}>
           <Ionicons name="heart" size={8} color={G.danger} />
           <Text style={cc.likesTxt}>
@@ -253,7 +167,6 @@ export const CritiqueCard = memo(({ review, rank: _rank, onPress }: CritiqueCard
           </Text>
         </BlurView>
 
-        {/* Bottom overlay */}
         <LinearGradient
           colors={['transparent', 'rgba(13,13,18,0.45)', 'rgba(13,13,18,0.98)']}
           style={s.overlay}
@@ -282,12 +195,12 @@ const cc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 👁️ SeenCard  (no rank number)
+// 👁️ SeenCard — cliquable, navigue vers /film/:id
 // ─────────────────────────────────────────────────────────────────────────────
-interface SeenCardProps { film: FilmItem; rank: number; onPress: () => void; }
+export interface SeenCardProps { film: FilmItem; onPress: () => void; }
 
-export const SeenCard = memo(({ film, rank: _rank, onPress }: SeenCardProps) => {
-  const isSerie = film.type === 'série';
+export const SeenCard = memo(({ film, onPress }: SeenCardProps) => {
+  const isSerie    = film.type === 'série' || film.type === 'Mini-série';
   const scoreColor = film.rating >= 5 ? G.success : film.rating >= 4 ? G.cyan : G.textTer;
 
   return (
@@ -295,28 +208,26 @@ export const SeenCard = memo(({ film, rank: _rank, onPress }: SeenCardProps) => 
       <View style={s.card}>
         <ImageWithFallback uri={film.posterUrl} style={StyleSheet.absoluteFillObject} />
 
-        {/* Type badge — top left */}
+        {/* Type badge */}
         <View style={[sc.typeBadge, { backgroundColor: isSerie ? `${G.cyan}CC` : `${G.success}BB` }]}>
           <Ionicons name={isSerie ? 'tv' : 'film'} size={7} color="#fff" />
           <Text style={sc.typeTxt}>{isSerie ? 'Série' : 'Film'}</Text>
         </View>
 
-        {/* Episode count (series only) — top right */}
+        {/* Épisodes (séries uniquement) */}
         {isSerie && film.episodes != null && (
           <View style={sc.epBadge}>
             <Text style={sc.epTxt}>{film.episodes} ep.</Text>
           </View>
         )}
 
-        {/* Bottom overlay */}
         <LinearGradient
           colors={['transparent', 'rgba(13,13,18,0.45)', 'rgba(13,13,18,0.98)']}
           style={s.overlay}
         >
-          {/* Score pill */}
           <View style={[sc.scorePill, { borderColor: `${scoreColor}44`, backgroundColor: `${scoreColor}16` }]}>
             <Ionicons name="star" size={8} color={scoreColor} />
-            <Text style={[sc.scoreVal, { color: scoreColor }]}>{film.rating}.0</Text>
+            <Text style={[sc.scoreVal, { color: scoreColor }]}>{film.rating > 0 ? `${film.rating}.0` : '—'}</Text>
             <Text style={[sc.statusTxt, { color: scoreColor }]}>{film.status ?? 'Vu'}</Text>
           </View>
           <Text style={s.title} numberOfLines={2}>{film.title}</Text>
@@ -341,11 +252,11 @@ const sc = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎞️ ReelCard  (no rank number)
+// 🎞️ ReelCard — créations (courts/moyens/mini-séries)
 // ─────────────────────────────────────────────────────────────────────────────
-interface ReelCardProps { reel: ReelItem; rank: number; onPress: () => void; }
+export interface ReelCardProps { reel: ReelItem; onPress: () => void; }
 
-export const ReelCard = memo(({ reel, rank: _rank, onPress }: ReelCardProps) => (
+export const ReelCard = memo(({ reel, onPress }: ReelCardProps) => (
   <TouchableOpacity onPress={onPress} activeOpacity={0.88}>
     <View style={s.card}>
       <ImageWithFallback uri={reel.posterUrl} style={StyleSheet.absoluteFillObject} />
@@ -354,30 +265,33 @@ export const ReelCard = memo(({ reel, rank: _rank, onPress }: ReelCardProps) => 
         style={StyleSheet.absoluteFillObject}
       />
 
-      {/* Play button */}
+      {/* Play */}
       <View style={rc.playBtn}>
         <Ionicons name="play" size={16} color="#fff" />
       </View>
 
-      {/* Festival badge — top left */}
+      {/* Badge festival / catégorie */}
       <BlurView intensity={22} tint="dark" style={rc.festivalBadge}>
         <Text style={rc.festivalTxt}>{reel.festival}</Text>
       </BlurView>
 
-      {/* Bottom overlay */}
       <LinearGradient
         colors={['transparent', 'rgba(13,13,18,0.96)']}
         style={s.overlay}
       >
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <Ionicons name="time-outline" size={8} color={G.textTer} />
-            <Text style={s.meta}>{reel.duration}</Text>
-          </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-            <Ionicons name="eye-outline" size={8} color={G.textTer} />
-            <Text style={s.meta}>{reel.views}</Text>
-          </View>
+          {!!reel.duration && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Ionicons name="time-outline" size={8} color={G.textTer} />
+              <Text style={s.meta}>{reel.duration}</Text>
+            </View>
+          )}
+          {!!reel.views && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Ionicons name="eye-outline" size={8} color={G.textTer} />
+              <Text style={s.meta}>{reel.views}</Text>
+            </View>
+          )}
         </View>
         <Text style={s.title} numberOfLines={2}>{reel.title}</Text>
       </LinearGradient>
