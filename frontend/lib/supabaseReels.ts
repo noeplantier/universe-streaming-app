@@ -58,7 +58,22 @@ export type FeedFilm = {
   verified:      boolean;
   // Social
   liked_by_friends: Friend[];
-};
+
+  synopsis: string;
+
+
+  likes_count: number;
+
+  views_count: number;
+
+  created_at: string;
+
+  is_liked: boolean;
+
+  is_saved: boolean;
+
+}
+
 
 // ═══════════════════════════════════════════════════════════════════
 //  HELPERS INTERNES
@@ -106,6 +121,12 @@ function toFeedFilm(raw: any, friendLikes: Friend[]): FeedFilm {
     tags:          raw.series_tags     ?? [],
     verified:      raw.series_verified ?? false,
     liked_by_friends: friendLikes,
+    synopsis:      raw.synopsis       ?? '',
+    likes_count:   raw.likes          ?? 0,
+    views_count:   raw.views_count    ?? 0,
+    created_at:    raw.created_at     ?? '',
+    is_liked:      raw.is_liked       ?? false,
+    is_saved:      raw.is_saved       ?? false,
   };
 }
 
@@ -204,3 +225,7 @@ export async function updateEpisodeLikes(episodeId: string, delta: 1 | -1): Prom
   // Si la fonction RPC n'existe pas encore, fallback silencieux
   if (error) console.warn('[supabaseReels] increment_episode_likes:', error.message);
 }
+
+
+
+  

@@ -1,345 +1,237 @@
-/**
- * app/(reels)/index.tsx — ReelsScreen v8.0
- *
- * ── LOGIQUE isActive ─────────────────────────────────────────────────────────
- *
- *   isActive = index === activeIndex && screenFocused
- *
- *   PAS de isScrolling dans le calcul :
- *   → la vidéo joue pendant le drag (comme TikTok / drama.tv)
- *   → elle change uniquement au snap (onMomentumScrollEnd)
- *
- * ── CYCLE AUTO-PLAY / AUTO-PAUSE ─────────────────────────────────────────────
- *
- *   Scroll commence  → video joue TOUJOURS (pas de pause pendant le drag)
- *   Snap sur index N → activeIndex = N
- *                      FeedItem[N-1].isActive = false → posterOpacity 0→1 + pause
- *                      FeedItem[N].isActive   = true  → play + posterOpacity 1→0
- *   Changement écran → screenFocused = false → tous en pause
- *   Retour écran     → screenFocused = true  → activeIndex reprend
- */
-
-import React, {
-  memo, useCallback, useEffect, useMemo, useRef, useState,
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated, FlatList, InteractionManager, Modal,
-  Platform, StyleSheet, Text, View,
+  Animated,
+  FlatList,
+  InteractionManager,
+  StyleSheet,
+  View,
+  useWindowDimensions,
+  Platform,
+  Text,
 } from 'react-native';
-import { StatusBar }                                from 'expo-status-bar';
-import { SafeAreaView, useSafeAreaInsets }          from 'react-native-safe-area-context';
-import { useWindowDimensions }                      from 'react-native';
-import { useFocusEffect, useLocalSearchParams }     from 'expo-router';
-import * as Haptics                                 from 'expo-haptics';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 
-import FeedItem      from '@/components/reels/FeedItem';
-import TopHeader     from '@/components/reels/TopHeader';
-import InfoSheet     from '@/components/reels/Infosheet';
-import DropdownMenu, { type MenuKey } from '@/components/DropDownMenu';
-import type { FeedFilm }              from '@/components/reels/types';
-import { supabase }                   from '@/lib/supabase';
+import FeedItem from '../../components/reels/FeedItem';
+import { supabase } from '../../lib/supabase';
+import { FeedFilm } from '../../lib/supabaseReels';
+import { Reel } from '../../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TYPES
+// Mapper Supabase → FeedFilm
 // ─────────────────────────────────────────────────────────────────────────────
-interface SupabaseReel {
-  id:          string;
-  user_id:     string;
-  video_url:   string;
-  title:       string;
-  genre:       string;
-  director:    string;
-  year:        string;
-  synopsis:    string;
-  duration:    number;
-  likes_count: number;
-  views_count: number;
-  created_at:  string;
-}
-
-export interface VideoProgress { positionMs: number; durationMs: number; }
-
-function mapReel(r: SupabaseReel): FeedFilm {
+function mapReel(r: Reel): FeedFilm {
   return {
-    id:               r.id,
-    title:            r.title,
-    director:         r.director || 'Réalisateur inconnu',
-    year:             r.year     || String(new Date().getFullYear()),
-    genre:            r.genre    || 'Cinéma',
-    synopsis:         r.synopsis || '',
-    video_url:        r.video_url,
-    poster_url:       '',
-    duration:         String(r.duration),
-    likes_count:      r.likes_count,
-    views_count:      r.views_count,
-    is_liked:         false,
-    is_saved:         false,
-    liked_by_friends: [],
-    tags:             ['#CinémaIndépendant', `#${r.genre}`].filter(Boolean),
-    created_at:       r.created_at,
+    id:          r.id,
+    video_url:   r.video_url,
+    poster_url:  `https://picsum.photos/seed/reel_${r.id}/400/700`,
+    title:       r.title    ?? 'Sans titre',
+    genre:       r.genre    ?? 'Cinéma',
+    director:    r.director ?? '',
+    year:        r.year     ?? '',
+    synopsis:    r.synopsis ?? '',
+    duration:    Number(r.duration ?? 0),
+    likes_count: r.likes_count ?? 0,
+    views_count: r.views_count ?? 0,
+    created_at:  r.created_at,
+    is_liked:    false,
+    is_saved:    false,
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HOOK FEED
+// Hook Data Feed
 // ─────────────────────────────────────────────────────────────────────────────
-function useReelsFeed(feedKey: MenuKey) {
+function useReels() {
   const [films,   setFilms]   = useState<FeedFilm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true); setError(null);
-      try {
-        let q = supabase.from('reels').select('*')
-          .order('created_at', { ascending: false }).limit(50);
-        if (feedKey === 'following') {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { data: ids } = await supabase
-              .from('follows').select('following_id').eq('follower_id', user.id);
-            const arr = (ids ?? []).map((f: { following_id: string }) => f.following_id);
-            if (arr.length) q = q.in('user_id', arr);
-          }
-        }
-        const { data, error: err } = await q;
-        if (cancelled) return;
-        if (err) throw err;
-        setFilms(data?.length ? data.map(mapReel) : []);
-      } catch {
-        if (!cancelled) { setFilms([]); setError('Impossible de charger le feed.'); }
-      } finally { if (!cancelled) setLoading(false); }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [feedKey]);
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: dbError } = await supabase
+        .from('reels')
+        .select('*')
+        .order('created_at', { ascending: false });
 
+      if (dbError) throw dbError;
+      if (data) setFilms(data.map(mapReel));
+    } catch (e: any) {
+      console.warn('[useReels] fetch error:', e);
+      setError(e.message || 'Erreur lors du chargement des vidéos.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Realtime — nouveau reel publié
   useEffect(() => {
-    const ch = supabase.channel('reels:insert')
+    const ch = supabase.channel('reels:new')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reels' },
-        ({ new: r }: { new: SupabaseReel }) => {
-          const film = mapReel(r);
-          setFilms(prev => prev.some(f => f.id === film.id) ? prev : [film, ...prev]);
+        ({ new: r }) => {
+          setFilms(prev => {
+            const film = mapReel(r as Reel);
+            return prev.some(f => f.id === film.id) ? prev : [film, ...prev];
+          });
         })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  const toggleLike = useCallback((filmId: string) => {
+  const toggleLike = useCallback((id: string) => {
     setFilms(prev => prev.map(f => {
-      if (f.id !== filmId) return f;
+      if (f.id !== id) return f;
       const liked = !f.is_liked;
+      // Sync DB fire-and-forget
       supabase.from('reels')
-        .update({ likes_count: f.likes_count + (liked ? 1 : -1) }).eq('id', filmId)
-        .then(({ error }) => { if (error) console.warn('[like]', error); });
+        .update({ likes_count: f.likes_count + (liked ? 1 : -1) })
+        .eq('id', id)
+        .then(({ error }) => { if (error) console.warn('[like]', error.message); });
       return { ...f, is_liked: liked, likes_count: f.likes_count + (liked ? 1 : -1) };
     }));
   }, []);
 
-  const incrementViews = useCallback((filmId: string) => {
-    supabase.rpc('increment_views', { reel_id: filmId }).then(() => {});
-  }, []);
-
-  return { films, setFilms, loading, error, toggleLike, incrementViews };
+  return { films, loading, error, toggleLike, refresh: load };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ERROR BANNER
-// ─────────────────────────────────────────────────────────────────────────────
-const ErrorBanner = memo(function ErrorBanner({ message }: { message: string }) {
-  return (
-    <View style={eb.wrap}><Text style={eb.txt}>{message}</Text></View>
-  );
-});
-const eb = StyleSheet.create({
-  wrap: { position: 'absolute', bottom: 100, left: 20, right: 20, zIndex: 99, backgroundColor: 'rgba(255,59,92,0.18)', borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,59,92,0.35)', paddingHorizontal: 14, paddingVertical: 10 },
-  txt:  { color: '#FF3B5C', fontSize: 12, textAlign: 'center' },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// REELS SCREEN
+// ReelsScreen
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ReelsScreen() {
   const { width: W, height: H } = useWindowDimensions();
-  const insets    = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
   const { newReelId } = useLocalSearchParams<{ newReelId?: string }>();
-  const ITEM_H = H;
+
+  const ITEM_H = Platform.OS === 'android' ? H + insets.top : H;
 
   const [activeIndex,   setActiveIndex]   = useState(0);
   const [screenFocused, setScreenFocused] = useState(true);
-  const [menuOpen,      setMenuOpen]      = useState(false);
-  const [feedKey,       setFeedKey]       = useState<MenuKey>('foryou');
-  const [infoFilm,      setInfoFilm]      = useState<FeedFilm | null>(null);
 
-  const flatListRef  = useRef<FlatList>(null);
+  const flatRef      = useRef<FlatList>(null);
   const scrollY      = useRef(new Animated.Value(0)).current;
   const activeIdxRef = useRef(0);
 
-  const { films, setFilms, loading, error, toggleLike, incrementViews } = useReelsFeed(feedKey);
+  const { films, loading, error, toggleLike } = useReels();
+  const filmsRef = useRef(films);
+  filmsRef.current = films;
 
-  const filmsRef          = useRef(films);
-  const incrementViewsRef = useRef(incrementViews);
-  filmsRef.current          = films;
-  incrementViewsRef.current = incrementViews;
-
-  // ── applyActiveIndex ────────────────────────────────────────────────────────
-  const applyActiveIndex = useCallback((next: number) => {
+  // ── Commit activeIndex ────────────────────────────────────────────────────
+  const commit = useCallback((next: number) => {
     if (next === activeIdxRef.current) return;
     activeIdxRef.current = next;
     setActiveIndex(next);
+
+    // ── Incrément de vues : UPDATE direct (pas de RPC) ───────────────────
+    // La fonction public.increment_view_count n'existe pas dans la BDD.
+    // On utilise un UPDATE direct sur views_count — acceptable pour un compteur de vues.
     const film = filmsRef.current[next];
-    if (film) incrementViewsRef.current(film.id);
+    if (film?.id) {
+      supabase
+        .from('reels')
+        .update({ views_count: (film.views_count ?? 0) + 1 })
+        .eq('id', film.id)
+        .then(({ error }) => {
+          if (error) console.warn('[views] update:', error.message);
+        });
+    }
   }, []);
 
-  const applyActiveIndexRef = useRef(applyActiveIndex);
-  applyActiveIndexRef.current = applyActiveIndex;
+  const commitRef = useRef(commit);
+  commitRef.current = commit;
 
-  // ── Viewability ─────────────────────────────────────────────────────────────
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    const first = viewableItems[0];
-    if (first?.index != null) applyActiveIndexRef.current(first.index);
-  }).current;
+  // ── Source de vérité du scroll ────────────────────────────────────────────
+  const handleActiveScroll = useMemo(() => Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: false,
+      listener: (e: any) => {
+        const offsetY = e.nativeEvent.contentOffset.y;
+        const newIndex = Math.max(
+          0,
+          Math.min(Math.round(offsetY / ITEM_H), filmsRef.current.length - 1),
+        );
+        commitRef.current(newIndex);
+      },
+    },
+  ), [scrollY, ITEM_H]);
 
-  // ── Handlers scroll ─────────────────────────────────────────────────────────
-  // onScrollBeginDrag : rien à faire — la vidéo joue pendant le drag
-  const onMomentumScrollEnd = useCallback((e: any) => {
-    const snapped = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-    applyActiveIndexRef.current(snapped);
-  }, [ITEM_H]);
-
-  // Safety : si pas de momentum (très rare avec pagingEnabled)
-  const onScrollEndDrag = useCallback((e: any) => {
-    setTimeout(() => {
-      const snapped = Math.round(e.nativeEvent.contentOffset.y / ITEM_H);
-      applyActiveIndexRef.current(snapped);
-    }, 120);
-  }, [ITEM_H]);
-
-  // ── Auto-avance fin de vidéo ────────────────────────────────────────────────
-  const handleEnd = useCallback(() => {
-    const next = activeIdxRef.current + 1;
-    if (next >= filmsRef.current.length) return;
-    flatListRef.current?.scrollToIndex({ index: next, animated: true });
-  }, []);
-
-  // ── Scroll vers newReelId ───────────────────────────────────────────────────
-  const scrolledToNew = useRef(false);
+  // Scroll vers newReelId (ex : après publication)
+  const didScrollNew = useRef(false);
   useEffect(() => {
-    if (!newReelId || scrolledToNew.current || !films.length) return;
+    if (!newReelId || didScrollNew.current || !films.length) return;
     const idx = films.findIndex(f => f.id === newReelId);
-    if (idx === -1) return;
-    scrolledToNew.current = true;
+    if (idx < 0) return;
+    didScrollNew.current = true;
     InteractionManager.runAfterInteractions(() => {
-      flatListRef.current?.scrollToIndex({ index: idx, animated: true });
+      flatRef.current?.scrollToIndex({ index: idx, animated: true });
     });
   }, [newReelId, films]);
-  useEffect(() => { scrolledToNew.current = false; }, [newReelId]);
+  useEffect(() => { didScrollNew.current = false; }, [newReelId]);
 
-  // ── Focus screen ────────────────────────────────────────────────────────────
-  useFocusEffect(
-    useCallback(() => {
-      setScreenFocused(true);
-      return () => setScreenFocused(false);
-    }, []),
-  );
-
-  // ── Callbacks stables ───────────────────────────────────────────────────────
-  const handleInfoPress = useCallback((film: FeedFilm) => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    setInfoFilm(film);
-  }, []);
-  const handleInfoClose = useCallback(() => setInfoFilm(null), []);
-  const handleProgress  = useCallback((_: VideoProgress) => {}, []);
-  const handleFollowFriend = useCallback((fid: string) => {
-    if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-    setFilms(prev => prev.map(film => ({
-      ...film,
-      liked_by_friends: (film.liked_by_friends ?? []).map(f =>
-        f.id === fid ? { ...f, followed: true } : f,
-      ),
-    })));
-  }, [setFilms]);
-
-  // ── RENDER ITEM ─────────────────────────────────────────────────────────────
-  const renderItem = useCallback(
-    ({ item, index }: { item: FeedFilm; index: number }) => (
-      <FeedItem
-        film={item}
-        isActive={index === activeIndex && screenFocused}
-        isNear={Math.abs(index - activeIndex) <= 1}
-        screenFocused={screenFocused}
-        itemW={W}
-        itemH={ITEM_H}
-        insetBot={insets.bottom}
-        onFollowFriend={handleFollowFriend}
-        onLike={toggleLike}
-        onInfoPress={handleInfoPress}
-        onProgress={handleProgress}
-        onEnd={handleEnd}
-      />
-    ),
-    [
-      activeIndex, screenFocused, W, ITEM_H, insets.bottom,
-      handleFollowFriend, toggleLike, handleInfoPress, handleProgress, handleEnd,
-    ],
-  );
+  // Pause/reprise sur changement d'écran
+  useFocusEffect(useCallback(() => {
+    setScreenFocused(true);
+    return () => setScreenFocused(false);
+  }, []));
 
   const getItemLayout = useCallback(
-    (_: unknown, index: number) => ({ length: ITEM_H, offset: ITEM_H * index, index }),
+    (_: any, i: number) => ({ length: ITEM_H, offset: ITEM_H * i, index: i }),
     [ITEM_H],
   );
 
   const keyExtractor = useCallback((item: FeedFilm) => item.id, []);
 
-  const onScrollToIndexFailed = useCallback(({ index }: { index: number }) => {
-    flatListRef.current?.scrollToOffset({ offset: index * ITEM_H, animated: false });
-    InteractionManager.runAfterInteractions(() => {
-      flatListRef.current?.scrollToIndex({ index, animated: true });
-    });
-  }, [ITEM_H]);
+  const renderItem = useCallback(({ item, index }: { item: FeedFilm; index: number }) => (
+    <FeedItem
+      key={item.id}
+      film={item}
+      isActive={index === activeIndex && screenFocused}
+      isNear={Math.abs(index - activeIndex) <= 1}
+      itemW={W}
+      itemH={ITEM_H}
+      insetBot={insets.bottom}
+      onLike={toggleLike}
+    />
+  ), [activeIndex, screenFocused, W, ITEM_H, insets.bottom, toggleLike]);
 
-  const onScroll = useMemo(
-    () => Animated.event(
-      [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-      { useNativeDriver: false },
-    ),
-    [scrollY],
-  );
+  if (loading && !films.length) {
+    return (
+      <View style={s.root}>
+        <View style={s.loadingWrap}>
+          <Text style={s.loadingTxt}>Chargement des épisodes…</Text>
+        </View>
+      </View>
+    );
+  }
 
-  // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={s.root}>
       <StatusBar style="light" translucent />
 
       <FlatList
-        ref={flatListRef}
+        ref={flatRef}
         data={films}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-
         pagingEnabled
         decelerationRate="fast"
-
-        viewabilityConfig={viewabilityConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
-        onMomentumScrollEnd={onMomentumScrollEnd}
-        onScrollEndDrag={onScrollEndDrag}
-
         getItemLayout={getItemLayout}
-        onScrollToIndexFailed={onScrollToIndexFailed}
-
-        onScroll={onScroll}
+        onScroll={handleActiveScroll}
         scrollEventThrottle={16}
 
-        // Performances — anti pages noires
-        windowSize={7}
+        // ── Performances vidéo ─────────────────────────────────────────────
+        // windowSize=9 : ±4 items toujours montés → aucun player détruit
+        // removeClippedSubviews=false : critique pour VideoView natif Android
+        windowSize={9}
         maxToRenderPerBatch={3}
-        updateCellsBatchingPeriod={30}
+        updateCellsBatchingPeriod={50}
         initialNumToRender={3}
-        removeClippedSubviews={false}   // CRITIQUE : false = aucun flash noir
+        removeClippedSubviews={false}
 
         overScrollMode="never"
         bounces={false}
@@ -347,26 +239,24 @@ export default function ReelsScreen() {
         directionalLockEnabled
       />
 
-      <SafeAreaView edges={['top']} style={s.headerSafe} pointerEvents="box-none">
-        <TopHeader feedKey={feedKey} onMenuPress={() => setMenuOpen(true)} scrollY={scrollY} />
-      </SafeAreaView>
-
-      {!!error && <ErrorBanner message={error} />}
-
-      <Modal
-        visible={menuOpen} transparent animationType="none"
-        statusBarTranslucent onRequestClose={() => setMenuOpen(false)}
-      >
-        <DropdownMenu visible={menuOpen} onClose={() => setMenuOpen(false)}
-          onSelect={setFeedKey} activeKey={feedKey} />
-      </Modal>
-
-      <InfoSheet film={infoFilm} onClose={handleInfoClose} />
+      {!!error && (
+        <View style={s.errBanner} pointerEvents="none">
+          <Text style={s.errTxt}>{error}</Text>
+        </View>
+      )}
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:       { flex: 1, backgroundColor: '#03000A' },
-  headerSafe: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50 },
+  root:        { flex: 1, backgroundColor: '#07000F' },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadingTxt:  { color: 'rgba(255,255,255,0.5)', fontSize: 14 },
+  errBanner:   {
+    position: 'absolute', bottom: 80, left: 20, right: 20,
+    backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)',
+  },
+  errTxt: { color: '#EF4444', fontSize: 12, textAlign: 'center' },
 });
