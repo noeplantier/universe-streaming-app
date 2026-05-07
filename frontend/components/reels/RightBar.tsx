@@ -139,7 +139,6 @@ const LeftBar = memo(function LeftBar({
       {/* Save / Watchlist */}
       <IconBtn
         name={saved ? 'bookmark' : 'bookmark-outline'}
-        label="Sauver"
         active={saved}
         scale={saveSc}
         onPress={pressSave}
@@ -148,14 +147,12 @@ const LeftBar = memo(function LeftBar({
       {/* Info */}
       <IconBtn
         name="information-circle-outline"
-        label="Infos"
         onPress={pressInfo}
       />
 
       {/* Partager */}
       <IconBtn
         name="arrow-redo-outline"
-        label="Partager"
         onPress={pressShare}
       />
 
