@@ -937,14 +937,6 @@ export default function SearchScreen() {
         </TouchableOpacity>
       </View>
 
-                {/* Gift button */}
-                <View style={{ position: 'absolute', top: Platform.OS === 'ios' ? 50 : 14, right: 68, zIndex: 100 }}>
-        <TouchableOpacity style={[ms.searchBtn, { width: 36, height: 36 }]} onPress={() => router.push('/cadeau' as any)}>
-          <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
-          <Ionicons name="gift" size={25} color={T.white} />
-        </TouchableOpacity> 
-      </View>
-
       </Animated.View>
 
 
