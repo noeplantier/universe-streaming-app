@@ -1,86 +1,92 @@
 /**
- * FeedItem.tsx — v FINAL
+ * components/reels/FeedItem.tsx
  *
- * CORRECTIF PRINCIPAL : callback setup stable au niveau module
- * ─────────────────────────────────────────────────────────────
- * Le bug "seule la 1ère vidéo joue" venait du callback inline :
+ * ── CAUSES IDENTIFIÉES DU POSTER FIGÉ ───────────────────────────────────────
  *
- *   _useVideoPlayer(src, (p) => { p.loop = false; ... })
- *                        ↑ fonction recréée à CHAQUE render
+ *  A. useEvent importé depuis 'expo' → ne fonctionne PAS avec expo-video 2.x
+ *     Doit venir de 'expo-video' directement.
  *
- * expo-video détecte que le setup a changé → recrée le player
- * → la source est rechargée → la vidéo repart de zéro.
+ *  B. player.replace({ uri: src }) → ignoré silencieusement sur certaines
+ *     versions. La nouvelle API attend une string ou un objet VideoSource.
  *
- * FIX : callback défini UNE FOIS au niveau du module (jamais recréé).
+ *  C. Architecture trop complexe : readyToPlay → pendingPlay → play()
+ *     En expo-video 2.x, player.play() est une "intent" mise en queue.
+ *     Il N'EST PAS nécessaire d'attendre readyToPlay pour appeler play().
+ *     Le lecteur démarre dès qu'il est prêt, automatiquement.
+ *
+ * ── SOLUTION ────────────────────────────────────────────────────────────────
+ *
+ *  1. Source passée directement à useVideoPlayer (string).
+ *     Quand isNear passe à true, la source change → expo-video charge.
+ *     Quand isNear passe à false, source = null → expo-video libère.
+ *
+ *  2. isActive=true  → player.play()   (mis en queue par expo-video si pas prêt)
+ *     isActive=false → player.pause()  + reset position
+ *
+ *  3. Crossfade poster basé sur l'événement isPlaying réel
+ *     (pas sur un statut synthétique pendingPlay).
+ *     Poster 1→0 quand la vidéo commence vraiment à jouer.
+ *     Poster 0→1 quand la vidéo s'arrête.
  */
 
 import React, {
   memo, useCallback, useEffect, useRef, useState,
 } from 'react';
 import {
-  Animated, Platform, StyleSheet,
-  Text, TouchableOpacity, View,
+  View, Image, StyleSheet, Animated,
+  Platform, TouchableOpacity, Text,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView }  from 'expo-blur';
 import { Ionicons }  from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import * as Haptics  from 'expo-haptics';
 
 import BottomCard from './BottomCard';
-import { P }      from './types';
+import { P } from './types';
 import type { FeedFilm } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ CALLBACK STABLE — jamais recréé → expo-video ne recrée pas le player
+// expo-video — imports sécurisés
+//
+// CRITIQUE : useEvent doit venir de 'expo-video', PAS de 'expo'
+// En expo-video 2.x, useEvent a été déplacé dans le package expo-video.
 // ─────────────────────────────────────────────────────────────────────────────
-function setupPlayer(p: any) {
-  if (!p) return;
-  p.loop  = false;
-  p.muted = false;
-  try {
-    p.bufferOptions = {
-      preferredForwardBufferDuration:  12,
-      preferredBackwardBufferDuration: 2,
-    };
-  } catch {}
-}
+let _useVideoPlayer: (source: any, setup?: (p: any) => void) => any =
+  (_src: any, _cb?: any) => ({
+    play(){}, pause(){}, seekBy(){},
+    get duration(){ return 0; },
+    get status(){ return ''; },
+    muted: false,
+  });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// expo-video — natif uniquement
-// ─────────────────────────────────────────────────────────────────────────────
-let _useVideoPlayer: ((src: any, setup: any) => any) | null = null;
-let _VideoView:      any = null;
-let _useEvent:       (player: any, event: string, initial: any) => any =
-  (_p, _e, d) => d;
+let _useEvent: (player: any, event: string, initial: any) => any =
+  (_p: any, _e: string, def: any) => def;
+
+let _VideoView: any = () => null;
 
 if (Platform.OS !== 'web') {
   try {
-    const ev     = require('expo-video');
-    _useVideoPlayer = ev.useVideoPlayer;
-    _VideoView      = ev.VideoView;
-    _useEvent       = ev.useEvent ?? require('expo').useEvent;
+    const expoVideo      = require('expo-video');
+    _useVideoPlayer      = expoVideo.useVideoPlayer;
+    _VideoView           = expoVideo.VideoView;
+    // ★ FIX A : useEvent depuis expo-video, pas depuis expo
+    _useEvent            = expoVideo.useEvent;
   } catch (e) {
-    console.warn('[FeedItem] expo-video:', e);
+    console.warn('[FeedItem] expo-video non disponible:', e);
   }
 }
-
-// Hook stable : retourne null si expo-video absent (web)
-const _nullHook = (_src: any, _setup: any) => null;
-const _playerHook = _useVideoPlayer ?? _nullHook;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
 // ─────────────────────────────────────────────────────────────────────────────
-export interface FeedItemProps {
-  film:          FeedFilm;
-  isActive:      boolean;
-  isNear:        boolean;
-  screenFocused: boolean;
-  itemW:         number;
-  itemH:         number;
-  insetBot:      number;
-  onLike?:       (id: string) => void;
-  onInfoPress?:  (f: FeedFilm) => void;
+interface Props {
+  film:     FeedFilm;
+  isActive: boolean;
+  isNear:   boolean;
+  itemW:    number;
+  itemH:    number;
+  insetBot: number;
+  onLike?:  (id: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -89,275 +95,261 @@ export interface FeedItemProps {
 const Spinner = memo(function Spinner() {
   const rot = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    const a = Animated.loop(
-      Animated.timing(rot, { toValue: 1, duration: 800, useNativeDriver: true })
-    );
-    a.start();
-    return () => a.stop();
+    Animated.loop(
+      Animated.timing(rot, { toValue: 1, duration: 900, useNativeDriver: true }),
+    ).start();
+    return () => rot.stopAnimation();
   }, [rot]);
-  const spin = rot.interpolate({ inputRange:[0,1], outputRange:['0deg','360deg'] });
-  return <Animated.View style={[fi.spinner, { transform:[{ rotate:spin }] }]} />;
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// WebPlayer — <video> HTML pour Expo Web
-// ─────────────────────────────────────────────────────────────────────────────
-interface WebPlayerProps {
-  src:      string;
-  isActive: boolean;
-  muted:    boolean;
-  itemW:    number;
-  itemH:    number;
-  onPlay:   (v: boolean) => void;
-  onTime:   (ct: number, dur: number) => void;
-  onWait:   (v: boolean) => void;
-  onErr:    () => void;
-  seekRef:  React.MutableRefObject<((t: number) => void) | null>;
-}
-
-const WebPlayer = memo(function WebPlayer({
-  src, isActive, muted, itemW, itemH,
-  onPlay, onTime, onWait, onErr, seekRef,
-}: WebPlayerProps) {
-  const ref = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    seekRef.current = (t: number) => { if (ref.current) ref.current.currentTime = t; };
-    return () => { seekRef.current = null; };
-  }, [seekRef]);
-
-  useEffect(() => {
-    const v = ref.current; if (!v) return;
-    if (isActive) { v.currentTime = 0; v.play().catch(() => {}); }
-    else          { v.pause();          v.currentTime = 0;        }
-  }, [isActive]);
-
-  useEffect(() => { if (ref.current) ref.current.muted = muted; }, [muted]);
-
-  useEffect(() => {
-    const v = ref.current; if (!v) return;
-    const onP = () => onPlay(true);
-    const onA = () => onPlay(false);
-    const onT = () => { if (v.duration > 0) onTime(v.currentTime, v.duration); };
-    const onW = () => onWait(true);
-    const onC = () => onWait(false);
-    v.addEventListener('play',       onP);
-    v.addEventListener('pause',      onA);
-    v.addEventListener('ended',      onA);
-    v.addEventListener('timeupdate', onT);
-    v.addEventListener('waiting',    onW);
-    v.addEventListener('canplay',    onC);
-    v.addEventListener('error',      onErr);
-    return () => {
-      v.removeEventListener('play',       onP);
-      v.removeEventListener('pause',      onA);
-      v.removeEventListener('ended',      onA);
-      v.removeEventListener('timeupdate', onT);
-      v.removeEventListener('waiting',    onW);
-      v.removeEventListener('canplay',    onC);
-      v.removeEventListener('error',      onErr);
-    };
-  }, [onPlay, onTime, onWait, onErr]);
-
-  return React.createElement('video', {
-    ref, src, muted, playsInline: true, preload: 'auto',
-    style: {
-      position:'absolute', top:0, left:0,
-      width:itemW, height:itemH,
-      objectFit:'cover', background:'#000',
-    },
-  });
+  const spin = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  return <Animated.View style={[fi.spinner, { transform: [{ rotate: spin }] }]} />;
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FeedItem
 // ─────────────────────────────────────────────────────────────────────────────
 const FeedItem = memo(function FeedItem({
-  film, isActive, isNear, screenFocused,
-  itemW, itemH, insetBot, onLike, onInfoPress,
-}: FeedItemProps) {
-  const isWeb = Platform.OS === 'web';
-  const src   = film.video_url?.trim() || null;
+  film, isActive, isNear, itemW, itemH, insetBot, onLike,
+}: Props) {
+  const router = useRouter();
+  const isWeb  = Platform.OS === 'web';
+  const src    = film.video_url?.trim() || null;
 
-  // ── Player natif ──────────────────────────────────────────────────────────
-  // nativeSrc change selon isNear → expo-video charge/libère la source
-  // setupPlayer est STABLE (module-level) → player jamais recréé par erreur
-  const nativeSrc = !isWeb && isNear && src ? src : null;
-  const player    = _playerHook(nativeSrc, setupPlayer);
+  // ── Source réactive ───────────────────────────────────────────────────────
+  //
+  // ★ FIX B+C : on passe la source DIRECTEMENT à useVideoPlayer
+  //   • String (pas d'objet { uri }) — compatibilité maximale expo-video 2.x
+  //   • isNear ? src : null → expo-video charge quand nécessaire, libère sinon
+  //   • Quand isNear change, expo-video remplace la source en interne
+  //   • PAS de player.replace() manuel nécessaire
+  //
+  const source = isWeb ? null : (isNear && src ? src : null);
 
-  // Events (depuis expo-video OU expo selon la version)
-  const { isPlaying: nativePlaying } = _useEvent(
-    player, 'playingChange', { isPlaying: false }
-  );
-  const { currentTime: nativeCT } = _useEvent(
-    player, 'timeUpdate',
-    { currentTime:0, bufferedPosition:0, currentLiveTimestamp:null, currentOffsetFromLive:null }
-  );
-  const { isPlaybackEnded } = _useEvent(
-    player, 'playToEnd', { isPlaybackEnded: false }
-  );
+  const player = _useVideoPlayer(source, (p: any) => {
+    if (!p || isWeb) return;
+    p.loop  = false;
+    p.muted = false;
+    try {
+      p.bufferOptions = {
+        preferredForwardBufferDuration:  12,
+        preferredBackwardBufferDuration: 0,
+      };
+    } catch {}
+  });
 
-  // ── State ─────────────────────────────────────────────────────────────────
-  const [liked,     setLiked]     = useState(film.is_liked  ?? false);
-  const [muted,     setMuted]     = useState(false);
-  const [saved,     setSaved]     = useState(film.is_saved  ?? false);
-  const [buffering, setBuffering] = useState(true);
-  const [hasErr,    setHasErr]    = useState(false);
-  const [webPlaying,setWebPlaying]= useState(false);
-  const [webCT,     setWebCT]     = useState(0);
-  const [webDur,    setWebDur]    = useState(0);
+  // ── Events expo-video ─────────────────────────────────────────────────────
+  // useEvent depuis expo-video (fix A)
+  const { isPlaying }       = _useEvent(player, 'playingChange', { isPlaying: false });
+  const { currentTime }     = _useEvent(player, 'timeUpdate',    {
+    currentTime: 0, bufferedPosition: 0,
+    currentLiveTimestamp: null, currentOffsetFromLive: null,
+  });
+  const { isPlaybackEnded } = _useEvent(player, 'playToEnd', { isPlaybackEnded: false });
 
-  // ── Refs ─────────────────────────────────────────────────────────────────
-  const ctRef   = useRef(0);
-  const endRef  = useRef(false);
-  const seekRef = useRef<((t: number) => void) | null>(null);
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const currentTimeRef = useRef(0);
+  const endFiredRef    = useRef(false);
 
-  // currentTime synchrone
+  useEffect(() => { if (!isWeb) currentTimeRef.current = currentTime; }, [currentTime, isWeb]);
+
+  // ── State UI ──────────────────────────────────────────────────────────────
+  const [liked,       setLiked]       = useState(film.is_liked ?? false);
+  const [muted,       setMuted]       = useState(false);
+  const [hasErr,      setHasErr]      = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+
+  const nativeDur = !isWeb && player?.duration ? player.duration : 0;
+  const progress  = nativeDur > 0 ? Math.min(currentTime / nativeDur, 1) : 0;
+
+  // ── Poster overlay ────────────────────────────────────────────────────────
+  const posterOp  = useRef(new Animated.Value(1)).current;
+  const posterRef = useRef<Animated.CompositeAnimation>();
+
+  const revealVideo = useCallback(() => {
+    posterRef.current?.stop();
+    posterRef.current = Animated.timing(posterOp, {
+      toValue: 0, duration: 280, useNativeDriver: true,
+    });
+    posterRef.current.start();
+  }, [posterOp]);
+
+  const showPoster = useCallback((instant = false) => {
+    posterRef.current?.stop();
+    posterRef.current = Animated.timing(posterOp, {
+      toValue: 1, duration: instant ? 0 : 160, useNativeDriver: true,
+    });
+    posterRef.current.start();
+  }, [posterOp]);
+
+  // ── Status listener (buffering + erreur UI uniquement) ────────────────────
   useEffect(() => {
-    if (!isWeb) ctRef.current = nativeCT;
-    else        ctRef.current = webCT;
-  }, [nativeCT, webCT, isWeb]);
-
-  // ── Métriques ─────────────────────────────────────────────────────────────
-  const playing  = isWeb ? webPlaying : nativePlaying;
-  const dur      = isWeb ? webDur : (player?.duration ?? 0);
-  const progress = dur > 0 ? Math.min(ctRef.current / dur, 1) : 0;
-
-  // ── Status listener (natif) ───────────────────────────────────────────────
-  useEffect(() => {
-    if (isWeb || !player?.addListener) return;
+    if (isWeb || !player) return;
     let sub: any;
     try {
       sub = player.addListener('statusChange', (ev: any) => {
-        const st = typeof ev?.status === 'string'
-          ? ev.status : (ev?.status?.status ?? '');
-        if (st === 'loading')     setBuffering(true);
-        if (st === 'readyToPlay') { setBuffering(false); setHasErr(false); }
-        if (st === 'error')       { setHasErr(true);     setBuffering(false); }
-        if (st === 'idle')        setBuffering(false);
+        const raw  = ev?.status ?? ev;
+        const stat = typeof raw === 'string' ? raw : (raw?.status ?? '');
+        if (stat === 'loading')      setIsBuffering(true);
+        if (stat === 'readyToPlay')  { setIsBuffering(false); setHasErr(false); }
+        if (stat === 'error')        { setHasErr(true); setIsBuffering(false); }
+        if (stat === 'idle')         setIsBuffering(false);
       });
     } catch {}
     return () => { try { sub?.remove(); } catch {} };
   }, [player, isWeb]);
 
-  // ── ★ AUTO-PLAY / AUTO-PAUSE ★ ────────────────────────────────────────────
+  // ── Crossfade basé sur isPlaying réel ────────────────────────────────────
   //
-  //   isActive=true  → play() — expo-video met en queue si pas encore prêt
-  //   isActive=false → pause() + reset t=0
+  // On n'essaie plus de deviner quand la vidéo va jouer.
+  // On réagit à ce qui se passe réellement :
+  //   isPlaying=true  → la vidéo joue  → poster disparaît
+  //   isPlaying=false → la vidéo s'arrête → poster réapparaît
   //
-  //   Note : player est dans les deps MAIS ne change pas entre renders
-  //   puisque le setupPlayer stable empêche expo-video de le recréer.
+  useEffect(() => {
+    if (isPlaying) revealVideo();
+    else           showPoster();
+  }, [isPlaying, revealVideo, showPoster]);
+
+  // ── ★ AUTO-PLAY / AUTO-PAUSE — Le plus simple possible ★ ─────────────────
+  //
+  // En expo-video 2.x, player.play() est une INTENTION mise en file d'attente.
+  // Pas besoin d'attendre readyToPlay : expo-video démarre dès que prêt.
+  //
+  // isActive=true  → play() en queue → démarre dès buffering OK
+  // isActive=false → pause() immédiat + reset position
+  //
   useEffect(() => {
     if (isWeb || !player) return;
-    if (isActive && screenFocused) {
-      try { player.play(); } catch {}
+
+    if (isActive) {
+      try { player.play(); } catch (e) {
+        console.warn('[FeedItem] play():', e);
+      }
     } else {
       try { player.pause(); } catch {}
-      const ct = ctRef.current;
-      if (ct > 0.3) {
-        // Tick suivant pour ne pas bloquer le thread natif
-        setTimeout(() => { try { player.seekBy(-ct); } catch {} }, 0);
-      }
+      // Reset position dans le tick suivant (évite conflit thread natif)
+      const ct = currentTimeRef.current;
+      const t  = setTimeout(() => {
+        if (ct > 0.5) { try { player.seekBy(-ct); } catch {} }
+      }, 50);
+      return () => clearTimeout(t);
     }
-  }, [isActive, screenFocused, player, isWeb]);
+  }, [isActive, player, isWeb]);
 
-  // Mute natif
+  // Mute
   useEffect(() => {
     if (isWeb || !player) return;
     try { player.muted = muted; } catch {}
   }, [muted, player, isWeb]);
 
-  // Fin de vidéo → retour t=0
+  // Auto-avance fin de vidéo
   useEffect(() => {
-    if (isWeb || !isPlaybackEnded || endRef.current || !player) return;
-    endRef.current = true;
-    try { player.seekBy(-ctRef.current); } catch {}
+    if (isWeb || !isPlaybackEnded || endFiredRef.current) return;
+    endFiredRef.current = true;
+    const ct = currentTimeRef.current;
+    setTimeout(() => { try { player.seekBy(-ct); } catch {} }, 0);
   }, [isPlaybackEnded, isWeb, player]);
 
-  // Reset sur changement de film
+  // Reset quand film change
   useEffect(() => {
-    endRef.current = false;
-    setHasErr(false); setBuffering(true);
-    setWebPlaying(false); setWebCT(0); setWebDur(0);
-  }, [film.id]);
+    endFiredRef.current = false;
+    setHasErr(false);
+    setIsBuffering(false);
+    posterOp.setValue(1);
+  }, [film.id, posterOp]);
 
-  // ── Callbacks Web ─────────────────────────────────────────────────────────
-  const onWebPlay  = useCallback((v: boolean) => { setWebPlaying(v); setBuffering(false); }, []);
-  const onWebTime  = useCallback((ct: number, d: number) => { setWebCT(ct); setWebDur(d); }, []);
-  const onWebWait  = useCallback((v: boolean) => setBuffering(v), []);
-  const onWebErr   = useCallback(() => { setHasErr(true); setBuffering(false); }, []);
-
-  // ── Seek ─────────────────────────────────────────────────────────────────
-  const handleSeek = useCallback((sec: number) => {
-    if (isWeb) {
-      seekRef.current?.(sec);
-    } else if (player) {
-      try { player.seekBy(sec - ctRef.current); } catch {}
-    }
+  // ── Seek ──────────────────────────────────────────────────────────────────
+  const handleSeek = useCallback((s: number) => {
+    if (!isWeb && player) { try { player.seekBy(s - currentTimeRef.current); } catch {} }
   }, [isWeb, player]);
 
   const handlePlayPause = useCallback(() => {
     if (!isWeb && player) {
-      try { playing ? player.pause() : player.play(); } catch {}
+      try { isPlaying ? player.pause() : player.play(); } catch {}
     }
     if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  }, [isWeb, player, playing]);
+  }, [isWeb, player, isPlaying]);
 
-  // ── Skip ±10s ─────────────────────────────────────────────────────────────
-  const leftBadge  = useRef(new Animated.Value(0)).current;
-  const rightBadge = useRef(new Animated.Value(0)).current;
+  const handleRetry = useCallback(() => {
+    setHasErr(false);
+    setIsBuffering(false);
+    endFiredRef.current = false;
+    posterOp.setValue(1);
+    // La source est réactive → si isNear=true, le player rechargera automatiquement
+    // via le changement de props. Pas besoin d'appeler replace() manuellement.
+  }, [posterOp]);
 
-  const flash = useCallback((anim: Animated.Value) => {
+  // ── Gestes (tiers gauche / centre / droite) ───────────────────────────────
+  const heartAnim  = useRef(new Animated.Value(0)).current;
+  const heartScale = heartAnim.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1.3, 1] });
+  const heartOpac  = heartAnim.interpolate({ inputRange: [0, 0.15, 0.85, 1], outputRange: [0, 1, 1, 0] });
+
+  const triggerLike = useCallback(() => {
+    if (!liked) {
+      setLiked(true);
+      onLike?.(film.id);
+      if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+    }
     Animated.sequence([
-      Animated.timing(anim, { toValue:1, duration:80,  useNativeDriver:true }),
-      Animated.delay(350),
-      Animated.timing(anim, { toValue:0, duration:200, useNativeDriver:true }),
+      Animated.spring(heartAnim, { toValue: 1, useNativeDriver: true, speed: 22, bounciness: 12 }),
+      Animated.delay(480),
+      Animated.timing(heartAnim, { toValue: 0, duration: 260, useNativeDriver: true }),
     ]).start();
-  }, []);
+  }, [liked, heartAnim, isWeb, film.id, onLike]);
 
-  const skip = useCallback((d: number) => {
-    handleSeek(Math.max(0, Math.min(dur, ctRef.current + d)));
-    d < 0 ? flash(leftBadge) : flash(rightBadge);
-    if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  }, [dur, handleSeek, flash, leftBadge, rightBadge, isWeb]);
-
-  // ── Like + cœur ───────────────────────────────────────────────────────────
-  const heartOp    = useRef(new Animated.Value(0)).current;
-  const heartScale = heartOp.interpolate({ inputRange:[0,0.4,1], outputRange:[0,1.3,1] });
-  const heartAlpha = heartOp.interpolate({ inputRange:[0,0.1,0.85,1], outputRange:[0,1,1,0] });
-
-  const doLike = useCallback(() => {
-    if (!liked) { setLiked(true); onLike?.(film.id); }
-    if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    Animated.sequence([
-      Animated.spring(heartOp, { toValue:1, useNativeDriver:true, speed:20, bounciness:12 }),
-      Animated.delay(500),
-      Animated.timing(heartOp, { toValue:0, duration:250, useNativeDriver:true }),
-    ]).start();
-  }, [liked, heartOp, isWeb, film.id, onLike]);
-
-  // Zones de geste : double-tap = like / tap simple = action
   const tL = useRef(0), tC = useRef(0), tR = useRef(0);
-  const tapL = useCallback(() => { const n=Date.now(); n-tL.current<300 ? doLike() : skip(-10); tL.current=n; }, [doLike, skip]);
-  const tapC = useCallback(() => { const n=Date.now(); n-tC.current<300 ? doLike() : handlePlayPause(); tC.current=n; }, [doLike, handlePlayPause]);
-  const tapR = useCallback(() => { const n=Date.now(); n-tR.current<300 ? doLike() : skip(10);  tR.current=n; }, [doLike, skip]);
+
+  const onLeft = useCallback(() => {
+    const n = Date.now();
+    if (n - tL.current < 300) triggerLike();
+    else if (!isWeb && player) { try { player.seekBy(-10); } catch {} }
+    tL.current = n;
+  }, [triggerLike, player, isWeb]);
+
+  const onCenter = useCallback(() => {
+    const n = Date.now();
+    if (n - tC.current < 300) triggerLike();
+    else handlePlayPause();
+    tC.current = n;
+  }, [triggerLike, handlePlayPause]);
+
+  const onRight = useCallback(() => {
+    const n = Date.now();
+    if (n - tR.current < 300) triggerLike();
+    else if (!isWeb && player) { try { player.seekBy(10); } catch {} }
+    tR.current = n;
+  }, [triggerLike, player, isWeb]);
+
+  const handleLike = useCallback(() => {
+    setLiked(p => !p);
+    onLike?.(film.id);
+  }, [film.id, onLike]);
+
+  const handleMute = useCallback(() => setMuted(p => !p), []);
+
+  const posterUri = film.poster_url?.trim()
+    || `https://picsum.photos/seed/reel_${film.id}/400/700`;
 
   const zW = itemW / 3;
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
+  //   1. Fond sombre
+  //   2. VideoView natif (opacity=1 fixe, JAMAIS dans Animated.View)
+  //   3. Image poster en overlay (fondu piloté par isPlaying)
+  //   4. Zones de geste
+  //   5. UI (spinner, erreur, pause, cœur, sidebar, bottomcard)
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <View style={[fi.root, { width:itemW, height:itemH }]}>
+    <View style={[fi.root, { width: itemW, height: itemH }]}>
 
-      {/* Fond noir */}
+      {/* 1 — Fond */}
       <View style={[StyleSheet.absoluteFill, fi.bg]} />
 
-      {/* VideoView NATIF — jamais dans Animated.View */}
-      {!isWeb && isNear && !!src && !hasErr && _VideoView && player && (
+      {/* 2 — VideoView natif — JAMAIS dans Animated.View */}
+      {!isWeb && isNear && !!src && !hasErr && (
         <_VideoView
           player={player}
-          style={[StyleSheet.absoluteFill, { width:itemW, height:itemH }]}
+          style={[StyleSheet.absoluteFill, { width: itemW, height: itemH }]}
           contentFit="cover"
           nativeControls={false}
           allowsFullscreen={false}
@@ -365,125 +357,84 @@ const FeedItem = memo(function FeedItem({
         />
       )}
 
-      {/* Web <video> */}
-      {isWeb && !!src && !hasErr && (
-        <WebPlayer
-          src={src}
-          isActive={isActive && screenFocused}
-          muted={muted}
-          itemW={itemW} itemH={itemH}
-          onPlay={onWebPlay} onTime={onWebTime}
-          onWait={onWebWait} onErr={onWebErr}
-          seekRef={seekRef}
-        />
-      )}
-
-      {/* URL manquante */}
-      {!src && (
-        <View style={fi.diagBox} pointerEvents="none">
-          <Ionicons name="videocam-off-outline" size={36} color="rgba(255,255,255,0.25)" />
-          <Text style={fi.diagTxt}>video_url vide dans public.reels</Text>
-        </View>
-      )}
-
-      {/* Gradient bas */}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
-        locations={[0.30, 0.68, 1]}
-        style={fi.grad}
+      {/* 3 — Poster overlay (suit isPlaying via useEffect) */}
+      <Animated.View
+        style={[StyleSheet.absoluteFill, { opacity: posterOp }]}
         pointerEvents="none"
-      />
+      >
+        <Image
+          source={{ uri: posterUri }}
+          style={{ width: itemW, height: itemH }}
+          resizeMode="cover"
+        />
+        <View style={fi.posterGrad} />
+      </Animated.View>
 
-      {/* Zones de geste */}
-      <TouchableOpacity style={[fi.zone, { left:0    }]} onPress={tapL} activeOpacity={1} />
-      <TouchableOpacity style={[fi.zone, { left:zW   }]} onPress={tapC} activeOpacity={1} />
-      <TouchableOpacity style={[fi.zone, { left:zW*2 }]} onPress={tapR} activeOpacity={1} />
+      {/* 4 — Zones de geste */}
+      <TouchableOpacity style={[fi.zone, { left: 0 }]}    onPress={onLeft}   activeOpacity={1} />
+      <TouchableOpacity style={[fi.zone, { left: zW }]}   onPress={onCenter} activeOpacity={1} />
+      <TouchableOpacity style={[fi.zone, { left: zW*2 }]} onPress={onRight}  activeOpacity={1} />
 
-      {/* Buffering */}
-      {isActive && buffering && !hasErr && !!src && (
+      {/* 5a — Buffering */}
+      {isActive && isBuffering && !hasErr && (
         <View style={fi.center} pointerEvents="none"><Spinner /></View>
       )}
 
-      {/* Erreur */}
+      {/* 5b — Erreur */}
       {hasErr && (
-        <View style={fi.errBox}>
-          <Ionicons name="warning-outline" size={34} color={P.hot} />
-          <Text style={fi.errTxt}>Impossible de lire la vidéo</Text>
-          <Text style={fi.errUrl} numberOfLines={1}>{src}</Text>
-          <TouchableOpacity style={fi.retryBtn}
-            onPress={() => { setHasErr(false); setBuffering(true); }}>
+        <View style={fi.errWrap}>
+          <Ionicons name="warning-outline" size={32} color={P.hot} />
+          <Text style={fi.errTxt}>Vidéo indisponible</Text>
+          <TouchableOpacity onPress={handleRetry} style={fi.retryBtn}>
             <Ionicons name="refresh" size={14} color="#fff" />
             <Text style={fi.retryTxt}>Réessayer</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* Indicateur pause */}
-      {isActive && !playing && !buffering && !hasErr && !!src && (
+      {/* 5c — Indicateur pause (vidéo prête mais en pause) */}
+      {isActive && !isPlaying && !isBuffering && !hasErr && isNear && !!src && (
         <View style={fi.center} pointerEvents="none">
-          <BlurView intensity={22} tint="dark" style={fi.pauseCircle}>
-            <Ionicons name="play" size={26} color="rgba(255,255,255,0.92)" style={{ marginLeft:3 }} />
+          <BlurView intensity={18} tint="dark" style={fi.pauseBlur}>
+            <Ionicons name="play" size={24} color="rgba(255,255,255,0.92)" style={{ marginLeft: 3 }} />
           </BlurView>
         </View>
       )}
 
-      {/* Badges skip */}
-      <Animated.View style={[fi.badge, { opacity:leftBadge,  left:16,  top:itemH*0.45 }]} pointerEvents="none">
-        <BlurView intensity={40} tint="dark" style={fi.badgeBlur}>
-          <Ionicons name="play-back" size={15} color="#fff" />
-          <Text style={fi.badgeTxt}>-10s</Text>
-        </BlurView>
-      </Animated.View>
-      <Animated.View style={[fi.badge, { opacity:rightBadge, right:16, top:itemH*0.45 }]} pointerEvents="none">
-        <BlurView intensity={40} tint="dark" style={fi.badgeBlur}>
-          <Ionicons name="play-forward" size={15} color="#fff" />
-          <Text style={fi.badgeTxt}>+10s</Text>
-        </BlurView>
+      {/* 5d — Cœur double-tap */}
+      <Animated.View
+        style={[fi.heart, { opacity: heartOpac, transform: [{ scale: heartScale }] }]}
+        pointerEvents="none"
+      >
+        <Ionicons name="heart" size={80} color={P.red} />
       </Animated.View>
 
-      {/* Cœur */}
-      <Animated.View style={[fi.heart, { opacity:heartAlpha, transform:[{ scale:heartScale }] }]} pointerEvents="none">
-        <Ionicons name="heart" size={90} color={P.red} />
-      </Animated.View>
-
-      {/* Sidebar droite */}
-      <View style={fi.sidebar} pointerEvents="box-none">
-
-        <TouchableOpacity style={fi.sBtn}
-          onPress={() => { setLiked(p => { onLike?.(film.id); return !p; }); }}>
-          <View style={[fi.sIcon, liked && fi.sIconOn]}>
-            <Ionicons name={liked ? 'heart' : 'heart-outline'} size={26} color={liked ? P.red : '#fff'} />
-          </View>
-          <Text style={fi.sLbl}>{fmtN(film.likes_count)}</Text>
+      {/* 5e — Barre droite */}
+      <View style={fi.sideBar} pointerEvents="box-none">
+        <TouchableOpacity style={fi.sideBtn} onPress={handleLike}>
+          <Ionicons name={liked ? 'heart' : 'heart-outline'} size={28} color={liked ? P.red : '#fff'} />
+          <Text style={fi.sideBtnTxt}>{film.likes_count || 0}</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity style={fi.sBtn} onPress={() => setMuted(p=>!p)}>
-          <View style={[fi.sIcon, muted && fi.sIconOn]}>
-            <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={23} color="#fff" />
-          </View>
+        <TouchableOpacity style={fi.sideBtn} onPress={handleMute}>
+          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={24} color="#fff" />
         </TouchableOpacity>
-
-        <TouchableOpacity style={fi.sBtn} onPress={() => setSaved(p=>!p)}>
-          <View style={[fi.sIcon, saved && fi.sIconOn]}>
-            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={23} color={saved ? P.gold : '#fff'} />
-          </View>
+        <TouchableOpacity style={fi.sideBtn} onPress={() => router.push(`/film/${film.id}` as any)}>
+          <Ionicons name="information-circle-outline" size={26} color="#fff" />
         </TouchableOpacity>
-
-        {onInfoPress && (
-          <TouchableOpacity style={fi.sBtn} onPress={() => onInfoPress(film)}>
-            <View style={fi.sIcon}>
-              <Ionicons name="information-circle-outline" size={24} color="rgba(255,255,255,0.75)" />
-            </View>
-          </TouchableOpacity>
-        )}
       </View>
 
-      {/* BottomCard */}
+      {/* 5f — BottomCard */}
       <BottomCard
-        film={film}
+        reelId={film.id}
+        title={film.title}
+        director={film.director}
+        genre={film.genre}
+        year={film.year}
+        likesCount={film.likes_count}
+        viewsCount={film.views_count}
         progress={progress}
-        duration={dur}
-        isReady={!buffering && !hasErr && !!src}
+        duration={nativeDur}
+        isReady={!isBuffering && !hasErr && isNear && !!src}
         insetBot={insetBot}
         onSeek={handleSeek}
       />
@@ -493,39 +444,36 @@ const FeedItem = memo(function FeedItem({
 
 export default FeedItem;
 
-function fmtN(n: number): string {
-  if (n >= 1_000_000) return `${(n/1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${Math.round(n/1_000)}K`;
-  return String(n || 0);
-}
-
 const fi = StyleSheet.create({
-  root:       { overflow:'hidden' },
-  bg:         { backgroundColor:'#000' },
-  grad:       { position:'absolute', bottom:0, left:0, right:0, height:'62%' },
-  zone:       { position:'absolute', top:0, bottom:0, width:'33.33%', zIndex:10 },
-  center:     { ...StyleSheet.absoluteFillObject, alignItems:'center', justifyContent:'center', zIndex:20 },
-  spinner: {
-    width:38, height:38, borderRadius:19, borderWidth:3,
-    borderColor:'transparent',
-    borderTopColor:'rgba(255,255,255,0.90)',
-    borderRightColor:'rgba(255,255,255,0.20)',
+  root:       { overflow: 'hidden' },
+  bg:         { backgroundColor: '#07000F' },
+  posterGrad: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: '45%',
+    backgroundColor: 'rgba(0,0,0,0.42)',
   },
-  diagBox:    { ...StyleSheet.absoluteFillObject, zIndex:5, alignItems:'center', justifyContent:'center', gap:10 },
-  diagTxt:    { color:'rgba(255,255,255,0.35)', fontSize:13, textAlign:'center' },
-  errBox:     { ...StyleSheet.absoluteFillObject, zIndex:20, alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.88)', gap:12, padding:32 },
-  errTxt:     { color:'rgba(255,255,255,0.70)', fontSize:14, fontWeight:'600' },
-  errUrl:     { color:'rgba(255,255,255,0.28)', fontSize:10, textAlign:'center' },
-  retryBtn:   { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:P.primary, borderRadius:12, paddingHorizontal:18, paddingVertical:10 },
-  retryTxt:   { color:'#fff', fontSize:13, fontWeight:'700' },
-  pauseCircle:{ width:60, height:60, borderRadius:30, overflow:'hidden', alignItems:'center', justifyContent:'center' },
-  badge:      { position:'absolute', zIndex:20 },
-  badgeBlur:  { flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:14, paddingVertical:9, borderRadius:20, overflow:'hidden', borderWidth:1, borderColor:'rgba(255,255,255,0.14)' },
-  badgeTxt:   { color:'#fff', fontSize:14, fontWeight:'800' },
-  heart:      { position:'absolute', top:'50%', left:'50%', marginTop:-45, marginLeft:-45, zIndex:20 },
-  sidebar:    { position:'absolute', right:14, bottom:170, alignItems:'center', gap:20, zIndex:15 },
-  sBtn:       { alignItems:'center', gap:4 },
-  sIcon:      { width:50, height:50, borderRadius:25, backgroundColor:'rgba(0,0,0,0.40)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.12)' },
-  sIconOn:    { backgroundColor:'rgba(146,64,214,0.32)', borderColor:'rgba(146,64,214,0.55)' },
-  sLbl:       { color:'rgba(255,255,255,0.78)', fontSize:12, fontWeight:'700' },
+  zone:     { position: 'absolute', top: 0, bottom: 0, width: '33.33%', zIndex: 10 },
+  center:   { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', zIndex: 20 },
+  spinner:  {
+    width: 36, height: 36, borderRadius: 18, borderWidth: 2.5,
+    borderColor: 'transparent',
+    borderTopColor: 'rgba(255,255,255,0.85)',
+    borderRightColor: 'rgba(255,255,255,0.15)',
+  },
+  errWrap:  {
+    ...StyleSheet.absoluteFillObject, zIndex: 20,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(7,0,15,0.9)', gap: 10,
+  },
+  errTxt:   { color: 'rgba(255,255,255,0.65)', fontSize: 13 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: P.primary, borderRadius: 10,
+    paddingHorizontal: 16, paddingVertical: 9,
+  },
+  retryTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  pauseBlur:{ width: 54, height: 54, borderRadius: 27, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
+  heart:    { position: 'absolute', top: '50%', left: '50%', marginTop: -40, marginLeft: -40, zIndex: 20 },
+  sideBar:  { position: 'absolute', right: 12, bottom: 120, alignItems: 'center', gap: 22, zIndex: 15 },
+  sideBtn:  { alignItems: 'center', gap: 4 },
+  sideBtnTxt:{ color: '#fff', fontSize: 12, fontWeight: '700' },
 });

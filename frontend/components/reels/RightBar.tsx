@@ -54,27 +54,33 @@ const RightBar = memo(function RightBar({
         active={liked}
       />
 
-      {/* Mute */}
-      <Btn
-        icon={muted ? 'volume-mute' : 'volume-high-outline'}
-        color={muted ? P.primL : '#fff'}
-        onPress={onMute}
-        active={muted}
+   
+
+      {/* Like */}
+      <IconBtn
+        name={liked ? 'heart' : 'heart-outline'}
+        active={liked}
+        scale={heartSc}
+        onPress={pressLike}
       />
 
-      {/* Save */}
-      <Btn
-        icon={saved ? 'bookmark' : 'bookmark-outline'}
-        color={saved ? P.gold : '#fff'}
-        onPress={onSave}
+      {/* Save / Watchlist */}
+      
+      <IconBtn
+        name={saved ? 'star' : 'star'}
         active={saved}
       />
 
       {/* Info */}
-      <Btn
-        icon="information-circle-outline"
-        color="rgba(255,255,255,0.80)"
-        onPress={onInfo}
+      <IconBtn
+        name="list-outline" 
+        onPress={pressInfo}
+      />
+
+      {/* Partager */}
+      <IconBtn
+        name='ellipsis-horizontal'
+        onPress={pressShare}
       />
     </View>
   );

@@ -81,7 +81,7 @@ const ASPECTS = [
   'Interprétation','Rythme','Atmosphère','Décors',
 ];
 
-const FEED_TABS = ['Pour vous','Tendances','Pros'] as const;
+const FEED_TABS = ['Pour vous','Amis','Pros'] as const;
 type FeedTab = typeof FEED_TABS[number];
 
 const MIN_BODY    = 80;
