@@ -1,203 +1,113 @@
-import React, { memo, useRef, useCallback } from 'react';
+// components/reels/RightBar.tsx
+import React, { memo } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Animated, Platform, Share,
+  View, Text, TouchableOpacity, StyleSheet, Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import * as Haptics from 'expo-haptics';
-
+import { P } from './types';
 import type { FeedFilm } from './types';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TOKENS — blanc pur, surfaces navyMid/transparent
-// ─────────────────────────────────────────────────────────────────────────────
-const T = {
-  icon:     'rgba(255,255,255,0.88)',
-  iconDim:  'rgba(255,255,255,0.40)',
-  label:    'rgba(255,255,255,0.42)',
-  surface:  'rgba(255,255,255,0.07)',
-  active:   'rgba(255,255,255,0.14)',
-} as const;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────────────────────
-interface LeftBarProps {
-  film:   FeedFilm;
-  liked:  boolean;
-  muted:  boolean;
-  saved:  boolean;
-  onLike: () => void;
-  onMute: () => void;
-  onInfo: () => void;
-  onSave: () => void;
+interface RightBarProps {
+  film:    FeedFilm;
+  liked:   boolean;
+  muted:   boolean;
+  saved:   boolean;
+  onLike:  () => void;
+  onMute:  () => void;
+  onSave:  () => void;
+  onInfo:  () => void;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ICON BUTTON ATOMIQUE
-// ─────────────────────────────────────────────────────────────────────────────
-interface IconBtnProps {
-  name:    keyof typeof Ionicons.glyphMap;
-  label?:  string;
-  active?: boolean;
-  scale?:  Animated.Value;
+const Btn = memo(function Btn({
+  icon, label, color = '#fff', onPress, active = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label?: string | number;
+  color?: string;
   onPress: () => void;
-}
-
-const IconBtn = memo(function IconBtn({ name, label, active, scale, onPress }: IconBtnProps) {
-  const inner = (
-    <View style={[s.iconWrap, active && s.iconWrapActive]}>
-      <BlurView intensity={active ? 18 : 10} tint="dark" style={StyleSheet.absoluteFill} />
-      <Ionicons name={name} size={22} color={active ? T.icon : T.iconDim} />
-    </View>
-  );
-
+  active?: boolean;
+}) {
   return (
-    <View style={s.item}>
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.7}
-        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      >
-        {scale
-          ? <Animated.View style={{ transform: [{ scale }] }}>{inner}</Animated.View>
-          : inner
-        }
-      </TouchableOpacity>
-      {label ? <Text style={s.label}>{label}</Text> : null}
-    </View>
+    <TouchableOpacity style={rb.btn} onPress={onPress} activeOpacity={0.7}>
+      <View style={[rb.iconWrap, active && rb.iconWrapActive]}>
+        <Ionicons name={icon} size={20} color={color} />
+      </View>
+     
+    </TouchableOpacity>
   );
 });
-IconBtn.displayName = 'IconBtn';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LEFT BAR
-// ─────────────────────────────────────────────────────────────────────────────
-const LeftBar = memo(function LeftBar({
-  film, liked, muted, saved, onLike, onMute, onInfo, onSave,
-}: LeftBarProps) {
-  const heartSc = useRef(new Animated.Value(1)).current;
-  const saveSc  = useRef(new Animated.Value(1)).current;
-
-  const bounce = useCallback((anim: Animated.Value) => {
-    Animated.sequence([
-      Animated.timing(anim, { toValue: 1.4, duration: 85,  useNativeDriver: true }),
-      Animated.spring (anim, { toValue: 1,   useNativeDriver: true, speed: 30, bounciness: 12 }),
-    ]).start();
-  }, []);
-
-  const pressLike = useCallback(() => {
-    bounce(heartSc);
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onLike();
-  }, [onLike, heartSc, bounce]);
-
-  const pressSave = useCallback(() => {
-    bounce(saveSc);
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSave();
-  }, [onSave, saveSc, bounce]);
-
-  const pressInfo = useCallback(() => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onInfo();
-  }, [onInfo]);
-
-  const pressMute = useCallback(() => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onMute();
-  }, [onMute]);
-
-  const pressShare = useCallback(async () => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try {
-      await Share.share({
-        message: `🎬 "${film.title}" sur Universe — Cinéma Indépendant`,
-        title: film.title,
-      });
-    } catch { /* silently ignore */ }
-  }, [film.title]);
+const RightBar = memo(function RightBar({
+  film, liked, muted, saved, onLike, onMute, onSave, onInfo,
+}: RightBarProps) {
+  const likesDisplay = film.likes_count >= 1000
+    ? `${(film.likes_count / 1000).toFixed(1)}k`
+    : String(film.likes_count);
 
   return (
-    <View style={s.bar}>
+    <View style={rb.bar} pointerEvents="box-none">
+      {/* Like */}
+      <Btn
+        icon={liked ? 'heart' : 'heart-outline'}
+        color={liked ? P.red : '#fff'}
+        onPress={onLike}
+        active={liked}
+      />
 
       {/* Mute */}
-      <IconBtn
-        name={muted ? 'volume-mute' : 'volume-high'}
+      <Btn
+        icon={muted ? 'volume-mute' : 'volume-high-outline'}
+        color={muted ? P.primL : '#fff'}
+        onPress={onMute}
         active={muted}
-        onPress={pressMute}
       />
 
-      {/* Like */}
-      <IconBtn
-        name={liked ? 'heart' : 'heart-outline'}
-        active={liked}
-        scale={heartSc}
-        onPress={pressLike}
-      />
-
-      {/* Save / Watchlist */}
-      <IconBtn
-        name={saved ? 'bookmark' : 'bookmark-outline'}
+      {/* Save */}
+      <Btn
+        icon={saved ? 'bookmark' : 'bookmark-outline'}
+        color={saved ? P.gold : '#fff'}
+        onPress={onSave}
         active={saved}
-        scale={saveSc}
-        onPress={pressSave}
       />
 
       {/* Info */}
-      <IconBtn
-        name="information-circle-outline"
-        onPress={pressInfo}
+      <Btn
+        icon="information-circle-outline"
+        color="rgba(255,255,255,0.80)"
+        onPress={onInfo}
       />
-
-      {/* Partager */}
-      <IconBtn
-        name="arrow-redo-outline"
-        onPress={pressShare}
-      />
-
     </View>
   );
 });
 
-export default LeftBar;
+export default RightBar;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STYLES
-// ─────────────────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
+const rb = StyleSheet.create({
   bar: {
-    position:   'absolute',
-    right:        14,
-    bottom:      220,
-    alignItems: 'center',
-    gap:         18,
+    position:  'absolute',
+    right:      14,
+    bottom:    130,
+    alignItems:'center',
+    gap:        18,
+    zIndex:     20,
   },
-
-  item: {
+  btn: {
     alignItems: 'center',
-    gap:         4,
+    gap:         3,
   },
-
   iconWrap: {
-    width:           44,
-    height:          44,
-    borderRadius:    22,
-    overflow:        'hidden',
-    alignItems:      'center',
-    justifyContent:  'center',
-    borderWidth:      StyleSheet.hairlineWidth,
-    borderColor:     'rgba(255,255,255,0.08)',
+    width:           46,
+    height:          46,
+    borderRadius:    23,
+    backgroundColor: 'rgba(0,0,0,0.30)',
+    alignItems:     'center',
+    justifyContent: 'center',
+    borderWidth:     1,
+    borderColor:    'rgba(255,255,255,0.10)',
   },
-
+  
   iconWrapActive: {
-    borderColor: 'rgba(255,255,255,0.20)',
+    backgroundColor: 'rgba(255,255,255,0.20)',
+    borderColor:    'rgba(255,255,255,0.25)',
   },
-
-  label: {
-    color:         T.label,
-    fontSize:       10,
-    fontWeight:    '600',
-    letterSpacing:  0.2,
-  },
-});
+}); 

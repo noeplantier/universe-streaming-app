@@ -400,7 +400,7 @@ export default function ProfileScreen() {
     const sections = [
       { label: 'Courts métrages',  subtitle: 'Sélection festival', icon: 'videocam' as const, data: OWN_REELS,        route: '/profile/reels',         itemRoute: '/reel/'     },
       { label: 'Moyens métrages',  subtitle: 'Sélection festival', icon: 'tv'       as const, data: OWN_EPISODES_MID, route: '/profile/episodes-mid',  itemRoute: '/episode/' },
-      { label: 'Longs métrages',   subtitle: 'Sélection festival', icon: 'film'     as const, data: OWN_EPISODES_LONG,route: '/profile/episodes-long', itemRoute: '/episode/' },
+      { label: 'Mini-séries',   subtitle: 'Sélection festival', icon: 'film'     as const, data: OWN_EPISODES_LONG,route: '/profile/episodes-long', itemRoute: '/episode/' },
     ];
 
     return (

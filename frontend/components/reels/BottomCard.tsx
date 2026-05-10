@@ -1,238 +1,129 @@
-import React, { memo, useEffect, useState, useCallback } from 'react';
-import {
-  View, Text, Animated, StyleSheet,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { supabase } from '@/lib/supabase';
+/**
+ * BottomCard.tsx — titre · stats · seek bar
+ */
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, PanResponder, StyleSheet, Text, View } from 'react-native';
+import type { FeedFilm } from './types';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 🔧 HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
-function formatViews(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(0)}K`;
-  return `${n}`;
-}
-
-function formatLikes(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return `${n}`;
-}
-
-function formatDuration(raw: string | number | undefined): string {
-  if (!raw) return '';
-  const secs = typeof raw === 'string' ? parseInt(raw, 10) : raw;
-  if (isNaN(secs) || secs <= 0) return '';
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return s > 0 ? `${m}:${String(s).padStart(2, '0')}` : `${m} min`;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📦 TYPES
-// ─────────────────────────────────────────────────────────────────────────────
-interface ReelMeta {
-  title:       string;
-  director?:   string;
-  year?:       string | number;
-  genre?:      string;
-  duration?:   string | number;
-  views_count: number;
-  likes_count: number;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 📊 VIDEO PROGRESS BAR
-// ─────────────────────────────────────────────────────────────────────────────
-interface VideoProgressBarProps {
-  progress: Animated.Value | number;
-}
-
-const VideoProgressBar = memo(({ progress }: VideoProgressBarProps) => {
-  const isAnimated = progress && typeof (progress as any).interpolate === 'function';
-
-  const width = isAnimated
-    ? (progress as Animated.Value).interpolate({
-        inputRange:  [0, 1],
-        outputRange: ['0%', '100%'],
-        extrapolate: 'clamp',
-      })
-    : `${Math.min(Math.max(Number(progress) || 0, 0), 1) * 100}%`;
-
-  return (
-    <View style={pb.track} pointerEvents="none">
-      <Animated.View style={[pb.fill, { width: width as any }]} />
-      <Animated.View style={[pb.thumb, { left: width as any }]} />
-    </View>
-  );
-});
-VideoProgressBar.displayName = 'VideoProgressBar';
-
-const pb = StyleSheet.create({
-  track: {
-    height:          3,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    width:           '100%',
-    position:        'relative',
-    borderRadius:     2,
-    marginTop:       12,
-  },
-  fill: {
-    height:          '100%',
-    backgroundColor: '#FFFFFF',
-    position:        'absolute',
-    left:             0,
-    top:              0,
-    borderRadius:     2,
-  },
-  thumb: {
-    position:        'absolute',
-    top:             -2,
-    marginLeft:      -3.5,
-    width:            7,
-    height:           7,
-    borderRadius:     3.5,
-    backgroundColor: '#FFFFFF',
-    shadowColor:     '#FFF',
-    shadowOffset:    { width: 0, height: 0 },
-    shadowOpacity:   1,
-    shadowRadius:    6,
-    elevation:        4,
-  },
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 🌌 BOTTOM CARD
-// ─────────────────────────────────────────────────────────────────────────────
 export interface BottomCardProps {
-  /** ID du reel Supabase en cours de lecture */
-  reelId:   string | number;
-  progress: Animated.Value | number;
+  film:     FeedFilm;
+  progress: number;    // 0–1
+  duration: number;    // secondes
+  isReady:  boolean;
+  insetBot: number;
+  onSeek:   (sec: number) => void;
 }
 
-const BottomCard = memo(({ reelId, progress }: BottomCardProps) => {
-  const [meta, setMeta] = useState<ReelMeta | null>(null);
+const fmtT = (s: number) => {
+  if (!isFinite(s) || s < 0) return '0:00';
+  return `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`;
+};
+const fmtN = (n: number) =>
+  n >= 1_000_000 ? `${(n/1_000_000).toFixed(1)}M` :
+  n >= 1_000     ? `${Math.round(n/1_000)}K` : String(n||0);
 
-  // ── Fetch minimal depuis Supabase ──────────────────────────────────────────
-  const fetchMeta = useCallback(async () => {
-    if (!reelId) return;
-    try {
-      const { data, error } = await supabase
-        .from('reels')                          // adapte si ta table s'appelle autrement
-        .select('title, director, year, genre, duration, views_count, likes_count')
-        .eq('id', reelId)
-        .single();
+const BottomCard = memo(function BottomCard({ film, progress, duration, isReady, insetBot, onSeek }: BottomCardProps) {
 
-      if (error || !data) return;
-      setMeta(data as ReelMeta);
-    } catch {
-      // silently ignore — la carte reste vide plutôt que de crasher
-    }
-  }, [reelId]);
+  const [trackW, setTrackW] = useState(1);
+  const [dragging, setDragging] = useState(false);
+  const [dragPct, setDragPct]   = useState(0);
+  const wRef   = useRef(1);
+  const durRef = useRef(duration);
+  wRef.current   = trackW;
+  durRef.current = duration;
+
+  const thumbSc = useRef(new Animated.Value(0)).current;
+  const trackH  = useRef(new Animated.Value(2.5)).current;
+  const ctrlOp  = useRef(new Animated.Value(0)).current;
+
+  const pct  = dragging ? dragPct : Math.min(Math.max(progress, 0), 0.9999);
+  const curS = pct * (duration || 0);
+
+  const spring = (v: Animated.Value, to: number) =>
+    Animated.spring(v, { toValue: to, useNativeDriver: false, tension: 300, friction: 12 }).start();
+  const springN = (v: Animated.Value, to: number) =>
+    Animated.spring(v, { toValue: to, useNativeDriver: true,  tension: 300, friction: 12 }).start();
+
+  const expand  = useCallback(() => { spring(trackH, 5); springN(thumbSc, 1); }, [trackH, thumbSc]);
+  const collapse= useCallback(() => { spring(trackH, 2.5); springN(thumbSc, 0); }, [trackH, thumbSc]);
+
+  const clamp = (lx: number) => Math.max(0, Math.min(1, lx / Math.max(wRef.current, 1)));
+
+  const pan = useRef(PanResponder.create({
+    onStartShouldSetPanResponder:        () => true,
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponder:         () => true,
+    onMoveShouldSetPanResponderCapture:  () => true,
+    onPanResponderGrant: (e) => { const p=clamp(e.nativeEvent.locationX); setDragPct(p); setDragging(true); expand(); onSeek(p*durRef.current); },
+    onPanResponderMove:  (e) => { const p=clamp(e.nativeEvent.locationX); setDragPct(p); onSeek(p*durRef.current); },
+    onPanResponderRelease: (e) => { onSeek(clamp(e.nativeEvent.locationX)*durRef.current); setDragging(false); collapse(); },
+    onPanResponderTerminate: () => { setDragging(false); collapse(); },
+  })).current;
 
   useEffect(() => {
-    setMeta(null);   // reset entre deux reels
-    fetchMeta();
-  }, [fetchMeta]);
+    Animated.timing(ctrlOp, { toValue: isReady ? 1 : 0, duration: 300, useNativeDriver: true }).start();
+  }, [isReady, ctrlOp]);
 
-  // ── Méta ligne discrète ───────────────────────────────────────────────────
-  const metaParts = [
-    meta?.director,
-    meta?.year ? String(meta.year) : undefined,
-    meta?.genre,
-    meta?.duration ? formatDuration(meta.duration) : undefined,
-  ].filter(Boolean).join('  ·  ');
+  const meta = [film.director, film.year, film.genre].filter(Boolean).join(' · ');
 
   return (
-    <View style={s.wrapper} pointerEvents="box-none">
-      {/* Dégradé bas de page pour la lisibilité */}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.55)']}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
+    <View style={[bc.wrap, { paddingBottom: insetBot + 18 }]} pointerEvents="box-none">
+      <View style={bc.inner} pointerEvents="box-none">
 
-      <View style={s.inner}>
-        {/* Titre */}
-        {!!meta?.title && (
-          <Text style={s.title} numberOfLines={1}>{meta.title}</Text>
-        )}
+        {!!film.title && <Text style={bc.title} numberOfLines={2}>{film.title}</Text>}
+        {!!meta       && <Text style={bc.meta}  numberOfLines={1}>{meta}</Text>}
+        {!!film.synopsis && <Text style={bc.synop} numberOfLines={2}>{film.synopsis}</Text>}
 
-        {/* Métadonnées en ligne */}
-        {!!metaParts && (
-          <Text style={s.meta} numberOfLines={1}>{metaParts}</Text>
-        )}
+        <View style={bc.stats} pointerEvents="none">
+          <Text style={bc.stat}>👁 {fmtN(film.views_count)}</Text>
+          <Text style={bc.dot}>·</Text>
+          <Text style={bc.stat}>♥ {fmtN(film.likes_count)}</Text>
+          {film.duration > 0 && <>
+            <Text style={bc.dot}>·</Text>
+            <Text style={bc.stat}>⏱ {fmtT(film.duration)}</Text>
+          </>}
+        </View>
 
-        {/* Stats minimalistes */}
-        {!!meta && (
-          <View style={s.stats}>
-            <Text style={s.stat}>👁 {formatViews(meta.views_count)}</Text>
-            <Text style={s.dot}>·</Text>
-            <Text style={s.stat}>♥ {formatLikes(meta.likes_count)}</Text>
+        <Animated.View style={{ opacity: ctrlOp }} pointerEvents={isReady ? 'box-none' : 'none'}>
+          <View style={bc.timeRow} pointerEvents="none">
+            <Text style={bc.curr}>{fmtT(curS)}</Text>
+            <Text style={bc.total}>{fmtT(duration)}</Text>
           </View>
-        )}
+          <View
+            style={bc.hit}
+            onLayout={e => { setTrackW(e.nativeEvent.layout.width); wRef.current = e.nativeEvent.layout.width; }}
+            {...pan.panHandlers}
+          >
+            <Animated.View style={[bc.track, { height: trackH }]}>
+              <View style={bc.bg} />
+              <View style={[bc.fill, { width:`${pct*100}%` as any }]} />
+              <Animated.View style={[bc.thumb, { left:`${pct*100}%` as any, transform:[{ scale: thumbSc }] }]} />
+            </Animated.View>
+          </View>
+        </Animated.View>
 
-        {/* Barre de progression */}
-        <VideoProgressBar progress={progress} />
       </View>
     </View>
   );
 });
-BottomCard.displayName = 'BottomCard';
+
 export default BottomCard;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 💅 STYLES
-// ─────────────────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  wrapper: {
-    position:     'absolute',
-    bottom:        0,
-    left:          0,
-    right:         0,
-    paddingBottom: 90,
-  },
-
-  inner: {
-    paddingHorizontal: 24,
-    paddingTop:        32,
-    paddingBottom:     0,
-  },
-
-  title: {
-    color:            'rgba(255,255,255,0.95)',
-    fontSize:          16,
-    fontWeight:       '700',
-    letterSpacing:    -0.3,
-    marginBottom:      3,
-    textShadowColor:  'rgba(0,0,0,0.4)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius:  4,
-  },
-
-  meta: {
-    color:       'rgba(255,255,255,0.45)',
-    fontSize:     11,
-    fontWeight:  '500',
-    letterSpacing: 0.2,
-    marginBottom:  6,
-  },
-
-  stats: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:            6,
-  },
-
-  stat: {
-    color:      'rgba(255,255,255,0.40)',
-    fontSize:    11,
-    fontWeight: '500',
-  },
-
-  dot: {
-    color:    'rgba(255,255,255,0.20)',
-    fontSize:  11,
-  },
+const bc = StyleSheet.create({
+  wrap:    { position:'absolute', bottom:70, left:0, right:0, background:'transparent' },
+  inner:   { paddingHorizontal:20, paddingTop:36 },
+  title:   { color:'rgba(255,255,255,0.96)', fontSize:17, fontWeight:'800', letterSpacing:-0.4, lineHeight:22, marginBottom:3 },
+  meta:    { color:'rgba(255,255,255,0.46)', fontSize:12, fontStyle:'italic', marginBottom:3 },
+  synop:   { color:'rgba(255,255,255,0.36)', fontSize:11, lineHeight:15, marginBottom:8 },
+  stats:   { flexDirection:'row', alignItems:'center', gap:6, marginBottom:10 },
+  stat:    { color:'rgba(255,255,255,0.44)', fontSize:11, fontWeight:'600' },
+  dot:     { color:'rgba(255,255,255,0.20)', fontSize:11 },
+  timeRow: { flexDirection:'row', justifyContent:'space-between', marginBottom:3 },
+  curr:    { color:'rgba(255,255,255,0.85)', fontSize:11, fontWeight:'700' },
+  total:   { color:'rgba(255,255,255,0.30)', fontSize:11 },
+  hit:     { height:28, justifyContent:'center' },
+  track:   { width:'100%', borderRadius:3, justifyContent:'center', overflow:'visible' },
+  bg:      { ...StyleSheet.absoluteFillObject, backgroundColor:'rgba(255,255,255,0.18)', borderRadius:3 },
+  fill:    { height:'100%', backgroundColor:'#fff', borderRadius:3 },
+  thumb:   { position:'absolute', width:14, height:14, borderRadius:7, backgroundColor:'#fff', marginLeft:-7, top:'50%', marginTop:-7, shadowColor:'#fff', shadowOffset:{width:0,height:0}, shadowOpacity:0.8, shadowRadius:5, elevation:5 },
 });

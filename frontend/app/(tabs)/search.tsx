@@ -699,7 +699,7 @@ export default function SearchScreen() {
           <Ionicons name="search" size={20} color={C.white} />
         </TouchableOpacity>
       </View>
-      </Animated.View>
+            </Animated.View>
 
 
       {/* Overlay recherche */}
@@ -771,7 +771,7 @@ export default function SearchScreen() {
         {/* Longs métrages */}
         {(longMetrage.length > 0 || loading) && (
           <RowSection
-            title="Longs métrages"
+            title="Mini-séries"
             subtitle="Plus de 100 min"
             items={longMetrage}
             loading={loading}
