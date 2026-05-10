@@ -454,7 +454,6 @@ const FeedItem = memo(function FeedItem({
           <View style={[fi.sIcon, liked && fi.sIconOn]}>
             <Ionicons name={liked ? 'heart' : 'heart-outline'} size={26} color={liked ? P.red : '#fff'} />
           </View>
-          <Text style={fi.sLbl}>{fmtN(film.likes_count)}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={fi.sBtn} onPress={() => setMuted(p=>!p)}>
@@ -465,14 +464,14 @@ const FeedItem = memo(function FeedItem({
 
         <TouchableOpacity style={fi.sBtn} onPress={() => setSaved(p=>!p)}>
           <View style={[fi.sIcon, saved && fi.sIconOn]}>
-            <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={23} color={saved ? P.gold : '#fff'} />
+            <Ionicons name={saved ? 'star' : 'star-outline'} size={23} color={saved ? P.gold : '#fff'} />
           </View>
         </TouchableOpacity>
 
         {onInfoPress && (
           <TouchableOpacity style={fi.sBtn} onPress={() => onInfoPress(film)}>
             <View style={fi.sIcon}>
-              <Ionicons name="information-circle-outline" size={24} color="rgba(255,255,255,0.75)" />
+              <Ionicons name="list-outline" size={24} color="rgba(255,255,255,0.75)" />
             </View>
           </TouchableOpacity>
         )}
@@ -523,9 +522,8 @@ const fi = StyleSheet.create({
   badgeBlur:  { flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:14, paddingVertical:9, borderRadius:20, overflow:'hidden', borderWidth:1, borderColor:'rgba(255,255,255,0.14)' },
   badgeTxt:   { color:'#fff', fontSize:14, fontWeight:'800' },
   heart:      { position:'absolute', top:'50%', left:'50%', marginTop:-45, marginLeft:-45, zIndex:20 },
-  sidebar:    { position:'absolute', right:14, bottom:170, alignItems:'center', gap:20, zIndex:15 },
+  sidebar:    { position:'absolute', right:14, bottom:270, alignItems:'center', gap:20, zIndex:15 },
   sBtn:       { alignItems:'center', gap:4 },
   sIcon:      { width:50, height:50, borderRadius:25, backgroundColor:'rgba(0,0,0,0.40)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.12)' },
-  sIconOn:    { backgroundColor:'rgba(146,64,214,0.32)', borderColor:'rgba(146,64,214,0.55)' },
   sLbl:       { color:'rgba(255,255,255,0.78)', fontSize:12, fontWeight:'700' },
 });

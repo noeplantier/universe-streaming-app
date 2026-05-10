@@ -1,655 +1,475 @@
-/* eslint-disable react/display-name */
 /**
- * VideoTab.tsx — Wizard 3 étapes d'import/publication de réel
- * Extrait de create.tsx pour modularité.
+ * components/create/VideoTab.tsx
+ *
+ * Flow : Sélection → Aperçu → Métadonnées → Upload (XHR progress) → Succès
+ * Thème : navyMid transparent sur GalaxyBackground
  */
-import React, {
-    useCallback, useEffect, useMemo, useRef, useState, memo,
-  } from 'react';
-  import {
-    ActivityIndicator, Alert, Animated, Dimensions,
-    KeyboardAvoidingView, Platform, ScrollView, StyleSheet,
-    Text, TextInput, TouchableOpacity, View,
-  } from 'react-native';
-  import { BlurView }     from 'expo-blur';
-  import { Ionicons }     from '@expo/vector-icons';
-  import { useRouter }    from 'expo-router';
-  import * as FileSystem  from 'expo-file-system';
-  import * as Haptics     from 'expo-haptics';
-  import * as ImagePicker from 'expo-image-picker';
-  import { decode }       from 'base64-arraybuffer';
-  
-  import TrimBar      from '@/components/create/TrimBar';
-  import { supabase } from '@/lib/supabase';
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // CONSTANTS & PALETTE
-  // ─────────────────────────────────────────────────────────────────────────────
-  const { width: W } = Dimensions.get('window');
-  const MAX_DURATION = 15;
-  
-  const GENRES = [
-    'Drame', 'Thriller', 'Documentaire', 'Sci-Fi',
-    'Animation', 'Expérimental', 'Biopic', 'Court métrage',
-  ] as const;
-  
-  const P = {
-    glass:      'rgba(255,255,255,0.04)',
-    glassMid:   'rgba(255,255,255,0.07)',
-    edge:       'rgba(255,255,255,0.08)',
-    edgeMid:    'rgba(255,255,255,0.14)',
-    edgeHi:     'rgba(255,255,255,0.22)',
-    white:      '#FFFFFF',
-    txt:        '#EDF6FF',
-    txtSec:     'rgba(255,255,255,0.50)',
-    txtTert:    'rgba(255,255,255,0.24)',
-    teal:       '#00C9FF',
-    tealGlass:  'rgba(0,201,255,0.08)',
-    tealEdge:   'rgba(0,201,255,0.22)',
-    navyMid:    '#0D2240',
-    green:      '#2ECC8A',
-    greenGlass: 'rgba(46,204,138,0.10)',
-    greenEdge:  'rgba(46,204,138,0.22)',
-    gold:       '#F5C842',
-    goldGlass:  'rgba(245,200,66,0.08)',
-    goldEdge:   'rgba(245,200,66,0.18)',
-    red:        '#FF3B5C',
-  } as const;
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // TYPES
-  // ─────────────────────────────────────────────────────────────────────────────
-  type Step = 0 | 1 | 2;
-  
-  interface ReelMeta {
-    title: string; genre: string; director: string;
-    year: string;  synopsis: string;
-  }
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // HELPERS
-  // ─────────────────────────────────────────────────────────────────────────────
-  const sanitize = (v: string, max = 255) => v.trim().slice(0, max);
-  
-  const safeYear = (raw: string): number | null => {
-    const n = parseInt(raw.trim(), 10);
-    return !isNaN(n) && n >= 1888 && n <= new Date().getFullYear() + 5 ? n : null;
-  };
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // UPLOAD
-  // ─────────────────────────────────────────────────────────────────────────────
-  async function uploadReel(
-    localUri: string,
-    meta: ReelMeta,
-    userId: string,
-    onProgress: (pct: number, msg: string) => void,
-  ): Promise<{ id: string; video_url: string } | null> {
+
+import React, { memo, useCallback, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { BlurView }          from 'expo-blur';
+import { Ionicons }          from '@expo/vector-icons';
+import * as ImagePicker      from 'expo-image-picker';
+import * as Haptics          from 'expo-haptics';
+
+import { supabase } from '@/lib/supabase';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────────────────────────────────────
+const BUCKET       = 'community-images';
+const SUPABASE_URL = 'https://knrzbdqfflobfjdmqyte.supabase.co';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tokens
+// ─────────────────────────────────────────────────────────────────────────────
+const C = {
+  navyMid:  'rgba(13,34,64,0.55)',
+  navyLow:  'rgba(13,34,64,0.30)',
+  navyHigh: 'rgba(13,34,64,0.80)',
+  border:   'rgba(255,255,255,0.09)',
+  borderBr: 'rgba(255,255,255,0.18)',
+  white:    '#FFFFFF',
+  offWhite: 'rgba(255,255,255,0.85)',
+  muted:    'rgba(255,255,255,0.38)',
+  faint:    'rgba(255,255,255,0.14)',
+  neon:     '#7C5EFC',
+  neonL:    '#A78BFA',
+  gold:     '#F5C842',
+  success:  '#22C55E',
+  error:    '#EF4444',
+} as const;
+
+const GENRES = [
+  'Drame','Comédie','Thriller','Horreur','Science-Fiction',
+  'Documentaire','Animation','Romance','Action','Fantastique',
+  'Policier','Biopic','Court-métrage','Expérimental',
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+interface Asset {
+  uri:       string;
+  fileName?: string | null;
+  fileSize?: number | null;
+  duration?: number | null;
+  mimeType?: string | null;
+}
+interface Form {
+  title: string; genre: string; director: string; year: string; synopsis: string;
+}
+const EMPTY: Form = { title:'', genre:'', director:'', year:'', synopsis:'' };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+function fmtSize(b: number | null | undefined) {
+  if (!b) return '—';
+  return b < 1e6 ? `${(b/1e3).toFixed(0)} Ko` : `${(b/1e6).toFixed(1)} Mo`;
+}
+function fmtDur(ms: number | null | undefined) {
+  if (!ms) return '—';
+  const s = Math.round(ms/1000), m = Math.floor(s/60);
+  return `${m}:${(s%60).toString().padStart(2,'0')}`;
+}
+
+async function uploadXHR(
+  path: string, blob: Blob, mime: string,
+  onProgress: (pct: number) => void,
+): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`);
+    xhr.setRequestHeader('Authorization', `Bearer ${session?.access_token}`);
+    xhr.setRequestHeader('Content-Type', mime);
+    xhr.setRequestHeader('x-upsert', 'true');
+    xhr.upload.onprogress = e => {
+      if (e.lengthComputable) onProgress(Math.round(e.loaded/e.total*100));
+    };
+    xhr.onload  = () => xhr.status < 300 ? resolve() : reject(new Error(`HTTP ${xhr.status}`));
+    xhr.onerror = () => reject(new Error('Erreur réseau'));
+    xhr.send(blob);
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Input field
+// ─────────────────────────────────────────────────────────────────────────────
+const Field = memo(function Field({
+  label, value, onChange, placeholder,
+  multiline, maxLength, keyboardType,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; multiline?: boolean; maxLength?: number; keyboardType?: any;
+}) {
+  return (
+    <View style={f.wrap}>
+      <Text style={f.label}>{label}</Text>
+      <TextInput
+        style={[f.input, multiline && f.multi]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={C.muted}
+        multiline={multiline}
+        maxLength={maxLength}
+        keyboardType={keyboardType}
+        returnKeyType={multiline ? 'default' : 'next'}
+        selectionColor={C.neonL}
+        autoCapitalize="sentences"
+        numberOfLines={multiline ? 4 : 1}
+      />
+      {!!maxLength && value.length > maxLength * 0.8 && (
+        <Text style={f.count}>{value.length}/{maxLength}</Text>
+      )}
+    </View>
+  );
+});
+const f = StyleSheet.create({
+  wrap:  { marginBottom: 14 },
+  label: { color: C.muted, fontSize: 11, fontWeight: '600', letterSpacing: 0.4, marginBottom: 6 },
+  input: {
+    backgroundColor: C.navyMid, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: 12,
+    color: C.white, fontSize: 14,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.border,
+  },
+  multi: { height: 96, textAlignVertical: 'top', paddingTop: 12 },
+  count: { color: C.muted, fontSize: 9, textAlign: 'right', marginTop: 3 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VideoTab
+// ─────────────────────────────────────────────────────────────────────────────
+const VideoTab = memo(function VideoTab() {
+  const [asset,      setAsset]      = useState<Asset | null>(null);
+  const [form,       setForm]       = useState<Form>(EMPTY);
+  const [genreOpen,  setGenreOpen]  = useState(false);
+  const [uploading,  setUploading]  = useState(false);
+  const [progress,   setProgress]   = useState(0);
+  const [successId,  setSuccessId]  = useState<string | null>(null);
+  const [error,      setError]      = useState<string | null>(null);
+
+  const progAnim = useRef(new Animated.Value(0)).current;
+  const scrollRef = useRef<ScrollView>(null);
+
+  const animProg = useCallback((pct: number) => {
+    setProgress(pct);
+    Animated.timing(progAnim, { toValue: pct/100, duration: 180, useNativeDriver: false }).start();
+  }, [progAnim]);
+
+  // ── Picker ────────────────────────────────────────────────────────────────
+  const pick = useCallback(async (src: 'gallery' | 'camera') => {
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    let result: ImagePicker.ImagePickerResult;
+    if (src === 'camera') {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission refusée', 'Active la caméra dans les paramètres.'); return; }
+      result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'] as any, videoMaxDuration: 180, quality: 1,
+      });
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') { Alert.alert('Permission refusée', 'Active la galerie dans les paramètres.'); return; }
+      result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'] as any, videoMaxDuration: 180, quality: 1, selectionLimit: 1,
+      });
+    }
+    if (result.canceled || !result.assets?.[0]) return;
+    const a = result.assets[0];
+    setAsset({ uri: a.uri, fileName: a.fileName ?? a.uri.split('/').pop(), fileSize: a.fileSize, duration: a.duration, mimeType: a.mimeType ?? 'video/mp4' });
+    setSuccessId(null); setError(null);
+    setTimeout(() => scrollRef.current?.scrollTo({ y: 260, animated: true }), 400);
+  }, []);
+
+  const setField = useCallback((k: keyof Form) => (v: string) => setForm(f => ({...f, [k]: v})), []);
+
+  const reset = useCallback(() => {
+    setAsset(null); setForm(EMPTY); setSuccessId(null); setError(null);
+    setProgress(0); progAnim.setValue(0);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  }, [progAnim]);
+
+  // ── Upload ────────────────────────────────────────────────────────────────
+  const upload = useCallback(async () => {
+    if (!asset) return;
+    if (!form.title.trim()) { setError('Le titre est obligatoire.'); return; }
+    setUploading(true); setError(null); animProg(2);
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     try {
-      onProgress(5, 'Préparation…');
-      const isBlob  = localUri.startsWith('blob:');
-      const rawExt  = isBlob ? 'mp4' : (localUri.split('.').pop()?.toLowerCase() ?? 'mp4');
-      const ext     = rawExt === 'mov' ? 'mp4' : rawExt;
-      const mime    = ext === 'mp4' ? 'video/mp4' : ext === 'webm' ? 'video/webm' : `video/${ext}`;
-      const filename = `reel_${userId}_${Date.now()}.${ext}`;
-  
-      onProgress(15, 'Lecture du fichier…');
-      let payload: ArrayBuffer | Blob;
-      if (Platform.OS === 'web' || isBlob) {
-        payload = await (await fetch(localUri)).blob();
-      } else {
-        payload = decode(await FileSystem.readAsStringAsync(localUri, { encoding: 'base64' }));
-      }
-  
-      onProgress(30, 'Upload vidéo…');
-      const { data: storageData, error: storageErr } = await supabase.storage
-        .from('social')
-        .upload(`videos/${filename}`, payload as any, { contentType: mime, upsert: false });
-      if (storageErr) throw new Error(`Storage: ${storageErr.message}`);
-  
-      onProgress(65, "Génération de l'URL…");
-      const videoUrl = supabase.storage.from('social').getPublicUrl(storageData.path).data.publicUrl;
-      if (!videoUrl) throw new Error("Impossible de générer l'URL publique");
-  
-      onProgress(75, 'Validation des données…');
-      const cleanTitle    = sanitize(meta.title, 200);
-      const cleanGenre    = sanitize(meta.genre, 60);
-      const cleanDirector = sanitize(meta.director, 120);
-      const cleanSynopsis = sanitize(meta.synopsis, 120);
-      const cleanYear     = safeYear(meta.year);
-      if (!cleanTitle)  throw new Error('Titre invalide');
-      if (!cleanGenre)  throw new Error('Genre invalide');
-  
-      onProgress(85, 'Publication…');
-      const { data, error: dbErr } = await supabase
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !user) throw new Error('Non authentifié. Connecte-toi d\'abord.');
+
+      const resp = await fetch(asset.uri);
+      const blob = await resp.blob();
+      const ext  = (asset.fileName ?? 'video.mp4').split('.').pop() ?? 'mp4';
+      const path = `reels/${user.id}/${Date.now()}.${ext}`;
+
+      await uploadXHR(path, blob, asset.mimeType ?? 'video/mp4', pct => animProg(5 + pct*0.80));
+      animProg(90);
+
+      const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      if (!urlData?.publicUrl) throw new Error('URL introuvable. Vérifie que le bucket est public.');
+
+      const { data: reel, error: insErr } = await supabase
         .from('reels')
         .insert({
-          user_id: userId, video_url: videoUrl, title: cleanTitle,
-          genre: cleanGenre, director: cleanDirector || null, year: cleanYear,
-          synopsis: cleanSynopsis || null, duration: MAX_DURATION,
-          likes_count: 0, views_count: 0, created_at: new Date().toISOString(),
+          user_id:     user.id,
+          video_url:   urlData.publicUrl,
+          title:       form.title.trim()    || null,
+          genre:       form.genre           || null,
+          director:    form.director.trim() || null,
+          year:        form.year.trim()     || null,
+          synopsis:    form.synopsis.trim() || null,
+          duration:    asset.duration ? Math.round(asset.duration/1000) : null,
+          likes_count: 0,
+          views_count: 0,
         })
-        .select('id')
-        .single();
-      if (dbErr) throw new Error(`DB: ${dbErr.message}`);
-      if (!data?.id) throw new Error('Aucun ID retourné');
-  
-      onProgress(100, 'Publié !');
-      return { id: data.id, video_url: videoUrl };
-    } catch (e) {
-      console.error('[uploadReel]', e instanceof Error ? e.message : e);
-      return null;
-    }
-  }
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // GLASS CARD
-  // ─────────────────────────────────────────────────────────────────────────────
-  const GlassCard = memo(({ children, style }: { children: React.ReactNode; style?: object }) => (
-    <View style={[gc.wrap, style]}>
-      <BlurView intensity={Platform.OS === 'ios' ? 16 : 10} tint="dark" style={StyleSheet.absoluteFillObject} />
-      {children}
-    </View>
-  ));
-  GlassCard.displayName = 'GlassCard';
-  
-  const gc = StyleSheet.create({
-    wrap: {
-      borderRadius: 20, borderWidth: 0.5, borderColor: P.edge,
-      overflow: 'hidden', backgroundColor: P.glass, marginBottom: 14,
-    },
-  });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // STEP INDICATOR
-  // ─────────────────────────────────────────────────────────────────────────────
-  const STEP_LABELS = ['Import', 'Infos', 'Publier'] as const;
-  
-  const StepIndicator = memo(({ step }: { step: Step }) => (
-    <View style={si.wrap}>
-      {STEP_LABELS.map((lbl, i) => {
-        const done = i < step, active = i === step;
-        return (
-          <React.Fragment key={lbl}>
-            <View style={si.item}>
-              <View style={[si.dot, done && si.dotDone, active && si.dotActive]}>
-                {done
-                  ? <Ionicons name="checkmark" size={10} color="white" />
-                  : <Text style={[si.dotNum, active && { color: P.white }]}>{i + 1}</Text>
-                }
-              </View>
-              <Text style={[si.lbl, active && si.lblActive, done && si.lblDone]}>{lbl}</Text>
-            </View>
-            {i < STEP_LABELS.length - 1 && <View style={[si.line, done && si.lineDone]} />}
-          </React.Fragment>
-        );
-      })}
-    </View>
-  ));
-  StepIndicator.displayName = 'StepIndicator';
-  
-  const si = StyleSheet.create({
-    wrap:      { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 32, marginBottom: 22 },
-    item:      { alignItems: 'center', gap: 5 },
-    dot:       { width: 26, height: 26, borderRadius: 13, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
-    dotActive: { borderColor: P.edgeHi, backgroundColor: P.glassMid },
-    dotDone:   { borderColor: P.greenEdge, backgroundColor: P.greenGlass },
-    dotNum:    { color: P.txtTert, fontSize: 11, fontWeight: '700' },
-    lbl:       { color: P.txtTert, fontSize: 9, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
-    lblActive: { color: P.txt },
-    lblDone:   { color: P.green },
-    line:      { flex: 1, height: 0.5, backgroundColor: P.edge, marginBottom: 14, marginHorizontal: 6 },
-    lineDone:  { backgroundColor: P.greenEdge },
-  });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // STEP 0 — IMPORT
-  // ─────────────────────────────────────────────────────────────────────────────
-  const StepImport = memo(({
-    videoUri, videoFileName, videoDuration, trimStart, trimEnd,
-    onPick, onRemove, onTrimChange,
-  }: {
-    videoUri: string | null; videoFileName: string; videoDuration: number;
-    trimStart: number; trimEnd: number;
-    onPick: () => void; onRemove: () => void; onTrimChange: (s: number, e: number) => void;
-  }) => {
-    const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  
-    return (
-      <View style={{ gap: 10 }}>
-        <Text style={step.title}>Votre extrait</Text>
-        <Text style={step.hint}>Le passage le plus fort — {MAX_DURATION}s maximum.</Text>
-        {!videoUri ? (
-          <TouchableOpacity onPress={onPick} activeOpacity={0.85}>
-            <GlassCard style={{ marginBottom: 0 }}>
-              <View style={imp.zone}>
-                <View style={imp.ring}><Ionicons name="film-outline" size={26} color={P.txtSec} /></View>
-                <Text style={imp.zoneTitle}>Importer une vidéo</Text>
-                <Text style={imp.zoneSub}>Depuis votre galerie</Text>
-                <View style={imp.formats}>
-                  {['MP4', 'MOV', 'HEVC'].map(f => (
-                    <View key={f} style={imp.fmt}><Text style={imp.fmtTxt}>{f}</Text></View>
-                  ))}
-                </View>
-              </View>
-            </GlassCard>
-          </TouchableOpacity>
-        ) : (
-          <>
-            <GlassCard>
-              <View style={imp.fileRow}>
-                <View style={imp.fileIcon}><Ionicons name="play-circle-outline" size={22} color={P.txtSec} /></View>
-                <View style={{ flex: 1 }}>
-                  <Text style={imp.fileName} numberOfLines={1}>{videoFileName || 'Vidéo importée'}</Text>
-                  <Text style={imp.fileMeta}>{fmt(videoDuration)}</Text>
-                </View>
-                <TouchableOpacity style={imp.removeBtn} onPress={onRemove} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close" size={14} color={P.txtTert} />
-                </TouchableOpacity>
-              </View>
-            </GlassCard>
-            <TrimBar
-              start={trimStart} end={trimEnd} duration={videoDuration}
-              onStartChange={s => onTrimChange(s, trimEnd)}
-              onEndChange={e => onTrimChange(trimStart, e)}
-            />
-            <GlassCard style={{ borderColor: P.goldEdge, backgroundColor: P.goldGlass }}>
-              <View style={imp.tip}>
-                <Ionicons name="bulb-outline" size={13} color={P.gold} style={{ marginTop: 1 }} />
-                <Text style={imp.tipTxt}>
-                  Choisissez la scène la plus intense — c'est cette fenêtre de {MAX_DURATION}s qui décide si quelqu'un regarde votre film.
-                </Text>
-              </View>
-            </GlassCard>
-          </>
-        )}
-      </View>
-    );
-  });
-  StepImport.displayName = 'StepImport';
-  
-  const imp = StyleSheet.create({
-    zone:      { alignItems: 'center', paddingVertical: 44, gap: 10 },
-    ring:      { width: 60, height: 60, borderRadius: 30, borderWidth: 0.5, borderColor: P.edgeMid, alignItems: 'center', justifyContent: 'center', backgroundColor: P.glass, marginBottom: 6 },
-    zoneTitle: { color: P.txt, fontSize: 15, fontWeight: '700' },
-    zoneSub:   { color: P.txtTert, fontSize: 12 },
-    formats:   { flexDirection: 'row', gap: 6, marginTop: 6 },
-    fmt:       { paddingHorizontal: 9, paddingVertical: 3, borderRadius: 7, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge },
-    fmtTxt:    { color: P.txtTert, fontSize: 10, fontWeight: '600' },
-    fileRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14 },
-    fileIcon:  { width: 42, height: 42, borderRadius: 12, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
-    fileName:  { color: P.txt, fontSize: 13, fontWeight: '600' },
-    fileMeta:  { color: P.txtTert, fontSize: 11, marginTop: 2 },
-    removeBtn: { width: 26, height: 26, borderRadius: 13, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center' },
-    tip:       { flexDirection: 'row', gap: 9, padding: 14 },
-    tipTxt:    { flex: 1, color: P.txtSec, fontSize: 12, lineHeight: 18 },
-  });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // STEP 1 — INFOS
-  // ─────────────────────────────────────────────────────────────────────────────
-  const GlassInput = memo(({ value, onChangeText, placeholder, style, ...rest }: any) => (
-    <TextInput
-      style={[inf.input, style]}
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      placeholderTextColor={P.txtTert}
-      {...rest}
-    />
-  ));
-  GlassInput.displayName = 'GlassInput';
-  
-  const StepInfos = memo(({ meta, onChange }: {
-    meta: ReelMeta; onChange: <K extends keyof ReelMeta>(k: K, v: string) => void;
-  }) => (
-    <View style={{ gap: 10 }}>
-      <Text style={step.title}>Votre film</Text>
-      <Text style={step.hint}>Ces infos apparaîtront sur votre Réel.</Text>
-      <GlassCard>
-        <View style={inf.fieldWrap}>
-          <Text style={inf.label}>TITRE *</Text>
-          <GlassInput value={meta.title} onChangeText={(v: string) => onChange('title', v)} placeholder="Les Silences du Lac…" maxLength={200} returnKeyType="next" />
-        </View>
-      </GlassCard>
-      <View style={{ flexDirection: 'row', gap: 10 }}>
-        <GlassCard style={{ flex: 1, marginBottom: 0 }}>
-          <View style={inf.fieldWrap}>
-            <Text style={inf.label}>RÉALISATEUR</Text>
-            <GlassInput value={meta.director} onChangeText={(v: string) => onChange('director', v)} placeholder="Prénom Nom" maxLength={120} returnKeyType="next" />
-          </View>
-        </GlassCard>
-        <GlassCard style={{ width: 90, marginBottom: 0 }}>
-          <View style={inf.fieldWrap}>
-            <Text style={inf.label}>ANNÉE</Text>
-            <GlassInput value={meta.year} onChangeText={(v: string) => onChange('year', v)} placeholder="2025" keyboardType="numeric" maxLength={4} returnKeyType="done" />
-          </View>
-        </GlassCard>
-      </View>
-      <GlassCard>
-        <View style={inf.fieldWrap}>
-          <Text style={inf.label}>GENRE *</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7 }}>
-            {GENRES.map(g => {
-              const on = meta.genre === g;
-              return (
-                <TouchableOpacity key={g} style={[inf.chip, on && inf.chipOn]} onPress={() => onChange('genre', on ? '' : g)}>
-                  <Text style={[inf.chipTxt, on && inf.chipTxtOn]}>{g}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </GlassCard>
-      <GlassCard>
-        <View style={inf.fieldWrap}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-            <Text style={inf.label}>ACCROCHE</Text>
-            <Text style={{ color: P.txtTert, fontSize: 9 }}>{meta.synopsis.length}/120</Text>
-          </View>
-          <GlassInput
-            value={meta.synopsis}
-            onChangeText={(v: string) => v.length <= 120 && onChange('synopsis', v)}
-            placeholder="Une phrase qui donne envie…"
-            multiline
-            style={{ minHeight: 72, lineHeight: 20 }}
-            textAlignVertical="top"
-            maxLength={120}
-          />
-        </View>
-      </GlassCard>
-      <GlassCard style={{ borderColor: P.tealEdge, backgroundColor: P.tealGlass }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12 }}>
-          <Ionicons name="ribbon-outline" size={13} color={P.teal} />
-          <Text style={{ flex: 1, color: P.txtSec, fontSize: 11, lineHeight: 17 }}>
-            Tagué <Text style={{ color: P.teal, fontWeight: '700' }}>#CinémaIndépendant</Text> automatiquement.
-          </Text>
-        </View>
-      </GlassCard>
-    </View>
-  ));
-  StepInfos.displayName = 'StepInfos';
-  
-  const inf = StyleSheet.create({
-    fieldWrap: { padding: 14 },
-    label:     { color: P.txtTert, fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.7, marginBottom: 10 },
-    input:     { color: P.txt, fontSize: 14, fontWeight: '500', padding: 0 },
-    chip:      { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 16, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge },
-    chipOn:    { backgroundColor: P.glassMid, borderColor: P.edgeHi },
-    chipTxt:   { color: P.txtSec, fontSize: 12, fontWeight: '600' },
-    chipTxtOn: { color: P.white, fontWeight: '700' },
-  });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // STEP 2 — PUBLISH
-  // ─────────────────────────────────────────────────────────────────────────────
-  const StepPublish = memo(({
-    meta, trimStart, trimEnd, uploading, uploadProgress, uploadMsg, onUpload,
-  }: {
-    meta: ReelMeta; trimStart: number; trimEnd: number;
-    uploading: boolean; uploadProgress: number; uploadMsg: string; onUpload: () => void;
-  }) => {
-    const dur    = trimEnd - trimStart;
-    const checks = useMemo(() => [
-      { ok: meta.title.trim().length > 0,  txt: 'Titre renseigné' },
-      { ok: meta.genre.length > 0,         txt: 'Genre sélectionné' },
-      { ok: dur > 0 && dur <= MAX_DURATION, txt: `Extrait ≤ ${MAX_DURATION}s` },
-      { ok: true,                          txt: '#CinémaIndépendant' },
-    ], [meta.title, meta.genre, dur]);
-    const allOk = checks.every(c => c.ok);
-  
-    return (
-      <View style={{ gap: 10 }}>
-        <Text style={step.title}>Vérification</Text>
-        <Text style={step.hint}>Un dernier regard avant publication.</Text>
-        <GlassCard style={{ borderColor: P.edgeMid }}>
-          <View style={{ padding: 14, gap: 6 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <View style={pub.thumb}>
-                <Ionicons name="play" size={16} color={P.txtSec} />
-                <Text style={pub.thumbDur}>{dur}s</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                {meta.genre.length > 0 && <Text style={pub.genre}>{meta.genre}</Text>}
-                <Text style={pub.filmTitle}>{meta.title || 'Sans titre'}</Text>
-                {meta.director.length > 0 && <Text style={pub.director}>{meta.director}{meta.year ? ` · ${meta.year}` : ''}</Text>}
-              </View>
-            </View>
-            {meta.synopsis.length > 0 && <Text style={pub.synopsis} numberOfLines={2}>{meta.synopsis}</Text>}
-          </View>
-        </GlassCard>
-        <GlassCard>
-          <View style={{ padding: 14, gap: 10 }}>
-            {checks.map(c => (
-              <View key={c.txt} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-                <Ionicons name={c.ok ? 'checkmark-circle-outline' : 'close-circle-outline'} size={14} color={c.ok ? P.green : P.red} />
-                <Text style={{ color: c.ok ? P.txtSec : P.red, fontSize: 12, fontWeight: '500' }}>{c.txt}</Text>
-              </View>
-            ))}
-          </View>
-        </GlassCard>
-        {uploading && (
-          <GlassCard>
-            <View style={{ padding: 16, gap: 10 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <ActivityIndicator size="small" color={P.white} />
-                <Text style={{ color: P.txtSec, fontSize: 12 }}>{uploadMsg}</Text>
-              </View>
-              <View style={pub.progressBg}>
-                <Animated.View style={[pub.progressFill, { width: `${uploadProgress}%` as any }]} />
-              </View>
-              <Text style={{ color: P.txtTert, fontSize: 10, textAlign: 'right' }}>{uploadProgress}%</Text>
-            </View>
-          </GlassCard>
-        )}
-        {!uploading && (
-          <TouchableOpacity style={[pub.cta, !allOk && { opacity: 0.35 }]} onPress={allOk ? onUpload : undefined} activeOpacity={0.88} disabled={!allOk}>
-            <BlurView intensity={Platform.OS === 'ios' ? 20 : 12} tint="light" style={StyleSheet.absoluteFillObject} />
-            <View style={pub.ctaInner}>
-              <Ionicons name="cloud-upload-outline" size={17} color={P.white} />
-              <Text style={pub.ctaTxt}>Publier le Réel</Text>
-            </View>
-          </TouchableOpacity>
-        )}
-        <Text style={pub.legal}>En publiant, vous certifiez être l&apos;auteur ou ayant-droits de cette œuvre.</Text>
-      </View>
-    );
-  });
-  StepPublish.displayName = 'StepPublish';
-  
-  const pub = StyleSheet.create({
-    thumb:        { width: 60, height: 90, borderRadius: 10, backgroundColor: P.glass, borderWidth: 0.5, borderColor: P.edge, alignItems: 'center', justifyContent: 'center', gap: 4 },
-    thumbDur:     { color: P.txtTert, fontSize: 9, fontWeight: '600' },
-    genre:        { color: P.txtTert, fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-    filmTitle:    { color: P.txt, fontSize: 14, fontWeight: '800' },
-    director:     { color: P.txtSec, fontSize: 11, marginTop: 2 },
-    synopsis:     { color: P.txtTert, fontSize: 11, lineHeight: 16, fontStyle: 'italic' },
-    progressBg:   { height: 3, borderRadius: 2, backgroundColor: P.glass, overflow: 'hidden' },
-    progressFill: { height: '100%', backgroundColor: P.white, borderRadius: 2 },
-    cta:          { borderRadius: 18, overflow: 'hidden', borderWidth: 0.5, borderColor: P.edgeMid },
-    ctaInner:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, paddingVertical: 16 },
-    ctaTxt:       { color: P.white, fontSize: 15, fontWeight: '700' },
-    legal:        { color: P.txtTert, fontSize: 10, textAlign: 'center', lineHeight: 15, fontStyle: 'italic' },
-  });
-  
-  const step = StyleSheet.create({
-    title: { color: P.txt, fontSize: 17, fontWeight: '800', letterSpacing: -0.2 },
-    hint:  { color: P.txtTert, fontSize: 12, marginBottom: 6, fontStyle: 'italic' },
-  });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // VIDEO TAB — wizard principal
-  // ─────────────────────────────────────────────────────────────────────────────
-  export default memo(function VideoTab() {
-    const router = useRouter();
-    const [currentStep,    setCurrentStep]    = useState<Step>(0);
-    const prevStepRef                          = useRef<Step>(0);
-    const slideAnim                            = useRef(new Animated.Value(0)).current;
-    const [videoUri,       setVideoUri]        = useState<string | null>(null);
-    const [videoFileName,  setVideoFileName]   = useState('');
-    const [videoDuration,  setVideoDuration]   = useState(0);
-    const [trimStart,      setTrimStart]       = useState(0);
-    const [trimEnd,        setTrimEnd]         = useState(0);
-    const [meta, setMeta] = useState<ReelMeta>({
-      title: '', genre: '', director: '', year: String(new Date().getFullYear()), synopsis: '',
-    });
-    const [uploading,      setUploading]       = useState(false);
-    const [uploadProgress, setUploadProgress]  = useState(0);
-    const [uploadMsg,      setUploadMsg]       = useState('');
-  
-    useEffect(() => {
-      const dir = currentStep > prevStepRef.current ? 1 : -1;
-      prevStepRef.current = currentStep;
-      slideAnim.setValue(dir * W * 0.06);
-      Animated.spring(slideAnim, { toValue: 0, tension: 200, friction: 26, useNativeDriver: true }).start();
-    }, [currentStep, slideAnim]);
-  
-    const patchMeta = useCallback(<K extends keyof ReelMeta>(k: K, v: string) => {
-      setMeta(m => ({ ...m, [k]: v }));
-    }, []);
-  
-    const pickVideo = useCallback(async () => {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission requise', "Autorisez l'accès à la galerie dans Réglages.");
-        return;
-      }
-      const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Videos, quality: 1,
-        videoMaxDuration: 3600, allowsEditing: false,
-      });
-      if (res.canceled || !res.assets?.[0]) return;
-      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const asset = res.assets[0];
-      const dur   = Math.floor(asset.duration ?? 30);
-      setVideoUri(asset.uri);
-      setVideoFileName(asset.fileName ?? asset.uri.split('/').pop() ?? 'video');
-      setVideoDuration(dur);
-      setTrimStart(0);
-      setTrimEnd(Math.min(dur, MAX_DURATION));
-    }, []);
-  
-    const removeVideo = useCallback(() => {
-      setVideoUri(null); setVideoFileName(''); setVideoDuration(0); setTrimStart(0); setTrimEnd(0);
-    }, []);
-  
-    const handleTrimChange = useCallback((s: number, e: number) => {
-      setTrimStart(s); setTrimEnd(e);
-    }, []);
-  
-    const canContinue = useMemo(() => {
-      if (currentStep === 0) return !!videoUri && (trimEnd - trimStart) > 0 && (trimEnd - trimStart) <= MAX_DURATION;
-      if (currentStep === 1) return meta.title.trim().length > 0 && meta.genre.length > 0;
-      return true;
-    }, [currentStep, videoUri, trimStart, trimEnd, meta.title, meta.genre]);
-  
-    const errorHint = useMemo(() => {
-      if (currentStep === 0) {
-        if (!videoUri) return 'Importez une vidéo pour continuer';
-        if ((trimEnd - trimStart) > MAX_DURATION) return `Réduisez à ${MAX_DURATION}s max`;
-        if ((trimEnd - trimStart) <= 0) return 'Sélectionnez une durée valide';
-      }
-      if (currentStep === 1) {
-        if (!meta.title.trim()) return 'Renseignez le titre';
-        if (!meta.genre)        return 'Sélectionnez un genre';
-      }
-      return '';
-    }, [currentStep, videoUri, trimStart, trimEnd, meta.title, meta.genre]);
-  
-    const goNext = useCallback(() => {
-      if (!canContinue) return;
-      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setCurrentStep(s => Math.min(2, s + 1) as Step);
-    }, [canContinue]);
-  
-    const goPrev = useCallback(() => {
-      if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      if (currentStep > 0) setCurrentStep(s => (s - 1) as Step);
-      else router.back();
-    }, [currentStep, router]);
-  
-    const handleUpload = useCallback(async () => {
-      if (!videoUri || uploading) return;
-      const { data: { user }, error: authErr } = await supabase.auth.getUser();
-      if (authErr || !user?.id) {
-        Alert.alert('Non connecté', 'Connectez-vous pour publier.');
-        return;
-      }
-      setUploading(true); setUploadProgress(0); setUploadMsg('Démarrage…');
-      const result = await uploadReel(videoUri, meta, user.id, (pct, msg) => {
-        setUploadProgress(pct); setUploadMsg(msg);
-      });
+        .select('id').single();
+
+      if (insErr) throw new Error(insErr.message);
+
+      animProg(100);
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setSuccessId(reel.id);
+      setTimeout(reset, 3000);
+
+    } catch (e: any) {
+      setError(e?.message ?? 'Erreur inconnue.');
+      animProg(0);
+    } finally {
       setUploading(false);
-      if (result) {
-        if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        router.replace('/(tabs)/');
-      } else {
-        Alert.alert('Erreur de publication', "L'upload a échoué. Vérifiez votre connexion et réessayez.", [{ text: 'OK' }]);
-      }
-    }, [videoUri, meta, uploading, router]);
-  
-    return (
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <StepIndicator step={currentStep} />
-        <Animated.ScrollView
-          style={{ transform: [{ translateX: slideAnim }] }}
-          contentContainerStyle={wiz.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {currentStep === 0 && (
-            <StepImport
-              videoUri={videoUri} videoFileName={videoFileName} videoDuration={videoDuration}
-              trimStart={trimStart} trimEnd={trimEnd}
-              onPick={pickVideo} onRemove={removeVideo} onTrimChange={handleTrimChange}
-            />
-          )}
-          {currentStep === 1 && <StepInfos meta={meta} onChange={patchMeta} />}
-          {currentStep === 2 && (
-            <StepPublish
-              meta={meta} trimStart={trimStart} trimEnd={trimEnd}
-              uploading={uploading} uploadProgress={uploadProgress} uploadMsg={uploadMsg}
-              onUpload={handleUpload}
-            />
-          )}
-          <View style={{ height: 50 }} />
-        </Animated.ScrollView>
-  
-        {currentStep < 2 && (
-          <View style={wiz.footer}>
-            <View style={wiz.footerRow}>
-              {currentStep > 0 && (
-                <TouchableOpacity style={wiz.backFooterBtn} onPress={goPrev}>
-                  <Ionicons name="chevron-back" size={15} color={P.txtSec} />
-                  <Text style={wiz.backFooterTxt}>Retour</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[wiz.nextBtn, !canContinue && { opacity: 0.35 }, currentStep === 0 && { marginLeft: 'auto' as any }]}
-                onPress={goNext} disabled={!canContinue} activeOpacity={0.85}
-              >
-                <BlurView intensity={Platform.OS === 'ios' ? 18 : 10} tint="light" style={StyleSheet.absoluteFillObject} />
-                <View style={wiz.nextInner}>
-                  <Text style={wiz.nextTxt}>{currentStep === 0 ? 'Informations' : 'Aperçu'}</Text>
-                  <Ionicons name="chevron-forward" size={14} color={P.white} />
-                </View>
+    }
+  }, [asset, form, animProg, reset]);
+
+  const canSubmit = !!asset && !uploading && !successId;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={140}
+    >
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={vt.scroll}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+
+        {/* ── Zone de sélection ───────────────────────────────────────── */}
+        {!asset ? (
+          <View style={vt.dropZone}>
+            <View style={vt.dropIcon}>
+              <Ionicons name="cloud-upload" size={34} color={C.neonL} />
+            </View>
+            <Text style={vt.dropTitle}>Importe ta vidéo</Text>
+            <Text style={vt.dropSub}>MP4 · MOV · MKV  ·  3 min maximum</Text>
+            <View style={vt.dropBtns}>
+              <TouchableOpacity style={vt.btnPrimary} onPress={() => pick('gallery')} activeOpacity={0.82}>
+                <Ionicons name="images" size={16} color="#03000A" />
+                <Text style={vt.btnPrimaryTxt}>Galerie</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={vt.btnSecondary} onPress={() => pick('camera')} activeOpacity={0.82}>
+                <Ionicons name="camera" size={16} color={C.offWhite} />
+                <Text style={vt.btnSecondaryTxt}>Caméra</Text>
               </TouchableOpacity>
             </View>
-            {!canContinue && errorHint.length > 0 && <Text style={wiz.hint}>{errorHint}</Text>}
+            <Text style={vt.dropHint}>
+              La vidéo sera publiée dans le feed Reels de la communauté.
+            </Text>
+          </View>
+        ) : (
+          /* ── Aperçu ──────────────────────────────────────────────────── */
+          <View style={vt.preview}>
+            <BlurView intensity={18} tint="dark" style={vt.previewBlur}>
+              <View style={vt.previewIcon}>
+                <Ionicons name="videocam" size={26} color={C.neonL} />
+              </View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={vt.previewName} numberOfLines={1}>{asset.fileName}</Text>
+                <View style={{ flexDirection: 'row', gap: 14 }}>
+                  <Text style={vt.previewMeta}>⏱ {fmtDur(asset.duration)}</Text>
+                  <Text style={vt.previewMeta}>📦 {fmtSize(asset.fileSize)}</Text>
+                </View>
+                <Text style={vt.previewReady}>✓ Prête à publier</Text>
+              </View>
+              <TouchableOpacity onPress={reset} hitSlop={12}>
+                <Ionicons name="close-circle" size={22} color={C.muted} />
+              </TouchableOpacity>
+            </BlurView>
           </View>
         )}
-      </KeyboardAvoidingView>
-    );
-  });
-  
-  const wiz = StyleSheet.create({
-    scroll:        { paddingHorizontal: 20, paddingTop: 2, paddingBottom: 120 },
-    footer:        { borderTopWidth: 0.5, borderTopColor: P.edge, paddingTop: 12, paddingHorizontal: 20, paddingBottom: 20, marginBottom: 80 },
-    footerRow:     { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    backFooterBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingVertical: 14, paddingHorizontal: 8 },
-    backFooterTxt: { color: P.txtSec, fontSize: 13, fontWeight: '600' },
-    nextBtn:       { flex: 1, borderRadius: 16, overflow: 'hidden', borderWidth: 0.5, borderColor: P.edgeMid },
-    nextInner:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, paddingVertical: 14 },
-    nextTxt:       { color: P.white, fontSize: 14, fontWeight: '700' },
-    hint:          { textAlign: 'center', color: P.txtTert, fontSize: 10, marginTop: 8, fontStyle: 'italic' },
-  });
+
+        {/* ── Formulaire ──────────────────────────────────────────────── */}
+        <View style={vt.form}>
+          <Text style={vt.formHeading}>Informations</Text>
+
+          <Field label="TITRE *" value={form.title} onChange={setField('title')}
+            placeholder="Titre de ton reel" maxLength={120} />
+
+          {/* Genre */}
+          <View style={f.wrap}>
+            <Text style={f.label}>GENRE</Text>
+            <TouchableOpacity style={vt.selectRow} onPress={() => setGenreOpen(o => !o)} activeOpacity={0.80}>
+              <Text style={[vt.selectTxt, !form.genre && { color: C.muted }]}>
+                {form.genre || 'Sélectionne un genre'}
+              </Text>
+              <Ionicons name={genreOpen ? 'chevron-up' : 'chevron-down'} size={14} color={C.muted} />
+            </TouchableOpacity>
+            {genreOpen && (
+              <View style={vt.chipGrid}>
+                {GENRES.map(g => {
+                  const on = form.genre === g;
+                  return (
+                    <TouchableOpacity
+                      key={g}
+                      style={[vt.chip, on && vt.chipOn]}
+                      onPress={() => { setField('genre')(g); setGenreOpen(false); }}
+                      activeOpacity={0.76}
+                    >
+                      <Text style={[vt.chipTxt, on && vt.chipTxtOn]}>{g}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Field label="RÉALISATEUR" value={form.director} onChange={setField('director')} placeholder="Nom" />
+            </View>
+            <View style={{ width: 86 }}>
+              <Field label="ANNÉE" value={form.year} onChange={setField('year')} placeholder="2024" keyboardType="numeric" maxLength={4} />
+            </View>
+          </View>
+
+          <Field label="SYNOPSIS" value={form.synopsis} onChange={setField('synopsis')}
+            placeholder="Décris ton reel…" multiline maxLength={400} />
+        </View>
+
+        {/* ── Barre de progression ─────────────────────────────────────── */}
+        {uploading && (
+          <View style={vt.progressWrap}>
+            <View style={vt.progressBg}>
+              <Animated.View style={[vt.progressFill, {
+                width: progAnim.interpolate({ inputRange:[0,1], outputRange:['0%','100%'] }),
+              }]} />
+            </View>
+            <Text style={vt.progressTxt}>
+              {progress < 88 ? `Envoi en cours… ${progress}%` : 'Finalisation…'}
+            </Text>
+          </View>
+        )}
+
+        {/* ── Messages ─────────────────────────────────────────────────── */}
+        {!!error && (
+          <View style={vt.msgBox}>
+            <Ionicons name="warning-outline" size={15} color={C.error} />
+            <Text style={[vt.msgTxt, { color: '#FCA5A5' }]}>{error}</Text>
+          </View>
+        )}
+        {!!successId && (
+          <View style={[vt.msgBox, { borderColor: 'rgba(34,197,94,0.28)', backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+            <Ionicons name="checkmark-circle" size={16} color={C.success} />
+            <Text style={[vt.msgTxt, { color: '#86EFAC', fontWeight: '700' }]}>Reel publié avec succès !</Text>
+          </View>
+        )}
+
+        {/* ── Bouton publier ───────────────────────────────────────────── */}
+        {!successId && (
+          <TouchableOpacity
+            style={[vt.submitBtn, !canSubmit && vt.submitOff]}
+            onPress={upload}
+            activeOpacity={0.84}
+            disabled={!canSubmit}
+          >
+            {uploading
+              ? <ActivityIndicator color="#03000A" size="small" />
+              : <Ionicons name="cloud-upload" size={17} color={canSubmit ? '#03000A' : C.muted} />
+            }
+            <Text style={[vt.submitTxt, !canSubmit && { color: C.muted }]}>
+              {uploading ? 'Publication…' : 'Publier le reel'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <View style={{ height: 60 }} />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+});
+
+export default VideoTab;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+const vt = StyleSheet.create({
+  scroll:   { paddingHorizontal: 16, paddingTop: 4 },
+
+  dropZone: {
+    alignItems: 'center', borderRadius: 20, padding: 32, marginBottom: 20, gap: 10,
+    borderWidth: 1, borderColor: C.borderBr, borderStyle: 'dashed',
+    backgroundColor: C.navyLow,
+  },
+  dropIcon: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: C.borderBr, marginBottom: 4,
+  },
+  dropTitle:   { color: C.white, fontSize: 18, fontWeight: '800' },
+  dropSub:     { color: C.muted, fontSize: 12 },
+  dropBtns:    { flexDirection: 'row', gap: 12, marginTop: 6 },
+  btnPrimary:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.neonL, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 },
+  btnPrimaryTxt:{ color: '#03000A', fontSize: 14, fontWeight: '800' },
+  btnSecondary: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.navyMid, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: C.borderBr },
+  btnSecondaryTxt: { color: C.offWhite, fontSize: 14, fontWeight: '700' },
+  dropHint:   { color: C.muted, fontSize: 10, textAlign: 'center', lineHeight: 15, paddingHorizontal: 20 },
+
+  preview:     { marginBottom: 20 },
+  previewBlur: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: C.borderBr },
+  previewIcon: { width: 52, height: 52, borderRadius: 12, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
+  previewName: { color: C.white, fontSize: 13, fontWeight: '700' },
+  previewMeta: { color: C.muted, fontSize: 11 },
+  previewReady:{ color: '#86EFAC', fontSize: 11, fontWeight: '600' },
+
+  form:        { gap: 0, marginBottom: 16 },
+  formHeading: { color: C.offWhite, fontSize: 13, fontWeight: '700', letterSpacing: 0.5, marginBottom: 16 },
+
+  selectRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: C.navyMid, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  selectTxt:   { color: C.white, fontSize: 14 },
+  chipGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, paddingBottom: 4 },
+  chip:        { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.border },
+  chipOn:      { backgroundColor: C.neon, borderColor: C.neon },
+  chipTxt:     { color: C.muted, fontSize: 12, fontWeight: '600' },
+  chipTxtOn:   { color: C.white, fontWeight: '700' },
+
+  progressWrap: { marginBottom: 14, gap: 6 },
+  progressBg:   { height: 4, borderRadius: 3, backgroundColor: C.navyMid, overflow: 'hidden' },
+  progressFill: { height: '100%', backgroundColor: C.neonL, borderRadius: 3 },
+  progressTxt:  { color: C.muted, fontSize: 11, textAlign: 'center' },
+
+  msgBox:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'rgba(239,68,68,0.12)', borderRadius: 12, padding: 12, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.25)' },
+  msgTxt:  { flex: 1, fontSize: 12 },
+
+  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: C.neonL, borderRadius: 16, paddingVertical: 15, marginBottom: 12 },
+  submitOff: { backgroundColor: C.navyMid },
+  submitTxt: { color: '#03000A', fontSize: 15, fontWeight: '800' },
+});

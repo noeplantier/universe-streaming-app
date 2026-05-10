@@ -281,7 +281,7 @@ const bc = StyleSheet.create({
   // ★ FIX bottom:70 → bottom:0 (la seek bar était coupée)
   wrapper: {
     position: 'absolute',
-    bottom:    0,
+    bottom:    60,
     left:      0,
     right:     0,
   },
