@@ -1,8 +1,28 @@
 /**
  * app/(reels)/index.tsx
  *
- * Gestion autonome du feed public.reels.
- * Compatible web + natif. URL Supabase Storage résolues automatiquement.
+ * ─── CORRECTIF PRINCIPAL ─────────────────────────────────────────────────────
+ *
+ *  SYMPTÔME  : seule la 1ère vidéo se lit. Les suivantes restent noires.
+ *
+ *  CAUSE     : extraData manquant dans FlatList.
+ *
+ *              FlatList optimise le rendu : il ne re-rend PAS une cellule
+ *              existante si son `item` dans `data` n'a pas changé — même si
+ *              `renderItem` a un nouveau closure avec un `activeIndex` différent.
+ *
+ *              Résultat : isActive reste false pour les vidéos 2, 3, 4...
+ *              → player.play() n'est JAMAIS appelé → écran noir.
+ *
+ *  FIX       : extraData={activeIndex}
+ *              Indique à FlatList : "force le re-rendu de toutes les cellules
+ *              visibles quand activeIndex change."
+ *              → isActive se met à jour → player.play() s'exécute. ✓
+ *
+ *  FIX 2     : onViewableItemsChanged en SOURCE DE VÉRITÉ (80% visible)
+ *              Plus fiable que onMomentumScrollEnd car déclenché dès que
+ *              la vidéo est réellement visible, pas seulement à la fin du snap.
+ *              onMomentumScrollEnd reste en safety net Android.
  */
 
 import React, {
@@ -33,18 +53,17 @@ import FeedItem      from '@/components/reels/FeedItem';
 import TopHeader     from '@/components/reels/TopHeader';
 import InfoSheet     from '@/components/reels/Infosheet';
 import DropdownMenu, { type MenuKey } from '@/components/DropDownMenu';
-
 import { supabase }      from '@/lib/supabase';
 import type { FeedFilm } from '@/components/reels/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
-const SUPABASE_URL  = 'https://knrzbdqfflobfjdmqyte.supabase.co';
-const VIDEO_BUCKET  = 'community-images'; // ← ton bucket Supabase Storage
+const SUPABASE_URL = 'https://knrzbdqfflobfjdmqyte.supabase.co';
+const VIDEO_BUCKET = 'community-images'; // ← nom de ton bucket Supabase Storage
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Type miroir public.reels
+// Types
 // ─────────────────────────────────────────────────────────────────────────────
 interface SupabaseReel {
   id:          string;
@@ -62,17 +81,12 @@ interface SupabaseReel {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Résolution URL
-// video_url peut être :
-//   a) URL complète  https://...  → utilisé tel quel
-//   b) Chemin relatif reels/xxx.mp4 → converti en URL publique Supabase
-//   c) Vide / null → chaîne vide (FeedItem affichera un message)
+// Résolution URL Supabase Storage
 // ─────────────────────────────────────────────────────────────────────────────
 function resolveVideoUrl(raw: string | null): string {
   if (!raw || raw.trim() === '') return '';
   const url = raw.trim();
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  // Chemin relatif → URL publique
   try {
     const { data } = supabase.storage.from(VIDEO_BUCKET).getPublicUrl(url);
     if (data?.publicUrl) return data.publicUrl;
@@ -81,12 +95,12 @@ function resolveVideoUrl(raw: string | null): string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mapper
+// Mapper Supabase → FeedFilm
 // ─────────────────────────────────────────────────────────────────────────────
 function mapReel(r: SupabaseReel): FeedFilm {
   return {
     id:          r.id,
-    video_url:   resolveVideoUrl(r.video_url),   // URL toujours résolue
+    video_url:   resolveVideoUrl(r.video_url),
     poster_url:  `https://picsum.photos/seed/${r.id}/720/1280`,
     title:       r.title    ?? '',
     genre:       r.genre    ?? '',
@@ -117,7 +131,7 @@ async function fetchAllReels(): Promise<SupabaseReel[]> {
 
   if (cErr) console.warn('[reels] count:', cErr.message);
 
-  const total = count ?? 100;
+  const total     = count ?? 100;
   const pageCount = Math.max(1, Math.ceil(total / 100));
 
   const pages = await Promise.all(
@@ -128,21 +142,19 @@ async function fetchAllReels(): Promise<SupabaseReel[]> {
         .order('created_at', { ascending: false })
         .range(i * 100, i * 100 + 99)
         .then(({ data, error }) => {
-          if (error) { console.warn('[reels] page', i, ':', error.message); return []; }
+          if (error) { console.warn('[reels] page', i, error.message); return []; }
           return (data ?? []) as SupabaseReel[];
         }),
     ),
   );
 
   const all = pages.flat();
-  console.log(`[reels] ${all.length} reels chargés`);
-
-  // Log des video_url pour diagnostic
-  all.slice(0, 3).forEach((r, i) => {
-    console.log(`[reels] #${i} video_url RAW:`, r.video_url);
-    console.log(`[reels] #${i} video_url RESOLVED:`, resolveVideoUrl(r.video_url));
-  });
-
+  if (__DEV__) {
+    console.log(`[reels] ${all.length} reels chargés`);
+    all.slice(0, 3).forEach((r, i) =>
+      console.log(`[reels] #${i} video_url:`, resolveVideoUrl(r.video_url))
+    );
+  }
   return all;
 }
 
@@ -157,35 +169,20 @@ function useReelsFeed(feedKey: MenuKey) {
   useEffect(() => {
     let dead = false;
     setLoading(true); setError(null);
-
     fetchAllReels()
-      .then(rows => {
-        if (dead) return;
-        setFilms(rows.map(mapReel));
-        setLoading(false);
-      })
-      .catch(e => {
-        console.error('[reels] fetch failed:', e);
-        if (!dead) { setError('Impossible de charger les vidéos.'); setLoading(false); }
-      });
-
+      .then(rows => { if (!dead) { setFilms(rows.map(mapReel)); setLoading(false); } })
+      .catch(e   => { if (!dead) { console.error('[reels]', e); setError('Erreur de chargement.'); setLoading(false); } });
     return () => { dead = true; };
   }, [feedKey]);
 
   // Realtime — nouveau reel publié depuis create.tsx
   useEffect(() => {
-    const ch = supabase
-      .channel('reels:feed_rt')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'reels' },
+    const ch = supabase.channel('reels_live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reels' },
         ({ new: row }) => {
-          const film = mapReel(row as SupabaseReel);
-          setFilms(prev =>
-            prev.some(f => f.id === film.id) ? prev : [film, ...prev]
-          );
-        },
-      )
+          const f = mapReel(row as SupabaseReel);
+          setFilms(prev => prev.some(x => x.id === f.id) ? prev : [f, ...prev]);
+        })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, []);
@@ -203,7 +200,7 @@ function useReelsFeed(feedKey: MenuKey) {
     }));
   }, []);
 
-  // Vues
+  // Vues fire-and-forget
   const incrementViews = useCallback((id: string, current: number) => {
     supabase.from('reels')
       .update({ views_count: current + 1 })
@@ -213,17 +210,6 @@ function useReelsFeed(feedKey: MenuKey) {
 
   return { films, loading, error, toggleLike, incrementViews };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Error banner
-// ─────────────────────────────────────────────────────────────────────────────
-const ErrorBanner = memo(function ErrorBanner({ message }: { message: string }) {
-  return (
-    <View style={s.errBanner} pointerEvents="none">
-      <Text style={s.errTxt}>{message}</Text>
-    </View>
-  );
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ReelsScreen
@@ -245,31 +231,47 @@ export default function ReelsScreen() {
   const activeIdxRef = useRef(0);
   const snapTimer    = useRef<ReturnType<typeof setTimeout>>();
 
-  const { films, loading, error, toggleLike, incrementViews } =
-    useReelsFeed(feedKey);
-
+  const { films, loading, error, toggleLike, incrementViews } = useReelsFeed(feedKey);
   const filmsRef = useRef(films);
   filmsRef.current = films;
 
-  // ── Commit ────────────────────────────────────────────────────────────────
+  // ── Commit index actif — idempotent ──────────────────────────────────────
   const commitIndex = useCallback((next: number) => {
-    const idx = Math.max(0, Math.min(next, filmsRef.current.length - 1));
-    if (idx === activeIdxRef.current) return;
-    activeIdxRef.current = idx;
-    setActiveIndex(idx);
-    const f = filmsRef.current[idx];
+    const clamped = Math.max(0, Math.min(next, filmsRef.current.length - 1));
+    if (clamped === activeIdxRef.current) return;
+    activeIdxRef.current = clamped;
+    setActiveIndex(clamped);
+    // Vues fire-and-forget
+    const f = filmsRef.current[clamped];
     if (f) incrementViews(f.id, f.views_count);
   }, [incrementViews]);
 
   const commitRef = useRef(commitIndex);
   commitRef.current = commitIndex;
 
-  // ── onMomentumScrollEnd — source unique ───────────────────────────────────
+  // ── SOURCE DE VÉRITÉ 1 : onViewableItemsChanged (80% visible) ────────────
+  // Plus fiable que onMomentumScrollEnd : déclenché dès que la vidéo
+  // est vraiment visible à l'écran, pas seulement après la fin du snap.
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 80,  // vidéo visible à 80% → active
+  }).current;
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: any[] }) => {
+      const first = viewableItems[0];
+      if (first?.index != null) {
+        commitRef.current(first.index);
+      }
+    }
+  ).current;
+
+  // ── SOURCE DE VÉRITÉ 2 : onMomentumScrollEnd (safety net) ────────────────
   const onMomentumScrollEnd = useCallback((e: any) => {
     clearTimeout(snapTimer.current);
     commitRef.current(Math.round(e.nativeEvent.contentOffset.y / ITEM_H));
   }, [ITEM_H]);
 
+  // Safety net Android (snap sans momentum)
   const onScrollEndDrag = useCallback((e: any) => {
     clearTimeout(snapTimer.current);
     const y = e.nativeEvent.contentOffset.y;
@@ -278,7 +280,7 @@ export default function ReelsScreen() {
     }, 80);
   }, [ITEM_H]);
 
-  // ── Scroll vers nouveau reel ──────────────────────────────────────────────
+  // ── Scroll vers newReelId ─────────────────────────────────────────────────
   const scrolledNew = useRef(false);
   useEffect(() => {
     if (!newReelId || scrolledNew.current || !films.length) return;
@@ -291,18 +293,14 @@ export default function ReelsScreen() {
   }, [newReelId, films]);
   useEffect(() => { scrolledNew.current = false; }, [newReelId]);
 
-  // ── Focus / blur ──────────────────────────────────────────────────────────
-  useFocusEffect(
-    useCallback(() => {
-      setScreenFocused(true);
-      return () => { clearTimeout(snapTimer.current); setScreenFocused(false); };
-    }, []),
-  );
+  // ── Pause globale quand on quitte l'écran ─────────────────────────────────
+  useFocusEffect(useCallback(() => {
+    setScreenFocused(true);
+    return () => { clearTimeout(snapTimer.current); setScreenFocused(false); };
+  }, []));
 
   const handleInfoPress = useCallback((film: FeedFilm) => {
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    }
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setInfoFilm(film);
   }, []);
 
@@ -312,7 +310,7 @@ export default function ReelsScreen() {
       <FeedItem
         film={item}
         isActive={index === activeIndex && screenFocused}
-        isNear={Math.abs(index - activeIndex) <= 1}
+        isNear={Math.abs(index - activeIndex) <= 2}
         screenFocused={screenFocused}
         itemW={W}
         itemH={ITEM_H}
@@ -325,9 +323,7 @@ export default function ReelsScreen() {
   );
 
   const getItemLayout = useCallback(
-    (_: unknown, index: number) => ({
-      length: ITEM_H, offset: ITEM_H * index, index,
-    }),
+    (_: unknown, index: number) => ({ length: ITEM_H, offset: ITEM_H * index, index }),
     [ITEM_H],
   );
 
@@ -350,9 +346,7 @@ export default function ReelsScreen() {
     return (
       <View style={s.root}>
         <StatusBar style="light" translucent />
-        <View style={s.loadWrap}>
-          <Text style={s.loadTxt}>Chargement…</Text>
-        </View>
+        <View style={s.center}><Text style={s.loadTxt}>Chargement…</Text></View>
       </View>
     );
   }
@@ -365,12 +359,23 @@ export default function ReelsScreen() {
       <FlatList
         ref={flatRef}
         data={films}
+
+        // ★ FIX CRITIQUE ★
+        // Sans extraData, FlatList ne re-rend PAS les cellules existantes
+        // quand activeIndex change → isActive reste false → vidéo ne joue pas.
+        // Avec extraData, FlatList sait qu'il doit mettre à jour toutes
+        // les cellules visibles quand activeIndex ou screenFocused changent.
+        extraData={`${activeIndex}-${screenFocused}`}
+
         keyExtractor={keyExtractor}
         renderItem={renderItem}
 
         pagingEnabled
         decelerationRate="fast"
 
+        // Sources de vérité pour l'index actif
+        viewabilityConfig={viewabilityConfig}
+        onViewableItemsChanged={onViewableItemsChanged}
         onMomentumScrollEnd={onMomentumScrollEnd}
         onScrollEndDrag={onScrollEndDrag}
 
@@ -379,11 +384,12 @@ export default function ReelsScreen() {
         onScroll={onScroll}
         scrollEventThrottle={16}
 
-        windowSize={9}
+        // Performances
+        windowSize={9}              // ±4 items toujours en mémoire
         maxToRenderPerBatch={3}
-        initialNumToRender={2}
+        initialNumToRender={3}
         updateCellsBatchingPeriod={50}
-        removeClippedSubviews={false}
+        removeClippedSubviews={false}  // CRITIQUE : VideoView jamais détruite
 
         overScrollMode="never"
         bounces={false}
@@ -391,44 +397,39 @@ export default function ReelsScreen() {
         directionalLockEnabled
       />
 
+      {/* TopHeader flottant */}
       <SafeAreaView edges={['top']} style={s.header} pointerEvents="box-none">
-        <TopHeader
-          feedKey={feedKey}
-          onMenuPress={() => setMenuOpen(true)}
-          scrollY={scrollY}
-        />
+        <TopHeader feedKey={feedKey} onMenuPress={() => setMenuOpen(true)} scrollY={scrollY} />
       </SafeAreaView>
 
-      {!!error && <ErrorBanner message={error} />}
+      {/* Erreur */}
+      {!!error && (
+        <View style={s.errBanner} pointerEvents="none">
+          <Text style={s.errTxt}>{error}</Text>
+        </View>
+      )}
 
-      <Modal
-        visible={menuOpen}
-        transparent
-        animationType="none"
-        statusBarTranslucent
-        onRequestClose={() => setMenuOpen(false)}
-      >
-        <DropdownMenu
-          visible={menuOpen}
-          onClose={() => setMenuOpen(false)}
-          onSelect={setFeedKey}
-          activeKey={feedKey}
-        />
+      {/* Menu */}
+      <Modal visible={menuOpen} transparent animationType="none"
+             statusBarTranslucent onRequestClose={() => setMenuOpen(false)}>
+        <DropdownMenu visible={menuOpen} onClose={() => setMenuOpen(false)}
+          onSelect={setFeedKey} activeKey={feedKey} />
       </Modal>
 
+      {/* InfoSheet */}
       <InfoSheet film={infoFilm} onClose={() => setInfoFilm(null)} />
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root:     { flex: 1, backgroundColor: '#000' },
-  header:   { position:'absolute', top:0, left:0, right:0, zIndex:50 },
-  loadWrap: { flex:1, alignItems:'center', justifyContent:'center' },
-  loadTxt:  { color:'rgba(255,255,255,0.40)', fontSize:15 },
-  errBanner:{ position:'absolute', bottom:100, left:20, right:20, zIndex:99,
-              backgroundColor:'rgba(239,68,68,0.15)', borderRadius:12,
-              borderWidth:1, borderColor:'rgba(239,68,68,0.30)',
-              paddingHorizontal:16, paddingVertical:10 },
-  errTxt:   { color:'#EF4444', fontSize:12, textAlign:'center' },
+  root:      { flex: 1, backgroundColor: '#000' },
+  header:    { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50 },
+  center:    { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadTxt:   { color: 'rgba(255,255,255,0.40)', fontSize: 15 },
+  errBanner: { position: 'absolute', bottom: 100, left: 20, right: 20, zIndex: 99,
+               backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 12,
+               borderWidth: 1, borderColor: 'rgba(239,68,68,0.30)',
+               paddingHorizontal: 16, paddingVertical: 10 },
+  errTxt:    { color: '#EF4444', fontSize: 12, textAlign: 'center' },
 });
