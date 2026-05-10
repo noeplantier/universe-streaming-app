@@ -143,7 +143,7 @@ async function fetchAllReels(): Promise<SupabaseReel[]> {
         .range(i * 100, i * 100 + 99)
         .then(({ data, error }) => {
           if (error) { console.warn('[reels] page', i, error.message); return []; }
-          return (data ?? []) as SupabaseReel[];
+          return ((data ?? []) as unknown as SupabaseReel[]);
         }),
     ),
   );

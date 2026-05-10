@@ -245,7 +245,7 @@ export const HeroBanner = memo(function HeroBanner() {
   // Refs scroll / timer — jamais de re-render pour eux
   const scrollX  = useRef(new Animated.Value(0)).current;
   const flatRef  = useRef<FlatList<BannerFilm>>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
+  const timerRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const isPaused = useRef(false);
   const curIdx   = useRef(0);
   const lenRef   = useRef(0);   // miroir stable de films.length pour les callbacks

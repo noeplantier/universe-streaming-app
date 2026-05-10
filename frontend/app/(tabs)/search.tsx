@@ -39,6 +39,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { supabase } from '@/lib/supabase';
+import GalaxyBackground from '@/components/social/GalaxyBackground';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -681,105 +682,105 @@ export default function SearchScreen() {
   return (
     <View style={ss.root}>
       <StatusBar style="light" />
+      <GalaxyBackground />
 
       {/* Titre sticky disparaissant */}
       <Animated.View
-        style={[ss.stickyTitle, { opacity: headerOpacity, paddingTop: insets.top }]}
-        pointerEvents="none"
+      style={[ss.stickyTitle, { opacity: headerOpacity, paddingTop: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}
+      pointerEvents="none"
       >
-        <Text style={ss.stickyTitleTxt}>UNIVERSE</Text>
+      <Text style={ss.stickyTitleTxt}>UNIVERSE</Text>
 
       {/* Bouton recherche */}
-      <View style={[ss.searchBtn, { top: insets.top + 10 }]} pointerEvents="box-none">
+      <View style={ss.searchBtn} pointerEvents="box-none">
         <TouchableOpacity
-          style={ss.searchBtnInner}
-          onPress={() => setSearchOpen(true)}
-          activeOpacity={0.8}
+        style={ss.searchBtnInner}
+        onPress={() => setSearchOpen(true)}
+        activeOpacity={0.8}
         >
-          <Ionicons name="search" size={20} color={C.white} />
+        <Ionicons name="search" size={20} color={C.white} />
         </TouchableOpacity>
       </View>
-            </Animated.View>
-
+      </Animated.View>
 
       {/* Overlay recherche */}
       <SearchOverlay
-        visible={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        works={works}
+      visible={searchOpen}
+      onClose={() => setSearchOpen(false)}
+      works={works}
       />
 
       {/* Scroll principal */}
       <Animated.ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={ss.scroll}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-          { useNativeDriver: true },
-        )}
-        scrollEventThrottle={16}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={ss.scroll}
+      onScroll={Animated.event(
+        [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+        { useNativeDriver: true },
+      )}
+      scrollEventThrottle={16}
       >
-        {/* Hero banner */}
-        <HeroBanner works={works} loading={loading} />
+      {/* Hero banner */}
+      <HeroBanner works={works} loading={loading} />
 
-        <View style={{ height: 28 }} />
+      <View style={{ height: 28 }} />
 
-        {/* Populaires */}
+      {/* Populaires */}
+      <RowSection
+        title="Les plus populaires"
+        subtitle="Classés par likes"
+        items={popular}
+        loading={loading}
+        variant="portrait"
+        showRank
+        onSeeAll={() => router.push('/popular' as any)}
+      />
+
+      {/* Originaux */}
+      {(originals.length > 0 || loading) && (
         <RowSection
-          title="Les plus populaires"
-          subtitle="Classés par likes"
-          items={popular}
-          loading={loading}
-          variant="portrait"
-          showRank
-          onSeeAll={() => router.push('/popular' as any)}
+        title="Originaux"
+        subtitle="Créations exclusives"
+        items={originals}
+        loading={loading}
+        variant="portrait"
         />
+      )}
 
-        {/* Originaux */}
-        {(originals.length > 0 || loading) && (
-          <RowSection
-            title="Originaux"
-            subtitle="Créations exclusives"
-            items={originals}
-            loading={loading}
-            variant="portrait"
-          />
-        )}
+      {/* Courts métrages */}
+      {(courtMetrage.length > 0 || loading) && (
+        <RowSection
+        title="Courts métrages"
+        subtitle="Moins de 60 min"
+        items={courtMetrage}
+        loading={loading}
+        variant="landscape"
+        />
+      )}
 
-        {/* Courts métrages */}
-        {(courtMetrage.length > 0 || loading) && (
-          <RowSection
-            title="Courts métrages"
-            subtitle="Moins de 60 min"
-            items={courtMetrage}
-            loading={loading}
-            variant="landscape"
-          />
-        )}
+      {/* Moyens métrages */}
+      {(moyenMetrage.length > 0 || loading) && (
+        <RowSection
+        title="Moyens métrages"
+        subtitle="60 – 100 min"
+        items={moyenMetrage}
+        loading={loading}
+        variant="landscape"
+        />
+      )}
 
-        {/* Moyens métrages */}
-        {(moyenMetrage.length > 0 || loading) && (
-          <RowSection
-            title="Moyens métrages"
-            subtitle="60 – 100 min"
-            items={moyenMetrage}
-            loading={loading}
-            variant="landscape"
-          />
-        )}
+      {/* Longs métrages */}
+      {(longMetrage.length > 0 || loading) && (
+        <RowSection
+        title="Mini-séries"
+        subtitle="Plus de 100 min"
+        items={longMetrage}
+        loading={loading}
+        variant="landscape"
+        />
+      )}
 
-        {/* Longs métrages */}
-        {(longMetrage.length > 0 || loading) && (
-          <RowSection
-            title="Mini-séries"
-            subtitle="Plus de 100 min"
-            items={longMetrage}
-            loading={loading}
-            variant="landscape"
-          />
-        )}
-
-        <View style={{ height: 120 }} />
+      <View style={{ height: 120 }} />
       </Animated.ScrollView>
     </View>
   );
