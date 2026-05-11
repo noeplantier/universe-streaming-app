@@ -276,13 +276,13 @@ const VideoTab = memo(function VideoTab() {
         {!asset ? (
           <View style={vt.dropZone}>
             <View style={vt.dropIcon}>
-              <Ionicons name="cloud-upload" size={34} color={C.neonL} />
+              <Ionicons name="cloud-upload" size={34} color={"#fff"} />
             </View>
             <Text style={vt.dropTitle}>Importe ta vidéo</Text>
             <Text style={vt.dropSub}>MP4 · MOV · MKV  ·  3 min maximum</Text>
             <View style={vt.dropBtns}>
               <TouchableOpacity style={vt.btnPrimary} onPress={() => pick('gallery')} activeOpacity={0.82}>
-                <Ionicons name="images" size={16} color="#03000A" />
+                <Ionicons name="images" size={16} color="#FFF" />
                 <Text style={vt.btnPrimaryTxt}>Galerie</Text>
               </TouchableOpacity>
               <TouchableOpacity style={vt.btnSecondary} onPress={() => pick('camera')} activeOpacity={0.82}>
@@ -437,8 +437,8 @@ const vt = StyleSheet.create({
   dropTitle:   { color: C.white, fontSize: 18, fontWeight: '800' },
   dropSub:     { color: C.muted, fontSize: 12 },
   dropBtns:    { flexDirection: 'row', gap: 12, marginTop: 6 },
-  btnPrimary:  { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.neonL, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 },
-  btnPrimaryTxt:{ color: '#03000A', fontSize: 14, fontWeight: '800' },
+  btnPrimary:  { flexDirection: 'row', alignItems: 'center', gap: 8,borderColor: "#fff", backgroundColor: C.navyMid, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 24 },
+  btnPrimaryTxt:{ color: '#FFF', fontSize: 14, fontWeight: '800' },
   btnSecondary: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.navyMid, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 24, borderWidth: 1, borderColor: C.borderBr },
   btnSecondaryTxt: { color: C.offWhite, fontSize: 14, fontWeight: '700' },
   dropHint:   { color: C.muted, fontSize: 10, textAlign: 'center', lineHeight: 15, paddingHorizontal: 20 },
@@ -457,7 +457,7 @@ const vt = StyleSheet.create({
   selectTxt:   { color: C.white, fontSize: 14 },
   chipGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, paddingBottom: 4 },
   chip:        { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, backgroundColor: C.navyMid, borderWidth: 1, borderColor: C.border },
-  chipOn:      { backgroundColor: C.neon, borderColor: C.neon },
+  chipOn:      { backgroundColor: C.navyMid, borderColor: C.navyMid },
   chipTxt:     { color: C.muted, fontSize: 12, fontWeight: '600' },
   chipTxtOn:   { color: C.white, fontWeight: '700' },
 

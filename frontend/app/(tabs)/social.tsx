@@ -104,20 +104,21 @@ const CONTACT_SUBJECTS = [
 interface SupabasePost {
   id: string;
   user_id: string;
-  work_id: number; 
+  work_id: number | null; // ✅ nullable
   work_title: string;
   work_year: string;
   work_director: string;
   work_genre: string;
   rating: number;
   body: string;
-  image_url: string;
-  image_valid: boolean;
-  tags: string[];
-  tone: string;
-  likes_count: number;
-  shares_count: number;
+  image_url: string | null;
+  image_valid: boolean | null;
+  tags: string[] | null;
+  tone: string | null;
+  likes_count: number | null;
+  shares_count: number | null;
   created_at: string;
+
   profiles?: { display_name: string; avatar_url: string } | null;
 }
 
@@ -170,8 +171,10 @@ function fmtTimeAgo(iso: string): string {
 }
 
 function mapPost(r: SupabasePost): Post {
-  const tone: Tone = (TONE_KEYS as readonly string[]).includes(r.tone)
-    ? (r.tone as Tone) : 'analyse';
+  const tone: Tone = (r.tone && (TONE_KEYS as readonly string[]).includes(r.tone))
+    ? (r.tone as Tone)
+    : 'analyse';
+
   return {
     id:            r.id,
     userId:        r.user_id,
@@ -181,7 +184,10 @@ function mapPost(r: SupabasePost): Post {
     content:       r.body           ?? '',
     likes:         r.likes_count    ?? 0,
     shares:        r.shares_count   ?? 0,
-    workId:        r.work_id, 
+
+    // ✅ work_id nullable
+    workId:        r.work_id ?? 0,
+
     work_title:    r.work_title     ?? '',
     work_year:     r.work_year      ?? '',
     work_director: r.work_director  ?? '',
