@@ -754,7 +754,7 @@ export default function SearchScreen() {
 const ss = StyleSheet.create({
   root:         { flex:1, backgroundColor:C.bg },
   scroll:       { paddingBottom:40 },
-  header:       { position:'absolute', top:0, left:0, right:0, zIndex:10, flexDirection:'row', alignItems:'center', paddingHorizontal:20, paddingBottom:8 },
+  header:       { position:'absolute', top:10, left:0, right:0, zIndex:10, flexDirection:'row', alignItems:'center', paddingHorizontal:20, paddingBottom:8 },
   brand:        { color:C.text, fontSize:32, fontWeight:'800', letterSpacing:-0.5, flex:1 },
   searchBtnWrap:{ zIndex:20 },
   searchBtn:    { width:40, height:40, borderRadius:20, backgroundColor:'rgba(13,34,64,0.70)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.10)' },

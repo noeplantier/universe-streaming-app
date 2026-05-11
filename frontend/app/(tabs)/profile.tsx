@@ -357,6 +357,7 @@ export default function ProfileScreen() {
             {sortedReviews.map((rev, idx) => (
              
                 <CritiqueCard
+                  key={rev.id}
                   review={rev}
                   rank={idx + 1}
                   onPress={() => router.push(`/review/${rev.id}` as any)}
@@ -382,8 +383,12 @@ export default function ProfileScreen() {
         ) : (
           <HScrollRow>
             {sortedSeen.map((film, idx) => (
-            
-                <SeenCard film={film} onPress={() => goFilm(film as any)} />
+              <SeenCard
+                key={film.id}
+                film={film}
+                rank={idx + 1}
+                onPress={() => goFilm(film as any)}
+              />
             ))}
           </HScrollRow>
         )}

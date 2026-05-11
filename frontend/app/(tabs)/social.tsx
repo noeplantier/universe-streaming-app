@@ -104,6 +104,7 @@ const CONTACT_SUBJECTS = [
 interface SupabasePost {
   id: string;
   user_id: string;
+  work_id: number; 
   work_title: string;
   work_year: string;
   work_director: string;
@@ -129,6 +130,7 @@ interface Post {
   content: string;
   likes: number;
   shares: number;
+  workId: number; 
   work_title: string;
   work_year: string;
   work_director: string;
@@ -154,6 +156,8 @@ interface Pro {
   created_at: string;
 }
 
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,6 +181,7 @@ function mapPost(r: SupabasePost): Post {
     content:       r.body           ?? '',
     likes:         r.likes_count    ?? 0,
     shares:        r.shares_count   ?? 0,
+    workId:        r.work_id, 
     work_title:    r.work_title     ?? '',
     work_year:     r.work_year      ?? '',
     work_director: r.work_director  ?? '',
@@ -190,7 +195,7 @@ function mapPost(r: SupabasePost): Post {
 
 // Champs sélectionnés — correspond aux colonnes de community_posts_enriched
 const FEED_FIELDS =
-  'id,user_id,work_title,work_year,work_director,' +
+  'id,user_id,work_id,work_title,work_year,work_director,' +
   'work_genre,rating,body,image_url,image_valid,' +
   'tags,tone,likes_count,shares_count,created_at';
 
@@ -297,7 +302,7 @@ function usePostsFeed(tab: FeedTab) {
           .limit(POSTS_LIMIT);
         if (cancelled) return;
         if (err) throw err;
-        setPosts((data ?? []).map(r => mapPost(r as SupabasePost)));
+        setPosts((data ?? []).filter((r): r is SupabasePost => r && typeof r === 'object' && 'id' in r).map(r => mapPost(r)));
       } catch {
         if (!cancelled) setError('Impossible de charger le feed.');
       } finally {
@@ -322,7 +327,7 @@ function usePostsFeed(tab: FeedTab) {
             .eq('id', payload.new.id)
             .single();
           if (!data) return;
-          const p = mapPost(data as SupabasePost);
+          const p = mapPost(data as unknown as SupabasePost);
           setPosts(prev => prev.some(x => x.id === p.id) ? prev : [p, ...prev]);
         },
       )
@@ -504,7 +509,12 @@ const PostCard = memo(function PostCard({ post, userId }: { post: Post; userId: 
   return (
     <View style={pcs.card}>
       {/* ── Hero image ── */}
-      <TouchableOpacity activeOpacity={0.92} onPress={() => router.push(`/film/${post.id}` as any)}>
+      <TouchableOpacity 
+        activeOpacity={0.92} 
+        onPress={() => {
+          if (post.workId) router.push(`/film/${post.workId}` as any);
+        }}
+      >
         <Image source={imgSrc} style={pcs.img} resizeMode="cover" />
         <LinearGradient colors={['transparent', 'rgba(2,8,16,0.94)']} style={pcs.imgGrad} />
 
@@ -1624,7 +1634,9 @@ const TrendingBanner = memo(function TrendingBanner({ posts }: { posts: Post[] }
   return (
     <TouchableOpacity
       style={tb.wrap}
-      onPress={() => router.push(`/film/${top.id}` as any)}
+      onPress={() => {
+        if (top.workId) router.push(`/film/${top.workId}` as any);
+      }}
       activeOpacity={0.88}
     >
       <BlurView intensity={Platform.OS === 'ios' ? 14 : 8} tint="dark" style={StyleSheet.absoluteFillObject} />

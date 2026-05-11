@@ -69,6 +69,7 @@ const StarRating = memo(({ value, onChange, size = 24 }: {
     ))}
   </View>
 ));
+StarRating.displayName = 'StarRating';
 
 export default function ComposeModal({
   visible, onClose, onPublished, userId,
