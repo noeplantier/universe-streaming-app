@@ -1,18 +1,3 @@
-/**
- * components/create/CritiqueTab.tsx
- *
- * Insert dans public.critiques :
- *   title      — titre de la critique (obligatoire)
- *   film_title — titre du film / reel (obligatoire)
- *   content    — texte de la critique (obligatoire, min 20 car.)
- *   rating     — numeric(2,1) 0–5
- *   tags       — text[] facultatif
- *   reel_id    — uuid facultatif (lien vers public.reels)
- *   user_id    — auth.uid() auto
- *
- * Thème : navyMid transparent sur GalaxyBackground
- */
-
 import React, {
   memo, useCallback, useEffect, useRef, useState,
 } from 'react';
@@ -140,7 +125,7 @@ const ReelRow = memo(function ReelRow({
   return (
     <TouchableOpacity style={[rr.row, selected && rr.rowOn]} onPress={onPress} activeOpacity={0.80}>
       <View style={rr.icon}>
-        <Ionicons name="videocam" size={13} color={selected ? C.neonL : C.muted} />
+        <Ionicons name="videocam" size={13} color={selected ? "#fff" : C.muted} />
       </View>
       <View style={{ flex: 1 }}>
         <Text style={rr.title} numberOfLines={1}>{reel.title ?? 'Sans titre'}</Text>
@@ -149,15 +134,15 @@ const ReelRow = memo(function ReelRow({
         </Text>
       </View>
       {selected
-        ? <Ionicons name="checkmark-circle" size={18} color={C.neonL} />
-        : <Ionicons name="link-outline" size={14} color={C.muted} />
+        ? <Ionicons name="checkmark-circle" size={18} color={"#fff"} />
+        : <Ionicons name="link-outline" size={14} color={"#fff"} />
       }
     </TouchableOpacity>
   );
 });
 const rr = StyleSheet.create({
   row:   { flexDirection:'row', alignItems:'center', gap:10, padding:12, borderRadius:12, backgroundColor:C.navyLow, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border, marginBottom:8 },
-  rowOn: { backgroundColor:C.navyMid, borderColor:C.neonL },
+  rowOn: { backgroundColor:C.navyMid, borderColor:C.navyMid },
   icon:  { width:32, height:32, borderRadius:8, backgroundColor:C.navyMid, alignItems:'center', justifyContent:'center' },
   title: { color:C.white, fontSize:13, fontWeight:'700' },
   meta:  { color:C.muted, fontSize:10, marginTop:1 },
@@ -182,7 +167,7 @@ function SectionHead({ step, label, done }: { step: number; label: string; done?
 const sh = StyleSheet.create({
   wrap:     { flexDirection:'row', alignItems:'center', gap:10, marginBottom:12 },
   badge:    { width:24, height:24, borderRadius:12, backgroundColor:C.navyMid, borderWidth:1, borderColor:C.borderBr, alignItems:'center', justifyContent:'center' },
-  badgeDone:{ backgroundColor:C.neon, borderColor:C.neon },
+  badgeDone:{ backgroundColor:C.navyMid, borderColor:"#fff" },
   badgeTxt: { color:C.muted, fontSize:10, fontWeight:'800' },
   label:    { color:C.offWhite, fontSize:14, fontWeight:'700' },
 });
@@ -323,7 +308,7 @@ const CritiqueTab = memo(function CritiqueTab() {
         {/* ── Intro ──────────────────────────────────────────────────── */}
         <View style={ct.intro}>
           <View style={ct.introIcon}>
-            <Ionicons name="create" size={20} color={C.neonL} />
+            <Ionicons name="create" size={20} color={"#fff"} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={ct.introTitle}>Nouvelle critique</Text>
@@ -358,7 +343,7 @@ const CritiqueTab = memo(function CritiqueTab() {
             onChangeText={set('filmTitle')}
             placeholder="Titre du film ou de la série"
             placeholderTextColor={C.muted}
-            selectionColor={C.neonL}
+            selectionColor={"#fff"}
             maxLength={160}
             returnKeyType="next"
             autoCapitalize="words"
@@ -373,9 +358,9 @@ const CritiqueTab = memo(function CritiqueTab() {
             <Ionicons
               name={form.reelId ? 'link' : 'link-outline'}
               size={14}
-              color={form.reelId ? C.neonL : C.muted}
+              color={form.reelId ? "#fff" : C.muted}
             />
-            <Text style={[ct.linkTxt, form.reelId && { color: C.neonL }]}>
+            <Text style={[ct.linkTxt, form.reelId && { color: "#fff" }]}>
               {form.reelId ? 'Reel lié ✓' : 'Lier à un reel (optionnel)'}
             </Text>
             <Ionicons name={showReels ? 'chevron-up' : 'chevron-down'} size={12} color={C.muted} />
@@ -392,11 +377,11 @@ const CritiqueTab = memo(function CritiqueTab() {
                   onChangeText={setReelSearch}
                   placeholder="Titre du reel…"
                   placeholderTextColor={C.muted}
-                  selectionColor={C.neonL}
+                  selectionColor={"#fff"}
                   autoCorrect={false}
                   autoCapitalize="none"
                 />
-                {reelBusy && <ActivityIndicator size="small" color={C.neonL} />}
+                {reelBusy && <ActivityIndicator size="small" color={C.navyMid} />}
               </View>
 
               {/* Résultats */}
@@ -450,7 +435,7 @@ const CritiqueTab = memo(function CritiqueTab() {
             placeholderTextColor={C.muted}
             multiline
             maxLength={2000}
-            selectionColor={C.neonL}
+            selectionColor={C.navyMid}
             textAlignVertical="top"
             autoCapitalize="sentences"
             autoCorrect
@@ -496,7 +481,7 @@ const CritiqueTab = memo(function CritiqueTab() {
               onSubmitEditing={() => addTag(tagInput)}
               placeholder="Ajouter un tag…"
               placeholderTextColor={C.muted}
-              selectionColor={C.neonL}
+              selectionColor={C.navyMid}
               returnKeyType="done"
               autoCapitalize="none"
             />
@@ -506,7 +491,7 @@ const CritiqueTab = memo(function CritiqueTab() {
               disabled={!tagInput.trim()}
               activeOpacity={0.80}
             >
-              <Ionicons name="add" size={18} color={C.neonL} />
+              <Ionicons name="add" size={18} color={C.navyMid} />
             </TouchableOpacity>
           </View>
 
@@ -516,7 +501,7 @@ const CritiqueTab = memo(function CritiqueTab() {
               {form.tags.map(t => (
                 <TouchableOpacity key={t} style={ct.tagBadge} onPress={() => removeTag(t)}>
                   <Text style={ct.tagBadgeTxt}>{t}</Text>
-                  <Ionicons name="close" size={10} color={C.neonL} />
+                  <Ionicons name="close" size={10} color={C.navyMid} />
                 </TouchableOpacity>
               ))}
             </View>
@@ -612,24 +597,24 @@ const ct = StyleSheet.create({
 
   // Tips
   tips:     { backgroundColor:C.navyLow, borderRadius:12, padding:12, marginBottom:12, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border, gap:5 },
-  tipsHead: { color:C.neonL, fontSize:11, fontWeight:'700', marginBottom:2 },
+  tipsHead: { color:"#fff", fontSize:11, fontWeight:'700', marginBottom:2 },
   tip:      { color:C.muted, fontSize:11, lineHeight:16 },
 
   // Tags prédéfinis
   chipGrid: { flexDirection:'row', flexWrap:'wrap', gap:7, marginBottom:12 },
   chip:     { paddingHorizontal:11, paddingVertical:6, borderRadius:20, backgroundColor:C.navyMid, borderWidth:1, borderColor:C.border },
-  chipOn:   { backgroundColor:C.neon, borderColor:C.neon },
+  chipOn:   { backgroundColor:C.navyMid, borderColor:"#fff" },
   chipTxt:  { color:C.muted, fontSize:11, fontWeight:'600' },
   chipTxtOn:{ color:C.white, fontWeight:'700' },
 
   // Tag custom
   tagInputRow: { flexDirection:'row', alignItems:'center', gap:8, marginBottom:10 },
   tagInput:    { flex:1, backgroundColor:C.navyMid, borderRadius:10, paddingHorizontal:12, height:38, color:C.white, fontSize:13, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
-  tagAddBtn:   { width:38, height:38, borderRadius:10, backgroundColor:C.navyMid, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:C.borderBr },
+  tagAddBtn:   { width:38, height:38, borderRadius:10, backgroundColor:C.navyMid, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:"#fff" },
 
   tagsRow:    { flexDirection:'row', flexWrap:'wrap', gap:7 },
-  tagBadge:   { flexDirection:'row', alignItems:'center', gap:5, paddingHorizontal:10, paddingVertical:5, borderRadius:20, backgroundColor:'rgba(124,94,252,0.20)', borderWidth:1, borderColor:C.neon },
-  tagBadgeTxt:{ color:C.neonL, fontSize:11, fontWeight:'600' },
+  tagBadge:   { flexDirection:'row', alignItems:'center', gap:5, paddingHorizontal:10, paddingVertical:5, borderRadius:20, backgroundColor:C.navyMid, borderWidth:1, borderColor:"#fff" },
+  tagBadgeTxt:{ color:"#fff", fontSize:11, fontWeight:'600' },
 
   // Messages
   msgError:    { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'rgba(239,68,68,0.12)', borderRadius:12, padding:12, marginBottom:12, borderWidth:1, borderColor:'rgba(239,68,68,0.25)' },
@@ -637,7 +622,7 @@ const ct = StyleSheet.create({
   msgSuccess:  { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'rgba(34,197,94,0.12)', borderRadius:12, padding:12, marginBottom:12, borderWidth:1, borderColor:'rgba(34,197,94,0.25)' },
   msgSuccessTxt:{ color:'#86EFAC', fontSize:13, fontWeight:'700' },
 
-  submitBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:C.neonL, borderRadius:16, paddingVertical:15, marginBottom:12 },
+  submitBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:C.navyMid, borderRadius:16, paddingVertical:15, marginBottom:12 },
   submitOff: { backgroundColor:C.navyMid },
   submitTxt: { color:'#03000A', fontSize:15, fontWeight:'800' },
 });
