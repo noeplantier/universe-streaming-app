@@ -477,7 +477,23 @@ export default function FilmDetailScreen() {
     const url = await fetchRandomVideoUrl();
     setVideoUrl(url);
     setVideoLoading(false);
-  }, []);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      
+      if (userId && rawId) {
+        // Upsert pour éviter les doublons (si l'utilisateur regarde plusieurs fois)
+        await supabase.from('user_history').upsert(
+          { user_id: userId, work_id: Number(rawId), watched_at: new Date().toISOString() },
+          { onConflict: 'user_id, work_id' }
+        );
+      }
+    } catch (err) {
+      console.error("Erreur lors de l'enregistrement de l'historique:", err);
+    }
+  }, [rawId]);
+
+  
 
   // Dérivés
   const descShort = useMemo(() => {

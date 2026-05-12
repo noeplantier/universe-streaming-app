@@ -409,37 +409,34 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     async function fetchWorksData() {
-      if (!user) {
-        return;
-      }
-
       try {
-        const { data: favData } =
-          await supabase
-            .from('user_favorites')
-            .select('works(*)')
-            .eq('user_id', user.id);
+        // 1. Récupérer le VRAI UUID de l'utilisateur authentifié
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        
+        if (!authUser?.id) {
+          console.log("Aucun utilisateur authentifié");
+          return;
+        }
 
-        const favorites = (
-          favData
-            ?.map((d: any) => d.works)
-            .filter(Boolean) || []
-        ) as Work[];
+        const exactUserId = authUser.id; // C'est un vrai UUID valide
 
+        // 2. Fetch Favoris avec exactUserId
+        const { data: favData } = await supabase
+          .from('user_favorites')
+          .select('works(*)')
+          .eq('user_id', exactUserId);
+        const favorites = (favData?.map((d: any) => d.works).filter(Boolean) || []) as Work[];
         setFavWorks(favorites);
 
-        const { data: watchedData } =
-          await supabase
-            .from('user_history')
-            .select('works(*)')
-            .eq('user_id', user.id);
-
-        const watched = (
-          watchedData
-            ?.map((d: any) => d.works)
-            .filter(Boolean) || []
-        ) as Work[];
-
+        // 3. Fetch Visionnés avec exactUserId
+        const { data: watchedData, error } = await supabase
+          .from('user_history')
+          .select('works(*)')
+          .eq('user_id', exactUserId);
+          
+        if (error) console.error("Erreur history:", error);
+          
+        const watched = (watchedData?.map((d: any) => d.works).filter(Boolean) || []) as Work[];
         setWatchedWorks(watched);
 
         const combined = [
@@ -887,12 +884,12 @@ export default function ProfileScreen() {
 
         <View style={pg.divider} />
 
-        {/* VUS */}
+       {/* VUS */}
 
-        <SectionHeader
+       <SectionHeader
           icon="eye"
           label="Films & Séries visionnés"
-          subtitle="Classés par note"
+          subtitle="Votre historique de visionnage"
           accentColor={G.cyan}
           onViewAll={() =>
             router.push(
@@ -901,7 +898,7 @@ export default function ProfileScreen() {
           }
         />
 
-        {sortedSeen.length ===
+        {watchedWorks.length ===
         0 ? (
           <EmptyState
             icon="film-outline"
@@ -910,11 +907,18 @@ export default function ProfileScreen() {
           />
         ) : (
           <HScrollRow>
-            {sortedSeen.map(
+            {watchedWorks.map(
               (film, idx) => (
                 <SeenCard
                   key={film.id}
-                  film={film}
+                  film={{
+                    id: String(film.id),
+                    title: film.title,
+                    posterUrl: resolveImage(film.id, film.image),
+                    genre: film.genre,
+                    type: film.category === 'série' ? 'série' : 'film',
+                    rating: 0,
+                  }}
                   rank={idx + 1}
                   onPress={() =>
                     goFilm(film as any)
