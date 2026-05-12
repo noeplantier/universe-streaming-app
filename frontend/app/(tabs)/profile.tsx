@@ -62,6 +62,27 @@ import {
 
 import { resolveWorkIdByTitleYear, supabase } from '@/lib/supabase';
 
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE
+// ─────────────────────────────────────────────────────────────────────────────
+interface Work {
+  id:          number;
+  title:       string;
+  category:    string;
+  genre:       string;
+  year:        number;
+  likes:       number;
+  comments:    number | null;
+  image:       string | null;
+  is_original: boolean;
+  adjective:   string | null;
+  duration:    number | null;
+  description: string | null;
+  director:    string | null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,7 +198,9 @@ const ri = StyleSheet.create({
 export default function ProfileScreen() {
   const router   = useRouter();
   const { user } = useAuth();
-
+  const [favWorks, setFavWorks] = useState<Work[]>([]);
+  const [watchedWorks, setWatchedWorks] = useState<Work[]>([]);
+  const [recommendations, setRecommendations] = useState<Work[]>([]);
   const [activeTab,  setActiveTab]  = useState<GridTab>(0);
   const [reviews,    setReviews]    = useState<ReviewItem[]>([]);
   const [seenFilms,  setSeenFilms]  = useState<FilmItem[]>([]);
@@ -185,6 +208,62 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const scrollY = useRef(new Animated.Value(0)).current;
+
+  // Fetch favorites, seen films, and reviews on mount and on refresh
+
+  useEffect(() => {
+    async function fetchWorksData() {
+      if (!user) return; // Assurez-vous d'avoir l'ID de l'utilisateur actuel
+
+      try {
+        // 1. Récupérer les favoris (via une jointure sur votre table de likes/favoris)
+        // Remplacez 'user_favorites' par le nom exact de votre table de liaison
+        const { data: favData } = await supabase
+          .from('user_favorites')
+          .select('works(*)')
+          .eq('user_id', user.id);
+        
+        const favorites = (favData?.map(d => d.works).filter(Boolean) || []) as unknown as Work[];
+        setFavWorks(favorites);
+
+        // 2. Récupérer l'historique de visionnage
+        // Remplacez 'user_history' par le nom exact de votre table
+        const { data: watchedData } = await supabase
+          .from('user_history')
+          .select('works(*)')
+          .eq('user_id', user.id);
+          
+        const watched = (watchedData?.map(d => d.works).filter(Boolean) || []) as unknown as Work[];
+        setWatchedWorks(watched);
+
+        // 3. ALGORITHME DE RECOMMANDATION
+        // Isoler les genres les plus récurrents dans les œuvres aimées et vues
+        const combined = [...favorites, ...watched];
+        if (combined.length > 0) {
+          const genres = [...new Set(combined.map(w => w.genre))];
+          const excludeIds = combined.map(w => w.id);
+
+          // Récupérer des œuvres du même genre que l'utilisateur n'a pas encore vues
+          const { data: recData } = await supabase
+            .from('works')
+            .select('id,title,category,genre,year,likes,image,is_original')
+            .in('genre', genres)
+            .order('likes', { ascending: false })
+            .limit(10);
+
+          let recs = (recData || []) as Work[];
+          // Filtrer les doublons (œuvres déjà vues ou dans les favoris)
+          recs = recs.filter(w => !excludeIds.includes(w.id));
+          
+          setRecommendations(recs);
+        }
+      } catch (error) {
+        console.error("Erreur fetching works:", error);
+      }
+    }
+
+    fetchWorksData();
+  }, [user]);
 
   // ── Animated values ────────────────────────────────────────────────────────
   const headerOpacity = scrollY.interpolate({
