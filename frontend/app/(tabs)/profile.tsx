@@ -11,6 +11,7 @@ import React, {
 
 import {
   Animated,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -26,12 +27,9 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-
 import { useAuth } from '../../contexts/AuthContext';
 import { seenAPI } from '../../services/api';
-
 import GalaxyBackground from '../../components/social/GalaxyBackground';
-
 import { ImageWithFallback } from '../../components/profile/ImageWithFallback';
 
 import {
@@ -120,22 +118,18 @@ const TAB_ICONS: Array<{
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HELPERS
+// HELPER & STYLE PORTRAIT CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveImage(
-  id: number,
-  image: string | null,
-): string {
-  if (!image) {
-    return `https://picsum.photos/seed/${id}/400/600`;
+function resolveImage(id: number, image: string | null): string {
+  if (!image) return `https://picsum.photos/seed/work_${id}/400/600`;
+  if (image.startsWith('http')) return image;
+  try {
+    const { data } = supabase.storage.from('community-images').getPublicUrl(image);
+    return data?.publicUrl ?? `https://picsum.photos/seed/work_${id}/400/600`;
+  } catch {
+    return `https://picsum.photos/seed/work_${id}/400/600`;
   }
-
-  if (image.startsWith('http')) {
-    return image;
-  }
-
-  return `https://knrzbdqfflobfjdmqyte.supabase.co/storage/v1/object/public/works-images/${image}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -245,124 +239,79 @@ SkeletonSection.displayName =
 // PORTRAIT CARD
 // ─────────────────────────────────────────────────────────────────────────────
 
+const pc = StyleSheet.create({
+  badge:   { position: 'absolute', top: 7, left: 7, paddingHorizontal: 5, paddingVertical: 2.5, borderRadius: 4 },
+  badgeTxt:{ color: '#FFFFFF', fontSize: 7, fontWeight: '800', letterSpacing: 0.3 },
+  rankNum: { position: 'absolute', bottom: 30, right: 5, fontSize: 52, fontWeight: '900', lineHeight: 52, letterSpacing: -4, opacity: 0.9 },
+  meta:    { position: 'absolute', bottom: 8, left: 8, right: 8, gap: 2 },
+  title:   { color: '#FFFFFF', fontSize: 11, fontWeight: '700', lineHeight: 14 },
+  stat:    { color: 'rgba(255,255,255,0.6)', fontSize: 9 },
+});
+
 const PortraitCard = memo(
   ({
     item,
     rank,
+    noMargin
   }: {
     item: Work;
     rank?: number;
+    noMargin?: boolean;
   }) => {
     const router = useRouter();
 
     const uri = useMemo(
-      () =>
-        resolveImage(
-          item.id,
-          item.image,
-        ),
+      () => resolveImage(item.id, item.image),
       [item.id, item.image],
     );
 
     const rankColor =
-      rank === 1
-        ? G.gold
-        : rank === 2
-        ? '#C0C0C0'
-        : rank === 3
-        ? '#CD7F32'
-        : 'rgba(255,255,255,0.75)';
+      rank === 1 ? G.gold : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : 'rgba(255,255,255,0.42)';
 
-    return (
-      <TouchableOpacity
-        activeOpacity={0.9}
-        onPress={() =>
-          router.push(
-            `/film/${item.id}` as any,
-          )
-        }
-      >
-        <View style={pc.wrap}>
+      return (
+        <TouchableOpacity style={{ marginRight: noMargin ? 0 : 12 }} onPress={() => router.push(`/film/${item.id}` as any)} activeOpacity={0.88}>
+          <View style={pc.card}>
+            {/* Affiche l'image avec le composant standard */}
+            <Image 
+              source={{ uri }} 
+              style={pc.img as any} 
+              resizeMode="cover" 
+            />
+            <LinearGradient 
+              colors={['transparent','rgba(2,8,16,0.82)']} 
+              style={StyleSheet.absoluteFillObject} 
+              start={{ x: 0, y: 0.4 }} 
+              end={{ x: 0, y: 1 }} 
+            />
+          
+          <View style={[pc.badge, { backgroundColor: item.is_original ? '#1E4A7A' : '#0D2240' }]}>
+            <Text style={pc.badgeTxt}>
+              {item.is_original ? 'ORIG' : (item.category ?? '').slice(0,4).toUpperCase()}
+            </Text>
+          </View>
+          
           {rank != null && (
-            <Text
-              style={[
-                pc.rank,
-                {
-                  color: rankColor,
-                },
-              ]}
-            >
+            <Text style={[pc.rankNum, { color: rankColor }]}>
               {rank}
             </Text>
           )}
 
-          <View style={pc.card}>
-            <ImageWithFallback
-              uri={uri}
-              style={pc.image}
-              fallbackColors={[
-                G.surface,
-                G.bg,
-              ]}
-            />
-
-            <LinearGradient
-              colors={[
-                'transparent',
-                'rgba(0,0,0,0.82)',
-              ]}
-              style={pc.overlay}
-            >
-              <Text
-                numberOfLines={1}
-                style={pc.title}
-              >
-                {item.title}
-              </Text>
-
-              <Text style={pc.meta}>
-                {item.genre} • {item.year}
-              </Text>
-
-              <View style={pc.likesRow}>
-                <Ionicons
-                  name="heart"
-                  size={11}
-                  color="#FF5C7A"
-                />
-
-                <Text style={pc.likesTxt}>
-                  {item.likes} likes
-                </Text>
-              </View>
-            </LinearGradient>
-
-            <View
-              style={[
-                pc.badge,
-                {
-                  backgroundColor:
-                    item.is_original
-                      ? 'rgba(191,95,255,0.92)'
-                      : 'rgba(0,0,0,0.68)',
-                },
-              ]}
-            >
-              <Text style={pc.badgeTxt}>
-                {item.is_original
-                  ? 'ORIGINAL'
-                  : item.category}
-              </Text>
+          {/* Méta de la carte : Titre et Likes (ajouté depuis search.tsx) */}
+          <View style={pc.meta}>
+            <Text style={pc.title} numberOfLines={2}>{item.title}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Ionicons name="heart" size={9} color={G.gold} />
+              <Text style={pc.stat}>{(item.likes ?? 0).toLocaleString('fr-FR')}</Text>
             </View>
           </View>
+
         </View>
       </TouchableOpacity>
     );
   },
 );
 
-PortraitCard.displayName =
-  'PortraitCard';
+PortraitCard.displayName = 'PortraitCard';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PROFILE SCREEN
@@ -630,7 +579,7 @@ export default function ProfileScreen() {
     },
     [],
   );
-  
+
   // ───────────────────────────────────────────────────────────────────────────
   // LOAD SEEN
   // ───────────────────────────────────────────────────────────────────────────
@@ -886,34 +835,37 @@ export default function ProfileScreen() {
 
         <View style={pg.divider} />
 
-        {/* RECOMMANDATIONS */}
-
-        <SectionHeader
+           {/* RECOMMANDATIONS */}
+           <SectionHeader
           icon="sparkles"
           label="Recommandés pour vous"
           subtitle="Basé sur vos goûts"
           accentColor="#fff"
         />
 
-        {recommendations.length ===
-        0 ? (
+        {recommendations.length === 0 ? (
           <EmptyState
             icon="planet-outline"
             text="Aucune recommandation"
             subtext="Regarde plus de films pour améliorer l'algorithme"
           />
         ) : (
-          <HScrollRow paddingBottom={8}>
-            {recommendations.map(
-              (film) => (
-                <PortraitCard
-                  key={film.id}
-                  item={film}
-                />
-              ),
-            )}
-          </HScrollRow>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16 }} // Conserve la marge de l'écran, mais pas entre les cartes
+            style={{ paddingBottom: 8 }}
+          >
+            {recommendations.map((film) => (
+              <PortraitCard
+                key={`rec-${film.id}`}
+                item={film}
+                 
+              />
+            ))}
+          </ScrollView>
         )}
+
 
         <View
           style={{
@@ -996,12 +948,9 @@ export default function ProfileScreen() {
                     <ReelCard
                       key={item.id}
                       reel={item}
-                      onPress={() =>
-                        router.push(
-                          `${s.itemRoute}${item.id}` as any,
-                        )
-                      }
-                    />
+                      onPress={() => router.push(
+                        `${s.itemRoute}${item.id}` as any
+                      )} rank={0}                    />
                   ),
                 )}
               </HScrollRow>
@@ -1475,89 +1424,6 @@ const sk = StyleSheet.create({
   },
 });
 
-const pc = StyleSheet.create({
-  wrap: {
-    position: 'relative',
-    marginRight: 12,
-  },
-
-  rank: {
-    position: 'absolute',
-    top: -8,
-    left: 6,
-    zIndex: 20,
-    fontSize: 58,
-    fontWeight: '900',
-    letterSpacing: -2,
-  },
-
-  card: {
-    width: CARD_W,
-    height: CARD_H,
-    borderRadius: 14,
-    overflow: 'hidden',
-    backgroundColor:
-      G.surface,
-  },
-
-  image: {
-    width: '100%',
-    height: '100%',
-  },
-
-  overlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 90,
-    justifyContent:
-      'flex-end',
-    padding: 10,
-  },
-
-  title: {
-    color: '#FFF',
-    fontSize: 13,
-    fontWeight: '800',
-  },
-
-  meta: {
-    color:
-      'rgba(255,255,255,0.72)',
-    fontSize: 10,
-    marginTop: 2,
-  },
-
-  likesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 5,
-  },
-
-  likesTxt: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  badge: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-
-  badgeTxt: {
-    color: '#FFF',
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-});
 
 const pg = StyleSheet.create({
   root: {
