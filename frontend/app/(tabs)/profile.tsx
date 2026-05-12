@@ -33,6 +33,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { useFocusEffect } from 'expo-router'; 
+
 import { LinearGradient }    from 'expo-linear-gradient';
 import { SafeAreaView }      from 'react-native-safe-area-context';
 import { BlurView }          from 'expo-blur';
@@ -535,8 +538,8 @@ export default function ProfileScreen() {
       <View>
         {/* ── Favoris ── */}
         <SectionHeader
-          icon="trophy" label="Films favoris" subtitle="Tes œuvres préférées"
-          count={favWorks.length} accentColor={G.gold}
+          icon="trophy" label="Œuvres favorites" subtitle="Tes œuvres préférées"
+          count={favWorks.length} accentColor={"#fff"}
           onViewAll={() => router.push('/profile/favorites' as any)}
         />
         {favWorks.length === 0 ? (
@@ -553,8 +556,8 @@ export default function ProfileScreen() {
 
         {/* ── Critiques — fond Galaxy + logo ── */}
         <SectionHeader
-          icon="pencil" label="Critiques" subtitle="Classées par popularité"
-          accentColor={G.amber}
+          icon="pencil" label="Critiques par œuvres" subtitle="Classées par popularité"
+          accentColor={"#fff"}
           onViewAll={() => router.push('/profile/reviews' as any)}
         />
         {sortedReviews.length === 0 ? (
@@ -576,8 +579,8 @@ export default function ProfileScreen() {
 
         {/* ── Visionnés ── */}
         <SectionHeader
-          icon="eye" label="Films & Séries visionnés" subtitle="Votre historique de visionnage"
-          accentColor={G.cyan}
+          icon="eye" label="Œuvres visionnées" subtitle="Votre historique de visionnage"
+          accentColor={"#fff"}
           onViewAll={() => router.push('/profile/seen_films' as any)}
         />
         {watchedWorks.length === 0 ? (

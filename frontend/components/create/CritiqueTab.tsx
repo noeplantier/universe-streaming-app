@@ -337,7 +337,17 @@ const CritiqueTab = memo(function CritiqueTab() {
         <View style={ct.section}>
           <SectionHead step={2} label="Oeuvre liée à ta critique" done={!!form.filmTitle.trim()} />
 
-       
+          <TextInput
+            style={ct.input}
+            value={form.filmTitle}
+            onChangeText={set('filmTitle')}
+            placeholder="Ex : Inception"
+            placeholderTextColor={C.muted}
+            selectionColor={C.neonL}
+            maxLength={120}
+            returnKeyType="next"
+            autoCapitalize="sentences"
+          />
 
           {/* Lien optionnel à un reel */}
           <TouchableOpacity
@@ -475,14 +485,7 @@ const CritiqueTab = memo(function CritiqueTab() {
               returnKeyType="done"
               autoCapitalize="none"
             />
-            <TouchableOpacity
-              style={ct.tagAddBtn}
-              onPress={() => addTag(tagInput)}
-              disabled={!tagInput.trim()}
-              activeOpacity={0.80}
-            >
-              <Ionicons name="add" size={18} color={C.navyMid} />
-            </TouchableOpacity>
+         
           </View>
 
           {/* Tags sélectionnés */}
@@ -515,16 +518,16 @@ const CritiqueTab = memo(function CritiqueTab() {
         {/* ── Bouton ─────────────────────────────────────────────────── */}
         {!done && (
           <TouchableOpacity
-            style={[ct.submitBtn, !canSubmit && ct.submitOff]}
+            style={[ct.submitBtn, { opacity: canSubmit ? 1 : 0.5 }]}
             onPress={submit}
             activeOpacity={0.84}
             disabled={!canSubmit}
           >
             {submitting
-              ? <ActivityIndicator color="#03000A" size="small" />
-              : <Ionicons name="send" size={16} color={canSubmit ? '#03000A' : C.muted} />
+              ? <ActivityIndicator color={C.white} size="small" />
+              : <Ionicons name="send" size={16} color={C.white} />
             }
-            <Text style={[ct.submitTxt, !canSubmit && { color: C.muted }]}>
+            <Text style={ct.submitTxt}>
               {submitting ? 'Publication…' : 'Publier la critique'}
             </Text>
           </TouchableOpacity>
@@ -612,7 +615,7 @@ const ct = StyleSheet.create({
   msgSuccess:  { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'rgba(34,197,94,0.12)', borderRadius:12, padding:12, marginBottom:12, borderWidth:1, borderColor:'rgba(34,197,94,0.25)' },
   msgSuccessTxt:{ color:'#86EFAC', fontSize:13, fontWeight:'700' },
 
-  submitBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:C.navyMid, borderRadius:16, paddingVertical:15, marginBottom:12 },
+  submitBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:C.navyMid, borderRadius:16, paddingVertical:15, marginBottom:12, borderColor:C.border, borderWidth:StyleSheet.hairlineWidth },
   submitOff: { backgroundColor:C.navyMid },
-  submitTxt: { color:'#03000A', fontSize:15, fontWeight:'800' },
+  submitTxt: { color:'#fff', fontSize:15, fontWeight:'800' },
 });

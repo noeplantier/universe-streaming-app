@@ -518,7 +518,22 @@ export default function FilmDetailScreen() {
       setVideoUrl(url);
       setVideoLoading(false);
     }
-  }, [videoUrl]);
+
+    // ── Ajout automatique du film aux "Œuvres visionnées" ──
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      
+      if (userId && rawId) {
+        await supabase.from('user_history').upsert(
+          { user_id: userId, work_id: Number(rawId), watched_at: new Date().toISOString() },
+          { onConflict: 'user_id, work_id' }
+        );
+      }
+    } catch (err) {
+      console.error("Erreur lors de l'enregistrement de l'historique:", err);
+    }
+  }, [videoUrl, rawId]);
 
   
 
