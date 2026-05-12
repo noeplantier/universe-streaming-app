@@ -444,17 +444,7 @@ export default function ProfileScreen() {
       <StatusBar style="light" />
       <GalaxyBackground />
 
-      {/* ── Sticky top bar (appears on scroll) ── */}
-      <Animated.View
-        pointerEvents="none"
-        style={[pg.stickyBar, { opacity: headerOpacity }]}
-      >
-        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFill} />
-        <SafeAreaView edges={['top']} style={pg.stickyInner}>
-          <Text style={pg.stickyUser}>{user.username}</Text>
-        </SafeAreaView>
-      </Animated.View>
-
+    
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         onScroll={Animated.event(
@@ -494,9 +484,22 @@ export default function ProfileScreen() {
                 {/* unread dot */}
                 <View style={pg.notifDot} />
               </TouchableOpacity>
+
+       
+
               <TouchableOpacity testID="profile-settings-btn" style={pg.navIconBtn} onPress={() => router.push('/settings')}>
                 <Ionicons name="settings-outline" size={21} color="rgba(255,255,255,0.85)" />
-              </TouchableOpacity>
+              </TouchableOpacity> 
+
+                   {/*Back Office - Reels Import Checking */}
+              <TouchableOpacity 
+  style={pg.navIconBtn} 
+  onPress={() => router.push('/backoffice/universe-admin' as any)}
+>
+  <Ionicons name="eye-outline" size={21} color="rgba(255,255,255,0.85)" />
+</TouchableOpacity>
+              
+
             </View>
           </View>
 
