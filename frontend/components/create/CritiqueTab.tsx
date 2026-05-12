@@ -245,8 +245,8 @@ const CritiqueTab = memo(function CritiqueTab() {
   // ── Submit ─────────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     setError(null);
-    if (!form.title.trim())     { setError('Le titre de la critique est obligatoire.'); return; }
-    if (!form.filmTitle.trim()) { setError('Le titre du film est obligatoire.'); return; }
+    if (!form.title.trim()) { setError('Le titre de la critique est obligatoire.'); return; }
+    if (!form.filmTitle.trim()) { setError('Le titre de l\'œuvre est obligatoire.'); return; }
     if (form.content.trim().length < 20) { setError('La critique doit faire au moins 20 caractères.'); return; }
 
     setSubmitting(true);
@@ -257,34 +257,35 @@ const CritiqueTab = memo(function CritiqueTab() {
       if (authErr || !user) throw new Error('Non authentifié. Connecte-toi d\'abord.');
 
       const payload: Record<string, any> = {
-        user_id:    user.id,
-        title:      form.title.trim(),
+        user_id: user.id,
+        title: form.title.trim(),
         film_title: form.filmTitle.trim(),
-        content:    form.content.trim(),
-        rating:     form.rating > 0 ? form.rating : null,
-        tags:       form.tags.length > 0 ? form.tags : null,
-        reel_id:    form.reelId ?? null,
-        // Champs legacy (trigger les mappe automatiquement)
-        titre:      form.title.trim(),
-        contenu:    form.content.trim(),
-        note:       form.rating > 0 ? form.rating : null,
+        content: form.content.trim(),
+        rating: form.rating > 0 ? form.rating : null,
+        tags: form.tags.length > 0 ? form.tags : null,
+        reel_id: form.reelId ?? null,
       };
 
       const { error: insErr } = await supabase.from('critiques').insert(payload);
-      if (insErr) throw new Error(insErr.message);
+      
+      if (insErr) {
+        console.error("Erreur d'insertion :", insErr);
+        throw new Error(insErr.message);
+      }
 
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      
       setDone(true);
       setTimeout(reset, 3000);
 
     } catch (e: any) {
-      setError(e?.message ?? 'Erreur inconnue.');
+      setError(e?.message ?? 'Erreur inconnue lors de la publication.');
     } finally {
       setSubmitting(false);
     }
   }, [form, reset]);
 
-  // Validation
+  // Validation pour activer/désactiver le bouton
   const canSubmit =
     !!form.title.trim() &&
     !!form.filmTitle.trim() &&

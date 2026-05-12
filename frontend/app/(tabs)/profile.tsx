@@ -574,99 +574,63 @@ export default function ProfileScreen() {
   );
 
   // ───────────────────────────────────────────────────────────────────────────
-  // LOAD REVIEWS
+  // LOAD REVIEWS (CRITIQUES)
   // ───────────────────────────────────────────────────────────────────────────
 
   const loadReviews = useCallback(
-    async (uid: string) => {
-      const isUUID =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-          uid,
-        );
+    async () => {
+      try {
+        // 1. Récupérer le vrai UUID de l'utilisateur authentifié
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        
+        if (!authUser?.id) {
+          setReviews([]);
+          return;
+        }
 
-      if (!isUUID) {
-        setReviews(DEFAULT_REVIEWS);
-        return;
-      }
+        // 2. Fetcher la table 'critiques' avec cet user_id
+        const { data, error } = await supabase
+          .from('critiques')
+          .select(`id, user_id, reel_id, film_title, title, content, rating, created_at`)
+          .eq('user_id', authUser.id)
+          .order('created_at', { ascending: false });
 
-      const { data, error } =
-        await supabase
-          .from(
-            'critiques_with_profile',
-          )
-          .select(`
-            id,
-            user_id,
-            reel_id,
-            film_title,
-            title,
-            content,
-            rating,
-            likes_count,
-            created_at
-          `)
-          .eq('user_id', uid)
-          .order('created_at', {
-            ascending: false,
-          });
+        if (error) {
+          console.error("Erreur chargement critiques:", error);
+          setReviews([]);
+          return;
+        }
 
-      if (error) {
-        setReviews(DEFAULT_REVIEWS);
-        return;
-      }
-
-      const normalized: ReviewItem[] =
-        (data ?? []).map((c: any) => {
-          const filmTitle = String(
-            c.title ??
-              c.film_title ??
-              '—',
-          );
-
+        // 3. Mapper ces données via votre interface ReviewItem existante
+        const normalized: ReviewItem[] = (data ?? []).map((c: any) => {
+          const filmTitle = String(c.film_title ?? c.title ?? '—');
           return {
             id: String(c.id),
-            filmId: String(
-              c.reel_id ?? c.id,
-            ),
-            content: String(
-              c.content ?? '',
-            ),
-            rating:
-              c.rating == null
-                ? 0
-                : Number(c.rating) || 0,
-            likes:
-              c.likes_count ?? 0,
-            date: c.created_at
-              ? new Date(
-                  c.created_at,
-                ).toISOString()
-              : new Date().toISOString(),
-
+            filmId: String(c.reel_id ?? c.id),
+            content: String(c.content ?? ''),
+            rating: c.rating == null ? 0 : Number(c.rating),
+            likes: 0, // Optionnel : ajoutez une colonne likes si elle existe
+            date: c.created_at ? new Date(c.created_at).toISOString() : new Date().toISOString(),
             film: {
-              id: String(
-                c.reel_id ?? c.id,
-              ),
+              id: String(c.reel_id ?? c.id),
               title: filmTitle,
-              posterUrl:
-                poster(filmTitle),
+              // Utilise votre helper existant pour générer une affiche temporaire
+              posterUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(filmTitle)}&background=random&size=200`,
               genre: '—',
               type: 'film',
             },
           };
         });
 
-      normalized.sort(
-        (a, b) =>
-          (b.likes ?? 0) -
-          (a.likes ?? 0),
-      );
-
-      setReviews(normalized);
+        setReviews(normalized);
+      } catch (err) {
+        console.error("Erreur inattendue dans loadReviews:", err);
+        setReviews([]);
+      }
     },
     [],
   );
-
+  
   // ───────────────────────────────────────────────────────────────────────────
   // LOAD SEEN
   // ───────────────────────────────────────────────────────────────────────────
