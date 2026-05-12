@@ -334,20 +334,9 @@ const CritiqueTab = memo(function CritiqueTab() {
 
         {/* ── ÉTAPE 2 : Film / reel ──────────────────────────────────── */}
         <View style={ct.section}>
-          <SectionHead step={2} label="Film ou reel concerné" done={!!form.filmTitle.trim()} />
+          <SectionHead step={2} label="Oeuvre liée à ta critique" done={!!form.filmTitle.trim()} />
 
-          {/* Titre du film (libre) */}
-          <TextInput
-            style={ct.input}
-            value={form.filmTitle}
-            onChangeText={set('filmTitle')}
-            placeholder="Titre du film ou de la série"
-            placeholderTextColor={C.muted}
-            selectionColor={"#fff"}
-            maxLength={160}
-            returnKeyType="next"
-            autoCapitalize="words"
-          />
+       
 
           {/* Lien optionnel à un reel */}
           <TouchableOpacity
@@ -361,7 +350,7 @@ const CritiqueTab = memo(function CritiqueTab() {
               color={form.reelId ? "#fff" : C.muted}
             />
             <Text style={[ct.linkTxt, form.reelId && { color: "#fff" }]}>
-              {form.reelId ? 'Reel lié ✓' : 'Lier à un reel (optionnel)'}
+              {form.reelId ? 'Oeuvre liée ✓' : 'Lier à une œuvre'}
             </Text>
             <Ionicons name={showReels ? 'chevron-up' : 'chevron-down'} size={12} color={C.muted} />
           </TouchableOpacity>
@@ -375,7 +364,7 @@ const CritiqueTab = memo(function CritiqueTab() {
                   style={ct.searchInput}
                   value={reelSearch}
                   onChangeText={setReelSearch}
-                  placeholder="Titre du reel…"
+                  placeholder="Titre de l'oeuvre à associer…"
                   placeholderTextColor={C.muted}
                   selectionColor={"#fff"}
                   autoCorrect={false}

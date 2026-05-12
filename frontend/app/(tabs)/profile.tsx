@@ -806,38 +806,29 @@ export default function ProfileScreen() {
 
     return (
       <View>
-        {/* FAVORIS */}
 
-        <SectionHeader
+   {/* ── SECTION 1 — Favoris ── */}
+   <SectionHeader
           icon="trophy"
           label="Films favoris"
           subtitle="Tes œuvres préférées"
           count={favWorks.length}
           accentColor={G.gold}
-          onViewAll={() =>
-            router.push(
-              '/profile/favorites' as any,
-            )
-          }
+          onViewAll={() => router.push('/profile/favorites' as any)}
         />
 
         {favWorks.length === 0 ? (
-          <EmptyState
-            icon="heart-outline"
-            text="Aucun favori"
-            subtext="Note des films 4★ ou plus"
-          />
+          <EmptyState icon="heart-outline" text="Aucun favori" subtext="Sauvegarde tes films avec l'étoile" />
         ) : (
           <HScrollRow>
-            {favWorks.map(
-              (film, idx) => (
-                <PortraitCard
-                  key={film.id}
-                  item={film}
-                  rank={idx + 1}
-                />
-              ),
-            )}
+            {favWorks.map((film, idx) => (
+              <SeenCard
+                key={`fav-${film.id}`}
+                film={film}
+                rank={idx + 1}
+                onPress={() => router.push(`/film/${film.id}` as any)}
+              />
+            ))}
           </HScrollRow>
         )}
 
@@ -937,7 +928,7 @@ export default function ProfileScreen() {
           icon="sparkles"
           label="Recommandés pour vous"
           subtitle="Basé sur vos goûts"
-          accentColor="#BF5FFF"
+          accentColor="#fff"
         />
 
         {recommendations.length ===
@@ -945,10 +936,10 @@ export default function ProfileScreen() {
           <EmptyState
             icon="planet-outline"
             text="Aucune recommandation"
-            subtext="Regarde plus de films pour améliorer l’algorithme"
+            subtext="Regarde plus de films pour améliorer l'algorithme"
           />
         ) : (
-          <HScrollRow>
+          <HScrollRow paddingBottom={8}>
             {recommendations.map(
               (film) => (
                 <PortraitCard
