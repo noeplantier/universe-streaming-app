@@ -245,8 +245,8 @@ const CritiqueTab = memo(function CritiqueTab() {
   // ── Submit ─────────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     setError(null);
-    if (!form.title.trim())     { setError('Le titre de la critique est obligatoire.'); return; }
-    if (!form.filmTitle.trim()) { setError('Le titre du film est obligatoire.'); return; }
+    if (!form.title.trim()) { setError('Le titre de la critique est obligatoire.'); return; }
+    if (!form.filmTitle.trim()) { setError('Le titre de l\'œuvre est obligatoire.'); return; }
     if (form.content.trim().length < 20) { setError('La critique doit faire au moins 20 caractères.'); return; }
 
     setSubmitting(true);
@@ -257,34 +257,35 @@ const CritiqueTab = memo(function CritiqueTab() {
       if (authErr || !user) throw new Error('Non authentifié. Connecte-toi d\'abord.');
 
       const payload: Record<string, any> = {
-        user_id:    user.id,
-        title:      form.title.trim(),
+        user_id: user.id,
+        title: form.title.trim(),
         film_title: form.filmTitle.trim(),
-        content:    form.content.trim(),
-        rating:     form.rating > 0 ? form.rating : null,
-        tags:       form.tags.length > 0 ? form.tags : null,
-        reel_id:    form.reelId ?? null,
-        // Champs legacy (trigger les mappe automatiquement)
-        titre:      form.title.trim(),
-        contenu:    form.content.trim(),
-        note:       form.rating > 0 ? form.rating : null,
+        content: form.content.trim(),
+        rating: form.rating > 0 ? form.rating : null,
+        tags: form.tags.length > 0 ? form.tags : null,
+        reel_id: form.reelId ?? null,
       };
 
       const { error: insErr } = await supabase.from('critiques').insert(payload);
-      if (insErr) throw new Error(insErr.message);
+      
+      if (insErr) {
+        console.error("Erreur d'insertion :", insErr);
+        throw new Error(insErr.message);
+      }
 
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      
       setDone(true);
       setTimeout(reset, 3000);
 
     } catch (e: any) {
-      setError(e?.message ?? 'Erreur inconnue.');
+      setError(e?.message ?? 'Erreur inconnue lors de la publication.');
     } finally {
       setSubmitting(false);
     }
   }, [form, reset]);
 
-  // Validation
+  // Validation pour activer/désactiver le bouton
   const canSubmit =
     !!form.title.trim() &&
     !!form.filmTitle.trim() &&
@@ -334,19 +335,18 @@ const CritiqueTab = memo(function CritiqueTab() {
 
         {/* ── ÉTAPE 2 : Film / reel ──────────────────────────────────── */}
         <View style={ct.section}>
-          <SectionHead step={2} label="Film ou reel concerné" done={!!form.filmTitle.trim()} />
+          <SectionHead step={2} label="Oeuvre liée à ta critique" done={!!form.filmTitle.trim()} />
 
-          {/* Titre du film (libre) */}
           <TextInput
             style={ct.input}
             value={form.filmTitle}
             onChangeText={set('filmTitle')}
-            placeholder="Titre du film ou de la série"
+            placeholder="Ex : Inception"
             placeholderTextColor={C.muted}
-            selectionColor={"#fff"}
-            maxLength={160}
+            selectionColor={C.neonL}
+            maxLength={120}
             returnKeyType="next"
-            autoCapitalize="words"
+            autoCapitalize="sentences"
           />
 
           {/* Lien optionnel à un reel */}
@@ -361,7 +361,7 @@ const CritiqueTab = memo(function CritiqueTab() {
               color={form.reelId ? "#fff" : C.muted}
             />
             <Text style={[ct.linkTxt, form.reelId && { color: "#fff" }]}>
-              {form.reelId ? 'Reel lié ✓' : 'Lier à un reel (optionnel)'}
+              {form.reelId ? 'Oeuvre liée ✓' : 'Lier à une œuvre'}
             </Text>
             <Ionicons name={showReels ? 'chevron-up' : 'chevron-down'} size={12} color={C.muted} />
           </TouchableOpacity>
@@ -375,7 +375,7 @@ const CritiqueTab = memo(function CritiqueTab() {
                   style={ct.searchInput}
                   value={reelSearch}
                   onChangeText={setReelSearch}
-                  placeholder="Titre du reel…"
+                  placeholder="Titre de l'oeuvre à associer…"
                   placeholderTextColor={C.muted}
                   selectionColor={"#fff"}
                   autoCorrect={false}
@@ -485,14 +485,7 @@ const CritiqueTab = memo(function CritiqueTab() {
               returnKeyType="done"
               autoCapitalize="none"
             />
-            <TouchableOpacity
-              style={ct.tagAddBtn}
-              onPress={() => addTag(tagInput)}
-              disabled={!tagInput.trim()}
-              activeOpacity={0.80}
-            >
-              <Ionicons name="add" size={18} color={C.navyMid} />
-            </TouchableOpacity>
+         
           </View>
 
           {/* Tags sélectionnés */}
@@ -525,16 +518,16 @@ const CritiqueTab = memo(function CritiqueTab() {
         {/* ── Bouton ─────────────────────────────────────────────────── */}
         {!done && (
           <TouchableOpacity
-            style={[ct.submitBtn, !canSubmit && ct.submitOff]}
+            style={[ct.submitBtn, { opacity: canSubmit ? 1 : 0.5 }]}
             onPress={submit}
             activeOpacity={0.84}
             disabled={!canSubmit}
           >
             {submitting
-              ? <ActivityIndicator color="#03000A" size="small" />
-              : <Ionicons name="send" size={16} color={canSubmit ? '#03000A' : C.muted} />
+              ? <ActivityIndicator color={C.white} size="small" />
+              : <Ionicons name="send" size={16} color={C.white} />
             }
-            <Text style={[ct.submitTxt, !canSubmit && { color: C.muted }]}>
+            <Text style={ct.submitTxt}>
               {submitting ? 'Publication…' : 'Publier la critique'}
             </Text>
           </TouchableOpacity>
@@ -622,7 +615,7 @@ const ct = StyleSheet.create({
   msgSuccess:  { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'rgba(34,197,94,0.12)', borderRadius:12, padding:12, marginBottom:12, borderWidth:1, borderColor:'rgba(34,197,94,0.25)' },
   msgSuccessTxt:{ color:'#86EFAC', fontSize:13, fontWeight:'700' },
 
-  submitBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:C.navyMid, borderRadius:16, paddingVertical:15, marginBottom:12 },
+  submitBtn: { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:C.navyMid, borderRadius:16, paddingVertical:15, marginBottom:12, borderColor:C.border, borderWidth:StyleSheet.hairlineWidth },
   submitOff: { backgroundColor:C.navyMid },
-  submitTxt: { color:'#03000A', fontSize:15, fontWeight:'800' },
+  submitTxt: { color:'#fff', fontSize:15, fontWeight:'800' },
 });

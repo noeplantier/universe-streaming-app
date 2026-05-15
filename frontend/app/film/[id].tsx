@@ -411,25 +411,46 @@ export default function FilmDetailScreen() {
     }
   }, [loading, error, work, reveal]);
 
-  // Fetch
-  useEffect(() => {
-    if (!rawId) { setError(true); setLoading(false); return; }
-    let dead = false;
-    setLoading(true); setError(false);
-    fetchWork(rawId).then(data => {
+ // Fetch existant : ajout de la vérification des favoris au chargement
+ useEffect(() => {
+  if (!rawId) { setError(true); setLoading(false); return; }
+  let dead = false;
+  setLoading(true); setError(false);
+  
+  async function loadData() {
+    try {
+      const { data: authData } = await supabase.auth.getUser();
+      const userId = authData?.user?.id;
+
+      const workData = await fetchWork(rawId);
       if (dead) return;
-      if (!data) { setError(true); setLoading(false); return; }
-      setWork(data);
-      setLocalLikes(data.likes);
+      if (!workData) { setError(true); setLoading(false); return; }
+
+      setWork(workData);
+      setLocalLikes(workData.likes);
+
+      // Vérifier si l'œuvre est déjà en favori
+      if (userId) {
+        const { data: favData } = await supabase
+          .from('user_favorites')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('work_id', Number(rawId))
+          .single();
+        if (favData) setSaved(true);
+      }
+
       setLoading(false);
-      fetchSimilarWorks(data)
-        .then(items => { if (!dead) setSimilar(items); })
-        .catch(() => {});
-    }).catch(() => {
+      const items = await fetchSimilarWorks(workData);
+      if (!dead) setSimilar(items);
+    } catch {
       if (!dead) { setError(true); setLoading(false); }
-    });
-    return () => { dead = true; };
-  }, [rawId]);
+    }
+  }
+  loadData();
+  return () => { dead = true; };
+}, [rawId]);
+
 
   useEffect(() => { setLiked(false); setExpanded(false); setSaved(false); setVideoUrl(null); }, [rawId]);
 
@@ -450,34 +471,71 @@ export default function FilmDetailScreen() {
       .then(() => {});
   }, [liked, heartSc, localLikes, rawId]);
 
-  const handleSave = useCallback(() => {
-    setSaved(v => !v);
+  const handleSave = useCallback(async () => {
+    const nextSaved = !saved;
+    setSaved(nextSaved);
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Animated.sequence([
       Animated.spring(saveSc, { toValue: 1.3, useNativeDriver: true, tension: 300, friction: 7 }),
       Animated.spring(saveSc, { toValue: 1,   useNativeDriver: true, tension: 200, friction: 8 }),
     ]).start();
-  }, [saveSc]);
 
-  const handleShare = useCallback(async () => {
-    if (!work) return;
     try {
-      await Share.share({
-        message: `Découvrez "${work.title}"${work.director ? ` de ${work.director}` : ''} · ${work.genre} · ${work.year}`,
-        title: work.title,
-      });
-    } catch {}
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      if (!userId || !rawId) return;
+
+      if (nextSaved) {
+        await supabase.from('user_favorites').upsert(
+          { user_id: userId, work_id: Number(rawId) },
+          { onConflict: 'user_id, work_id' }
+        );
+      } else {
+        await supabase.from('user_favorites')
+          .delete()
+          .eq('user_id', userId)
+          .eq('work_id', Number(rawId));
+      }
+    } catch (err) {
+      console.error("Erreur toggle favoris:", err);
+    }
+  }, [saved, saveSc, rawId]);
+
+  const handleShare = useCallback(() => {
+    if (!work) return;
+    Share.share({
+      message: `${work.title} - ${work.description ?? work.genre}`,
+      title: work.title,
+      url: Platform.OS === 'ios' ? undefined : `${work.title}`,
+    });
   }, [work]);
 
-  // ★ Regarder — ouvre la modal + charge une vidéo aléatoire
   const handleWatch = useCallback(async () => {
     setVideoOpen(true);
-    setVideoUrl(null);
-    setVideoLoading(true);
-    const url = await fetchRandomVideoUrl();
-    setVideoUrl(url);
-    setVideoLoading(false);
-  }, []);
+    if (!videoUrl) {
+      setVideoLoading(true);
+      const url = await fetchRandomVideoUrl();
+      setVideoUrl(url);
+      setVideoLoading(false);
+    }
+
+    // ── Ajout automatique du film aux "Œuvres visionnées" ──
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      
+      if (userId && rawId) {
+        await supabase.from('user_history').upsert(
+          { user_id: userId, work_id: Number(rawId), watched_at: new Date().toISOString() },
+          { onConflict: 'user_id, work_id' }
+        );
+      }
+    } catch (err) {
+      console.error("Erreur lors de l'enregistrement de l'historique:", err);
+    }
+  }, [videoUrl, rawId]);
+
+  
 
   // Dérivés
   const descShort = useMemo(() => {
@@ -575,10 +633,10 @@ export default function FilmDetailScreen() {
 
           {/* Haut droite */}
           <View style={s.topRight}>
-            <Animated.View style={{ transform: [{ scale: saveSc }] }}>
-              <TouchableOpacity style={s.blurCircle} onPress={handleSave} hitSlop={8}>
+            <Animated.View >
+              <TouchableOpacity style={s.blurCircle} onPress={handleSave} >
                 <BlurView intensity={Platform.OS === 'ios' ? 28 : 16} tint="dark" style={StyleSheet.absoluteFillObject} />
-                <Ionicons name={saved ? 'bookmark' : 'bookmark-outline'} size={18} color={saved ? C.gold : C.white} />
+                <Ionicons name={saved ? 'star' : 'star-outline'} size={18} color={saved ? C.gold : C.white} />
               </TouchableOpacity>
             </Animated.View>
             <TouchableOpacity style={s.blurCircle} onPress={handleShare} hitSlop={8}>
