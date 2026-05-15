@@ -354,10 +354,10 @@ const cc = StyleSheet.create({
   rankBadge: {
     position:'absolute', top:10, left:10,
     paddingHorizontal:7, paddingVertical:3,
-    borderRadius:8, backgroundColor:'rgba(124,94,252,0.28)',
-    borderWidth:1, borderColor:'rgba(124,94,252,0.45)',
+    borderRadius:8, backgroundColor:'rgba(0, 19, 127, 0.28)',
+    borderWidth:1, borderColor:'rgba(0, 19, 127, 0.28)',
   },
-  rankTxt:   { color:'#A78BFA', fontSize:9, fontWeight:'800' },
+  rankTxt:   { color:'#fff', fontSize:9, fontWeight:'800' },
   body:      { position:'absolute', bottom:0, left:0, right:0, padding:12, gap:4 },
   filmTitle: { color:'#FFFFFF', fontSize:13, fontWeight:'800', letterSpacing:-0.2 },
   stars:     { flexDirection:'row', gap:2 },
@@ -693,7 +693,7 @@ export default function ProfileScreen() {
               <TouchableOpacity style={pg.navIconBtn} testID="profile-settings-btn" onPress={() => router.push('/settings')}>
                 <Ionicons name="settings-outline" size={21} color="rgba(255,255,255,0.85)" />
               </TouchableOpacity>
-              <TouchableOpacity style={pg.navIconBtn} onPress={() => router.push('/universe-admin' as any)}>
+              <TouchableOpacity style={pg.navIconBtn} onPress={() => router.push('/backoffice/universe-admin' as any)}>
                 <Ionicons name="eye-outline" size={21} color="rgba(255,255,255,0.85)" />
               </TouchableOpacity>
             </View>
