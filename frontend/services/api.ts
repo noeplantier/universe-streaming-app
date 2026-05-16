@@ -72,7 +72,7 @@ export const api = {
 
   // --- ENDPOINTS NOTIFICATIONS ---
   notifications: {
-    getAll: () => fetchAPI(`/data/notifications`), // Ajustez l'URL selon votre backend
+    getAll: (userId: string) => fetchAPI(`/data/notifications?user_id=${userId}`),
   },
 };
 

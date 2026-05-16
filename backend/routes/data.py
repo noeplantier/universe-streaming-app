@@ -76,3 +76,21 @@ async def remove_seen_film(request: Request, data: dict):
     except Exception as e:
         logger.error(f"Erreur remove_seen: {e}")
         raise HTTPException(status_code=400, detail="Erreur lors de la suppression")
+
+@router.get("/notifications")
+async def get_notifications(request: Request, user_id: str):
+    """Récupère les notifications de l'utilisateur"""
+    supabase = request.app.state.supabase
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Base de données non disponible")
+    
+    try:
+        response = supabase.table("notifications") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("created_at", desc=True) \
+            .execute()
+        return response.data
+    except Exception as e:
+        logger.error(f"Erreur get_notifications: {e}")
+        raise HTTPException(status_code=400, detail="Erreur lors de la récupération des notifications")
