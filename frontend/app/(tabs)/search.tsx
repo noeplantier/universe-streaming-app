@@ -512,12 +512,7 @@ const RowSection = memo(function RowSection({
           <Text style={rs.sectionTitle}>{title}</Text>
           {!!subtitle && <Text style={rs.sectionSub}>{subtitle}</Text>}
         </View>
-        {onSeeAll && (
-          <TouchableOpacity onPress={onSeeAll} style={rs.seeAll}>
-            <Text style={rs.seeAllTxt}>Tout voir</Text>
-            <Ionicons name="chevron-forward" size={13} color={C.blue} />
-          </TouchableOpacity>
-        )}
+
       </View>
       <FlatList
         horizontal

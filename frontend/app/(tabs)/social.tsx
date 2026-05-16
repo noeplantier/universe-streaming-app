@@ -1528,7 +1528,6 @@ const SocialHeader = memo(function SocialHeader({ onCompose }:{ onCompose:()=>vo
       <View><Text style={hdr.eyebrow}>UNIVERSE · CINÉMA</Text><Text style={hdr.title}>Communauté</Text></View>
       <View style={hdr.actions}>
         <TouchableOpacity style={hdr.btn} onPress={()=>router.push('/notifications' as any)} activeOpacity={0.8}><Ionicons name="notifications-outline" size={19} color={C.textSec}/><View style={hdr.dot}/></TouchableOpacity>
-        <TouchableOpacity style={[hdr.btn,hdr.composeBtn]} onPress={onCompose} activeOpacity={0.85}><Ionicons name="add" size={20} color={C.white}/></TouchableOpacity>
       </View>
     </View>
   );
