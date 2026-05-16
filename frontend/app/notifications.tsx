@@ -8,7 +8,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { COLORS, SPACING, RADIUS, GRADIENTS } from '../constants/theme';
-import { notificationsAPI } from '../services/api';
+import api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import GalaxyBackground from '@/components/social/GalaxyBackground';
 
@@ -30,7 +30,8 @@ export default function NotificationsScreen() {
   const [notifs, setNotifs] = useState<Notif[]>([]);
 
   useEffect(() => {
-    notificationsAPI.getAll()
+    // Utilisez api.notifications au lieu de notificationsAPI
+    api.notifications.getAll()
       .then(setNotifs)
       .catch(() => {})
   }, []);
