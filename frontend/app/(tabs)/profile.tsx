@@ -472,11 +472,7 @@ const ProfileHeader = memo(function ProfileHeader({
       <View style={hdr.topRow}>
         {/* Avatar */}
         <View style={hdr.avatarWrap}>
-          <LinearGradient
-            colors={['#BF5FFF','#5A96E6','#F5C842']}
-            style={hdr.avatarRing}
-            start={{x:0,y:0}} end={{x:1,y:1}}
-          />
+         
           <ImageWithFallback uri={avatarUri} style={hdr.avatar} fallbackColors={[G.surface,G.bg]}/>
           {profile.is_pro&&(
             <View style={hdr.proBadge}>
