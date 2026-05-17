@@ -3,6 +3,7 @@
 //  Single source of truth for all visual laws of the app
 // ═══════════════════════════════════════════════════════════
 
+import { C } from '@/components/create/tokens';
 import { Dimensions, Platform } from 'react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -24,7 +25,7 @@ export const COLORS = {
   surfaceGlass:    'rgba(255,255,255,0.04)',
 
   // ── Primary — Nebula Purple ──────────────────────────────
-  primary:         '#9B3FDE',
+  primary:         "#fff",
   primaryLight:    '#C060FF',
   primaryDark:     '#6B1FB0',
   primaryGlow:     'rgba(155,63,222,0.35)',

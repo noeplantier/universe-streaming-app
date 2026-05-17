@@ -495,8 +495,8 @@ const RowSection = memo(function RowSection({
   if (loading) {
     return (
       <View style={rs.section}>
-        <View style={{ paddingHorizontal:20, marginBottom:14 }}><Shimmer w="40%" h={17} /></View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:20, gap:12 }}>
+        <View style={{ paddingHorizontal:0, marginBottom:0 }}></View>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:20, gap:12, paddingBottom:4 }}>
           {[0,1,2,3,4].map(i => <Shimmer key={i} w={CW} h={CH} r={12} />)}
         </ScrollView>
       </View>
@@ -512,12 +512,7 @@ const RowSection = memo(function RowSection({
           <Text style={rs.sectionTitle}>{title}</Text>
           {!!subtitle && <Text style={rs.sectionSub}>{subtitle}</Text>}
         </View>
-        {onSeeAll && (
-          <TouchableOpacity onPress={onSeeAll} style={rs.seeAll}>
-            <Text style={rs.seeAllTxt}>Tout voir</Text>
-            <Ionicons name="chevron-forward" size={13} color={C.blue} />
-          </TouchableOpacity>
-        )}
+
       </View>
       <FlatList
         horizontal
@@ -540,7 +535,7 @@ const RowSection = memo(function RowSection({
 });
 
 const rs = StyleSheet.create({
-  section:     { marginBottom:30 },
+  section:     { marginBottom:0 },
   head:        { flexDirection:'row', justifyContent:'space-between', alignItems:'flex-end', paddingHorizontal:20, marginBottom:14 },
   sectionTitle:{ color:C.text, fontSize:19, fontWeight:'800', letterSpacing:-0.3 },
   sectionSub:  { color:C.textTert, fontSize:11, marginTop:1 },
@@ -753,7 +748,7 @@ export default function SearchScreen() {
 
 const ss = StyleSheet.create({
   root:         { flex:1, backgroundColor:C.bg },
-  scroll:       { paddingBottom:40 },
+  scroll:       { paddingBottom:0 },
   header:       { position:'absolute', top:5, left:0, right:0, zIndex:10, flexDirection:'row', alignItems:'center', paddingHorizontal:20, paddingBottom:8 },
   brand:        { color:C.text, fontSize:32, fontWeight:'800', letterSpacing:-0.5, flex:1 },
   searchBtnWrap:{ zIndex:20 },
