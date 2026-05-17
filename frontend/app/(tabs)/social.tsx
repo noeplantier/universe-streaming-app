@@ -1378,7 +1378,7 @@ function ProDirectory2({userId}:{userId:string}) {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom:120 }}
+          contentContainerStyle={{ paddingBottom:0 }}
           keyboardShouldPersistTaps="handled"
         >
           {/* ★ Sections par catégorie */}
