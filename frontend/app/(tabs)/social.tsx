@@ -1672,12 +1672,10 @@ export default function SocialScreen() {
       </View>
       <View style={{flexDirection:'row',gap:8}}>
         <TouchableOpacity style={sc.iconBtn} onPress={()=>router.push('/notifications' as any)} activeOpacity={0.80}>
-          <Ionicons name="notifications-outline" size={18} color={C.textSec}/>
+          <Ionicons name="notifications-outline" size={18} color={"#fff"}/>
           <View style={sc.dot}/>
         </TouchableOpacity>
-        <TouchableOpacity style={[sc.iconBtn,{borderColor:C.navyBright}]} onPress={()=>setCompose(true)} activeOpacity={0.85}>
-          <Ionicons name="add" size={20} color={C.white}/>
-        </TouchableOpacity>
+       
       </View>
     </View>
   );
@@ -1787,8 +1785,8 @@ const sc = StyleSheet.create({
   header:  {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:EDGE,paddingTop:10,paddingBottom:14},
   eyebrow: {fontSize:9,fontWeight:'700',color:C.textTert,letterSpacing:1.5,marginBottom:2},
   title:   {fontSize:26,fontWeight:'800',color:C.text,letterSpacing:-0.5},
-  iconBtn: {width:38,height:38,borderRadius:19,backgroundColor:C.surf,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center',position:'relative'},
-  dot:     {position:'absolute',top:8,right:8,width:7,height:7,borderRadius:4,backgroundColor:C.red,borderWidth:1.5,borderColor:C.bg0},
+  iconBtn: {width:38,height:38,borderRadius:19,backgroundColor:C.surf,borderWidth:1,borderColor:C.navyMid,alignItems:'center',justifyContent:'center',position:'relative'},
+  dot:     {position:'absolute',top:8,right:8,width:7,height:7,borderRadius:4,backgroundColor:"#fff",borderColor:C.bg0},
   tabs:    {flexDirection:'row',paddingHorizontal:EDGE,gap:20,marginBottom:12,borderBottomWidth:1,borderBottomColor:C.border},
   tab:     {paddingBottom:12,alignItems:'center',position:'relative'},
   tabTxt:  {color:C.textSec,fontSize:13,fontWeight:'600'},
