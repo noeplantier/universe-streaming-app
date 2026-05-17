@@ -499,7 +499,7 @@ const ProfileHeader = memo(function ProfileHeader({
           <View style={hdr.statDiv}/>
           <View style={hdr.statItem}>
             <Text style={hdr.statVal}>{fmtNumber(reelCount)}</Text>
-            <Text style={hdr.statLabel}>créations</Text>
+            <Text style={hdr.statLabel}>créas</Text>
           </View>
         </View>
       </View>
