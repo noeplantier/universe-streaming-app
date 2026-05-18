@@ -24,7 +24,6 @@ import { decode }         from 'base64-arraybuffer';
 import { supabase }       from '@/lib/supabase';
 import { C }              from '@/components/create/tokens';
 import GalaxyBackground   from '@/components/social/GalaxyBackground';
-import { isEnabled } from 'react-native/Libraries/Performance/Systrace';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🎨 TOKENS — C.navyMid dominant, surfaces ultra-transparentes

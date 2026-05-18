@@ -1,22 +1,94 @@
 {
   "expo": {
-    "name": "frontend",
+    "name": "Universe",
     "slug": "frontend",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "universe",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "backgroundColor": "#03000A",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#03000A"
+    },
     "ios": {
-      "supportsTablet": true
+      "bundleIdentifier": "com.universe.cinema",
+      "supportsTablet": false,
+      "requireFullScreen": true,
+      "userInterfaceStyle": "dark",
+      "backgroundColor": "#03000A",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Universe utilise la caméra pour filmer et importer vos créations cinématographiques.",
+        "NSMicrophoneUsageDescription": "Universe utilise le microphone pour enregistrer l'audio de vos vidéos.",
+        "NSPhotoLibraryUsageDescription": "Universe accède à votre galerie pour importer vos films, photos de profil et visuels de critiques.",
+        "NSPhotoLibraryAddUsageDescription": "Universe enregistre vos créations dans votre galerie photo.",
+        "NSLocationWhenInUseUsageDescription": "Universe peut utiliser votre position pour personnaliser les recommandations de festivals proches.",
+        "UIBackgroundModes": [
+          "audio",
+          "fetch"
+        ],
+        "NSAllowsArbitraryLoads": false,
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "associatedDomains": [
+        "applinks:knrzbdqfflobfjdmqyte.supabase.co"
+      ],
+      "entitlements": {
+        "com.apple.developer.associated-domains": [
+          "applinks:knrzbdqfflobfjdmqyte.supabase.co"
+        ]
+      }
     },
     "android": {
+      "package": "com.universe.cinema",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#03000A"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "userInterfaceStyle": "dark",
+      "backgroundColor": "#03000A",
+      "versionCode": 1,
+      "compileSdkVersion": 35,
+      "targetSdkVersion": 35,
+      "minSdkVersion": 24,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED"
+      ],
+      "allowBackup": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "knrzbdqfflobfjdmqyte.supabase.co",
+              "pathPrefix": "/auth/v1/callback"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -31,13 +103,60 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#03000A"
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Universe accède à votre galerie pour importer photos de profil, visuels de critiques et vidéos.",
+          "cameraPermission": "Universe utilise la caméra pour filmer vos créations cinématographiques.",
+          "microphonePermission": "Universe utilise le microphone pour enregistrer l'audio de vos vidéos."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Universe utilise le microphone pour l'enregistrement audio."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Universe utilise la caméra pour filmer vos créations.",
+          "microphonePermission": "Universe utilise le microphone pour vos vidéos.",
+          "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35,
+            "buildToolsVersion": "35.0.0",
+            "usesCleartextTraffic": false,
+            "packagingOptions": {
+              "pickFirst": [
+                "**/libc++_shared.so"
+              ]
+            }
+          },
+          "ios": {
+            "deploymentTarget": "15.1",
+            "flipper": false
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      }
     }
   }
 }

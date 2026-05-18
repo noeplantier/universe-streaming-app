@@ -1,49 +1,43 @@
-// app/(tabs)/_layout.tsx
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Tabs } from 'expo-router';
+/**
+ * app/(tabs)/_layout.tsx
+ *
+ * Layout des onglets principaux Universe
+ * La prévention des screenshots est gérée dans app/_layout.tsx (root).
+ * Ce fichier orchestre uniquement les tabs + CustomNavBar.
+ */
 
-import Loading from '../../components/Loading';
-import CustomNavBar from '../../components/CustomNavBar';
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
+import { Tabs }             from 'expo-router';
+
+import CustomNavBar         from '../../components/CustomNavBar';
 
 export default function TabLayout() {
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 2500);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  if (isLoading) {
-    return <Loading />;
-  }
-
   return (
-    <View style={styles.container}>
-      {/* 📱 SCREENS */}
+    <View style={s.root}>
+      {/* SCREENS */}
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarStyle: { display: 'none' }, 
+          tabBarStyle: { display: 'none' },  
+          animation:   'shift',
         }}
       >
-        <Tabs.Screen name="index" />
-        <Tabs.Screen name="search" />
+        <Tabs.Screen name="index"  options={{ title: 'Accueil' }}/>
+        <Tabs.Screen name="search" options={{ title: 'Recherche' }}/>
+        <Tabs.Screen name="social" options={{ title: 'Communauté' }}/>
+        <Tabs.Screen name="create" options={{ title: 'Créer' }}/>
+        <Tabs.Screen name="profile"options={{ title: 'Profil' }}/>
       </Tabs>
 
-      {/* 🚀 FIXED NAVBAR OVERLAY */}
+      {/* NAVBAR CUSTOM fixe en superposition */}
       <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-        <CustomNavBar />
+        <CustomNavBar/>
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#03000A' },
 });
