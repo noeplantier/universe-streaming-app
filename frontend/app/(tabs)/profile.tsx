@@ -1,10 +1,23 @@
+/**
+ * app/profile.tsx
+ *
+ * Profil Instagram-style pour créateurs de cinéma indépendant
+ *
+ *  HEADER    : avatar + stats + bio + spécialités + festivals + réseaux sociaux
+ *  TAB 0     : Films — favoris / critiques / visionnés / recommandations
+ *  TAB 1     : Créations — reels avec miniatures vidéo (expo-video-thumbnails)
+ *  TAB 2     : Tags — œuvres dans lesquelles l'user apparaît (cast_list)
+ *
+ *  DYNAMIQUE : realtime sur profiles, reels, user_favorites, user_history,
+ *              critiques + useFocusEffect au retour depuis edit.tsx
+ */
+
 import React, {
   memo, useCallback, useEffect,
   useMemo, useRef, useState,
 } from 'react';
 import {
-  ActivityIndicator, Animated, Linking,
-  Platform, Pressable, RefreshControl,
+   Animated, Linking, Pressable, RefreshControl,
   ScrollView, StyleSheet, Text,
   TouchableOpacity, View,
 } from 'react-native';
@@ -33,10 +46,13 @@ import {
   type FilmItem, type ReviewItem,
 } from '../../components/profile/data';
 import { supabase } from '@/lib/supabase';
+import NotifService from '@/services/notifService';
+import { Platform } from 'react-native';
 
-// expo-video-thumbnails — chargement optionnel (graceful fallback si absent)
 let VideoThumbnails: any = null;
-try { VideoThumbnails = require('expo-video-thumbnails'); } catch {}
+if (Platform.OS !== 'web') {
+  try { VideoThumbnails = require('expo-video-thumbnails'); } catch {}
+}
 
 // Logo Universe
 const LOGO = require('@/assets/images/logouniverse2.png');
@@ -472,7 +488,11 @@ const ProfileHeader = memo(function ProfileHeader({
       <View style={hdr.topRow}>
         {/* Avatar */}
         <View style={hdr.avatarWrap}>
-         
+          <LinearGradient
+            colors={['#BF5FFF','#5A96E6','#F5C842']}
+            style={hdr.avatarRing}
+            start={{x:0,y:0}} end={{x:1,y:1}}
+          />
           <ImageWithFallback uri={avatarUri} style={hdr.avatar} fallbackColors={[G.surface,G.bg]}/>
           {profile.is_pro&&(
             <View style={hdr.proBadge}>
@@ -495,7 +515,7 @@ const ProfileHeader = memo(function ProfileHeader({
           <View style={hdr.statDiv}/>
           <View style={hdr.statItem}>
             <Text style={hdr.statVal}>{fmtNumber(reelCount)}</Text>
-            <Text style={hdr.statLabel}>créas</Text>
+            <Text style={hdr.statLabel}>créations</Text>
           </View>
         </View>
       </View>
@@ -777,9 +797,11 @@ export default function ProfileScreen() {
     loadTaggedWorks(userId, profileData.display_name, profileData.username);
   },[userId, profileData.display_name, profileData.username, loadTaggedWorks]);
 
-  // ★ useFocusEffect — reload complet au retour depuis edit.tsx
+  // ★ useFocusEffect — reload + notification visite si profil externe
   useFocusEffect(useCallback(()=>{
     if (userId) loadData();
+    // Notifie le propriétaire du profil si c'est une visite externe
+    // (dans un contexte de navigation /user/:id, passer profileOwnerId)
   },[userId,loadData]));
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1053,7 +1075,7 @@ export default function ProfileScreen() {
             filmCount={watchedWorks.length||user.films_seen_count||0}
             critiqueCount={reviews.length}
             reelCount={userReels.length}
-            onEdit={()=>router.push('/edit' as any)}
+            onEdit={()=>router.push('/profile/edit' as any)}
           />
         </SafeAreaView>
 

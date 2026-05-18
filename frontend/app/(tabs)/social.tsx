@@ -34,6 +34,7 @@ import * as Haptics       from 'expo-haptics';
 import { decode }         from 'base64-arraybuffer';
 import { supabase }       from '@/lib/supabase';
 import GalaxyBackground   from '@/components/social/GalaxyBackground';
+import NotifService       from '@/services/notifService';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TOKENS
@@ -1378,7 +1379,7 @@ function ProDirectory2({userId}:{userId:string}) {
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom:0 }}
+          contentContainerStyle={{ paddingBottom:120 }}
           keyboardShouldPersistTaps="handled"
         >
           {/* ★ Sections par catégorie */}
@@ -1499,7 +1500,20 @@ function ComposeModal({visible,onClose,onPublished,userId}:{visible:boolean;onCl
   const publish=useCallback(async()=>{
     if(!form.imageValid||!form.tone)return;setPub(true);
     const id=await dbPublishPost({work_title:form.workTitle.trim(),work_year:form.workYear.trim(),work_director:form.workDirector.trim(),work_genre:form.workGenre,rating:form.rating,body:form.body.trim(),image_url:form.imageUrl,image_valid:true,tags:form.tags,tone:form.tone});
-    setPub(false);if(id){onPublished?.();onClose();}else Alert.alert('Erreur','Publication échouée.');
+    setPub(false);
+    if(id){
+      // ★ Détecter + notifier les @mentions dans la critique
+      NotifService.resolveMentions(form.body).then(mentionedIds=>{
+        mentionedIds.forEach(uid=>{
+          if(uid!==userId) NotifService.mention({
+            mentionedUserId:uid, actorId:userId, postId:id,
+            filmTitle:form.workTitle.trim(),
+            bodyExcerpt:form.body.slice(0,80),
+          }).catch(()=>{});
+        });
+      });
+      onPublished?.();onClose();
+    }else Alert.alert('Erreur','Publication échouée.');
   },[form,onPublished,onClose]);
   const stepIdx=STEPS.indexOf(step),bodyLen=form.body.trim().length,toneInfo=TONES.find(t=>t.key===form.tone);
   if(!visible)return null;
@@ -1672,10 +1686,12 @@ export default function SocialScreen() {
       </View>
       <View style={{flexDirection:'row',gap:8}}>
         <TouchableOpacity style={sc.iconBtn} onPress={()=>router.push('/notifications' as any)} activeOpacity={0.80}>
-          <Ionicons name="notifications-outline" size={18} color={"#fff"}/>
+          <Ionicons name="notifications-outline" size={18} color={C.textSec}/>
           <View style={sc.dot}/>
         </TouchableOpacity>
-       
+        <TouchableOpacity style={[sc.iconBtn,{borderColor:C.navyBright}]} onPress={()=>setCompose(true)} activeOpacity={0.85}>
+          <Ionicons name="add" size={20} color={C.white}/>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -1785,8 +1801,8 @@ const sc = StyleSheet.create({
   header:  {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:EDGE,paddingTop:10,paddingBottom:14},
   eyebrow: {fontSize:9,fontWeight:'700',color:C.textTert,letterSpacing:1.5,marginBottom:2},
   title:   {fontSize:26,fontWeight:'800',color:C.text,letterSpacing:-0.5},
-  iconBtn: {width:38,height:38,borderRadius:19,backgroundColor:C.surf,borderWidth:1,borderColor:C.navyMid,alignItems:'center',justifyContent:'center',position:'relative'},
-  dot:     {position:'absolute',top:8,right:8,width:7,height:7,borderRadius:4,backgroundColor:"#fff",borderColor:C.bg0},
+  iconBtn: {width:38,height:38,borderRadius:19,backgroundColor:C.surf,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center',position:'relative'},
+  dot:     {position:'absolute',top:8,right:8,width:7,height:7,borderRadius:4,backgroundColor:C.red,borderWidth:1.5,borderColor:C.bg0},
   tabs:    {flexDirection:'row',paddingHorizontal:EDGE,gap:20,marginBottom:12,borderBottomWidth:1,borderBottomColor:C.border},
   tab:     {paddingBottom:12,alignItems:'center',position:'relative'},
   tabTxt:  {color:C.textSec,fontSize:13,fontWeight:'600'},
