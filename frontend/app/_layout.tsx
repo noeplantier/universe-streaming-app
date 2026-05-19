@@ -236,6 +236,8 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{
       headerShown:   false,
+      animation: 'none', 
+
       contentStyle:  { backgroundColor: COLORS.background },
     }}>
       {/* ── Écrans existants — inchangés ── */}
@@ -244,19 +246,19 @@ function RootLayoutNav() {
       <Stack.Screen name="home"           options={{ animation:'fade' }} />
       <Stack.Screen name="(auth)"         options={{ animation:'fade' }} />
       <Stack.Screen name="(tabs)"         options={{ animation:'fade' }} />
-      <Stack.Screen name="film/[id]"      options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="user/[id]"      options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="settings"       options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="watchlist"      options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="notifications"  options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="category/[type]"options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="post/[id]"      options={{ animation:'slide_from_right' }} />
+      <Stack.Screen name="film/[id]"      options={{ animation:'fade' }} />
+      <Stack.Screen name="user/[id]"      options={{ animation:'fade' }} />
+      <Stack.Screen name="settings"       options={{ animation:'fade' }} />
+      <Stack.Screen name="watchlist"      options={{ animation:'fade' }} />
+      <Stack.Screen name="notifications"  options={{ animation:'fade' }} />
+      <Stack.Screen name="category/[type]"options={{ animation:'fade' }} />
+      <Stack.Screen name="post/[id]"      options={{ animation:'fade' }} />
 
       {/* ── Nouveaux écrans Universe ── */}
-      <Stack.Screen name="review/[id]"               options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="reel/[id]"                 options={{ animation:'slide_from_right' }} />
-      <Stack.Screen name="profile/edit"              options={{ animation:'slide_from_bottom' }} />
-      <Stack.Screen name="backoffice/universe-admin" options={{ animation:'slide_from_bottom', gestureEnabled:false }} />
+      <Stack.Screen name="review/[id]"               options={{ animation:'fade' }} />
+      <Stack.Screen name="reel/[id]"                 options={{ animation:'fade' }} />
+      <Stack.Screen name="profile/edit"              options={{ animation:'fade' }} />
+      <Stack.Screen name="backoffice/universe-admin" options={{ animation:'fade', gestureEnabled:false }} />
     </Stack>
   );
 }

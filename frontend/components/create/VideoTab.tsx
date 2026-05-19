@@ -61,7 +61,7 @@ const C = {
   offWhite: 'rgba(255,255,255,0.85)',
   muted:    'rgba(255,255,255,0.38)',
   faint:    'rgba(255,255,255,0.14)',
-  neon:     '#7C5EFC',
+  neon:     'rgba(13,34,64,0.55)',
   neonL:    '#A78BFA',
   gold:     '#F5C842',
   amber:    '#F59E0B',
@@ -270,7 +270,7 @@ const GenreGrid = memo(function GenreGrid({
 const gg = StyleSheet.create({
   grid:  { flexDirection:'row', flexWrap:'wrap', gap:8, marginTop:10, paddingBottom:4 },
   chip:  { paddingHorizontal:12, paddingVertical:7, borderRadius:20, backgroundColor:C.navyMid, borderWidth:1, borderColor:C.border },
-  chipOn:{ backgroundColor:C.neon, borderColor:C.neon },
+  chipOn:{ backgroundColor:C.neon, borderColor:"#fff" },
   txt:   { color:C.muted, fontSize:12, fontWeight:'600' },
   txtOn: { color:C.white, fontWeight:'700' },
 });

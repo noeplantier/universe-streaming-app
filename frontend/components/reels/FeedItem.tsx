@@ -418,27 +418,13 @@ const FeedItem = memo(function FeedItem({
         </View>
       )}
 
-      {/* Indicateur pause */}
-      {isActive && !playing && !buffering && !hasErr && !!src && (
-        <View style={fi.center} pointerEvents="none">
-          <BlurView intensity={22} tint="dark" style={fi.pauseCircle}>
-            <Ionicons name="play" size={26} color="rgba(255,255,255,0.92)" style={{ marginLeft:3 }} />
-          </BlurView>
-        </View>
-      )}
 
       {/* Badges skip */}
       <Animated.View style={[fi.badge, { opacity:leftBadge,  left:16,  top:itemH*0.45 }]} pointerEvents="none">
-        <BlurView intensity={40} tint="dark" style={fi.badgeBlur}>
-          <Ionicons name="play-back" size={15} color="#fff" />
-          <Text style={fi.badgeTxt}>-10s</Text>
-        </BlurView>
+      
       </Animated.View>
       <Animated.View style={[fi.badge, { opacity:rightBadge, right:16, top:itemH*0.45 }]} pointerEvents="none">
-        <BlurView intensity={40} tint="dark" style={fi.badgeBlur}>
-          <Ionicons name="play-forward" size={15} color="#fff" />
-          <Text style={fi.badgeTxt}>+10s</Text>
-        </BlurView>
+    
       </Animated.View>
 
       {/* Cœur */}
