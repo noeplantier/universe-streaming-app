@@ -462,7 +462,6 @@ const ProfileHeader = memo(function ProfileHeader({
     <View style={hdr.wrap}>
       <View style={hdr.topRow}>
         <View style={hdr.avatarWrap}>
-          <LinearGradient colors={['#BF5FFF','#5A96E6','#F5C842']} style={hdr.avatarRing} start={{x:0,y:0}} end={{x:1,y:1}}/>
           <ImageWithFallback uri={avatarUri} style={hdr.avatar} fallbackColors={[G.surface, G.bg]}/>
           {profile.is_pro && (
             <View style={hdr.proBadge}>
@@ -541,6 +540,7 @@ const ProfileHeader = memo(function ProfileHeader({
         </View>
       )}
 
+      <View style={hdr.sep}/>
     </View>
   );
 });
@@ -642,10 +642,31 @@ export default function ProfileScreen() {
   favRef.current     = favWorks;
   watchedRef.current = watchedWorks;
 
-  // Init userId
+  // ── Init userId — web-safe ─────────────────────────────────────────────────
+  //
+  //   Sur Netlify / web, supabase.auth.getUser() valide la session côté serveur
+  //   Supabase et peut échouer si le JWT n'est pas encore restauré depuis
+  //   localStorage. On utilise plutôt :
+  //
+  //   1. getSession()         → lecture synchrone du localStorage (instantané)
+  //   2. onAuthStateChange    → écoute la restauration async de la session
+  //   3. getUser()            → validation serveur en dernier recours
+  //
   useEffect(() => {
-    supabase.auth.getUser().then(({ data:{ user:u } }) => { if (u?.id) setUserId(u.id); });
-  }, [user]);
+    // 1. Session locale immédiate (localStorage / AsyncStorage)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setUserId(session.user.id);
+    });
+
+    // 2. Restauration async + changements d'état auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session?.user?.id) setUserId(session.user.id);
+      }
+    );
+
+    return () => { subscription.unsubscribe(); };
+  }, []); // ← aucune dépendance : s'exécute une seule fois au montage
 
   // ── Fetch functions ────────────────────────────────────────────────────────
   const loadProfileData = useCallback(async (uid: string) => {
@@ -718,7 +739,10 @@ export default function ProfileScreen() {
 
   // ★ Chargement : profil header prioritaire, sections en parallèle
   const loadData = useCallback(async () => {
-    const uid = userId || (await supabase.auth.getUser()).data.user?.id;
+    // Résolution uid : session locale d'abord (pas de requête réseau), puis getUser()
+    const uid = userId
+      || (await supabase.auth.getSession()).data.session?.user?.id
+      || (await supabase.auth.getUser()).data.user?.id;
     if (!uid) return;
     setLoading(true);
     try {
@@ -784,7 +808,7 @@ export default function ProfileScreen() {
   // ★ FIX : user.films_seen_count → optional chaining
   const filmsSeen   = watchedWorks.length || (user as any)?.films_seen_count || 0;
 
-  if (!user) return null;
+  // if (!user) return null;
 
   // ── Tab 0 — Films ──────────────────────────────────────────────────────────
   const renderFilms = () => {
@@ -923,7 +947,10 @@ export default function ProfileScreen() {
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={16}
-        onScroll={Animated.event([{ nativeEvent:{ contentOffset:{ y:scrollY } } }], { useNativeDriver:true })}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: Platform.OS !== 'web' }
+        )}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor={G.primary}/>}
       >
         <SafeAreaView edges={['top']}>
@@ -938,7 +965,7 @@ export default function ProfileScreen() {
             profile={profileData}
             avatarUri={avatarUri}
             roleLabel={roleLabel}
-            filmCount={filmsSeen}         // ★ FIX: plus de user.films_seen_count
+            filmCount={filmsSeen}
             critiqueCount={reviews.length}
             reelCount={userReels.length}
             onEdit={() => router.push('/edit' as any)}
