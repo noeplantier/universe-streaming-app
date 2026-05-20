@@ -671,7 +671,7 @@ export default function ProfileScreen() {
   // ── Fetch functions ────────────────────────────────────────────────────────
   const loadProfileData = useCallback(async (uid: string) => {
     const { data } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', uid).maybeSingle();
-    if (data) setProfileData(data as ProfileData);
+    if (data) setProfileData(data as unknown as ProfileData);
   }, []);
 
   const fetchFavWorks = useCallback(async (uid: string) => {
