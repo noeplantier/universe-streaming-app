@@ -970,7 +970,7 @@ export default function ProfileScreen() {
   },[]);
 
   const fetchWatchedWorks = useCallback(async(uid:string):Promise<Work[]>=>{
-    const data = await fetchWithRetry(()=>supabase.from('user_history').select('works(*)').eq('user_id',uid),'history');
+    const data = await fetchWithRetry(()=>supabase.from('user_history').select('works(*)').eq('user_id',uid), 'history');
     const items = ((data as any[])?.map((d:any)=>d.works).filter(Boolean)??[]) as Work[];
     setWatchedWorks(items); return items;
   },[]);
@@ -1103,8 +1103,13 @@ export default function ProfileScreen() {
   const avatarUri   = profileData.avatar_url  ||user?.avatar_url||`https://i.pravatar.cc/150?u=${user?.id}`;
   const roleLabel   = ROLE_LABELS[profileData.role]??'Créateur·rice';
 
-  if (!user) return null;
-
+  if (!user || !profileData) {
+    return (
+      <View style={{ flex: 1, backgroundColor: '#03000A', justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: 'white', marginBottom: 20 }}>Vous devez être connecté pour voir votre profil.</Text>
+      </View>
+    );
+  }
   // ── Renders par tab ───────────────────────────────────────────────────────
   const renderFilms = ()=>{
     if (loading) return (
