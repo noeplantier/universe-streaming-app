@@ -37,7 +37,7 @@ let VideoThumbnails: any = null;
 if (Platform.OS !== 'web') {
   try { VideoThumbnails = require('expo-video-thumbnails'); } catch {}
 }
-const LOGO = require('@/assets/images/logouniverse2.png');
+import LOGO from '../../assets/images/logouniverse2.png';
 
 // ─── PALETTE ─────────────────────────────────────────────────────────────────
 const C = {
