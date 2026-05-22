@@ -309,11 +309,11 @@ const MobileOnlyGate = memo(function MobileOnlyGate() {
           <Ionicons name="phone-portrait-outline" size={52} color="rgba(255,255,255,0.90)"/>
         </View>
         <Text style={mg.brand}>UNIVERSE</Text>
-        <Text style={mg.headline}>Application mobile exclusivement</Text>
+        <Text style={mg.headline}>Application mobile</Text>
         <View style={mg.sep}/>
         <Text style={mg.body}>
-          Universe est conçu pour une expérience mobile native.{'\n'}
-          Scannez le QR code ou téléchargez l'application depuis votre smartphone ou tablette.
+          Universe est conçu pour une expérience mobile.{'\n'}
+          Téléchargez l'application depuis votre smartphone ou tablette.
         </Text>
         {/* QR / Store badges */}
         <View style={mg.storeRow}>
