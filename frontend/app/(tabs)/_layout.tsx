@@ -1,10 +1,11 @@
 /**
  * app/_layout.tsx — UNIVERSE ROOT LAYOUT
  *
- * ─ Mobile-only gate   : sur web, détecte le user-agent. Si desktop → écran de blocage
- * ─ Session splash      : animation d'intro uniquement au 1er montage de la session
- *                        (flag module-level → survit aux re-renders, jamais rejoué)
- * ─ Screenshot block    : expo-screen-capture (Android bloque physiquement, iOS overlay)
+ * ─ Mobile-only gate   : UNIQUEMENT sur l'URL déployée (universestreaming.netlify.app)
+ *                        localhost est TOUJOURS autorisé pour le développement
+ * ─ Session splash      : animation d'intro une seule fois par session JS
+ * ─ CustomNavbar        : restaurée à sa position originale avec marginTop de séparation
+ * ─ Screenshot block    : expo-screen-capture
  * ─ Galaxy standalone   : pas d'import externe (évite les cycles de dépendances)
  */
 
@@ -22,10 +23,10 @@ import { LinearGradient }         from 'expo-linear-gradient';
 import { Ionicons }               from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ScreenCapture         from 'expo-screen-capture';
-import { Image }                  from 'expo-image';
 
 import { AuthProvider } from '../../contexts/AuthContext';
 import { COLORS }       from '../../constants/theme';
+import CustomNavbar     from '../../components/CustomNavBar';
 
 // Garde le splash natif visible pendant l'init
 SplashScreen.preventAutoHideAsync();
@@ -39,6 +40,32 @@ const { width: W, height: H } = Dimensions.get('window');
 let SESSION_SPLASH_DONE = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// DÉTECTION ENVIRONNEMENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Vrai si l'app tourne sur une URL de production (pas localhost) */
+function isDeployedOrigin(): boolean {
+  if (Platform.OS !== 'web') return false;
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname;
+  // Autorise localhost, 127.0.0.1, et toutes les IP locales (192.168.x, 10.x, etc.)
+  if (h === 'localhost')         return false;
+  if (h === '127.0.0.1')        return false;
+  if (h.startsWith('192.168.')) return false;
+  if (h.startsWith('10.'))      return false;
+  if (h.startsWith('172.'))     return false;
+  return true; // URL externe → déploiement
+}
+
+/** Vrai si l'appareil est un mobile / tablette */
+function isMobileDevice(): boolean {
+  if (Platform.OS !== 'web') return true; // iOS / Android → toujours OK
+  if (typeof navigator === 'undefined') return true;
+  return /iPhone|iPad|iPod|Android|Mobile|BlackBerry|IEMobile|Opera Mini|webOS/i
+    .test(navigator.userAgent);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GALAXY BACKGROUND — standalone (aucun import externe, pas de cycle)
 // ─────────────────────────────────────────────────────────────────────────────
 const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
@@ -48,7 +75,6 @@ const STAR_COLS = ['#F3EDFF', '#B2CCFF', '#FFE270', 'rgba(255,255,255,0.55)'];
 interface StarPt { id:number; x:number; y:number; sz:number; col:string; del:number; dur:number }
 interface Meteor  { id:number; sx:number; sy:number; ang:number; len:number }
 
-// Calculé UNE SEULE FOIS au niveau module → pas de recalcul au re-render
 const STARS: StarPt[] = Array.from({ length: 60 }, (_, i) => ({
   id: i, x: rnd(0, W), y: rnd(0, H), sz: rnd(1, 2.3),
   col: pick(STAR_COLS), del: rnd(0, 4000), dur: rnd(2000, 5500),
@@ -83,7 +109,10 @@ const ShootingStar = memo(function ShootingStar({ m, onDone }: { m: Meteor; onDo
         Animated.timing(op, { toValue: 1, duration: 100, useNativeDriver: true }),
         Animated.timing(op, { toValue: 0, duration: 500, delay: 200, useNativeDriver: true }),
       ]),
-      Animated.timing(prog, { toValue: 1, duration: 800, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      Animated.timing(prog, {
+        toValue: 1, duration: 800,
+        easing: Easing.out(Easing.quad), useNativeDriver: true,
+      }),
     ]).start(onDone);
   }, []);
   const tx = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(m.ang * Math.PI / 180) * 200] });
@@ -119,26 +148,28 @@ const GalaxyBG = memo(function GalaxyBG() {
       <LinearGradient colors={['#03000A', '#060F1E', '#0D0A20']} style={StyleSheet.absoluteFill}/>
       {STARS.map(s => <StarDot key={s.id} p={s}/>)}
       {meteors.map(m => (
-        <ShootingStar key={m.id} m={m} onDone={() => setMeteors(p => p.filter(x => x.id !== m.id))}/>
+        <ShootingStar
+          key={m.id} m={m}
+          onDone={() => setMeteors(p => p.filter(x => x.id !== m.id))}
+        />
       ))}
     </View>
   );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ SESSION SPLASH — s'affiche UNE SEULE FOIS grâce à SESSION_SPLASH_DONE
+// ★ SESSION SPLASH — s'affiche UNE SEULE FOIS via SESSION_SPLASH_DONE
 // ─────────────────────────────────────────────────────────────────────────────
-const SPLASH_DURATION = 2200; // ms avant disparition
+const SPLASH_TOTAL   = 2200;
 const SPLASH_FADE_OUT = 500;
 
 const SessionSplash = memo(function SessionSplash({ onDone }: { onDone: () => void }) {
-  const fade    = useRef(new Animated.Value(0)).current;
-  const logoY   = useRef(new Animated.Value(24)).current;
-  const logoOp  = useRef(new Animated.Value(0)).current;
-  const tagOp   = useRef(new Animated.Value(0)).current;
+  const fade   = useRef(new Animated.Value(0)).current;
+  const logoY  = useRef(new Animated.Value(24)).current;
+  const logoOp = useRef(new Animated.Value(0)).current;
+  const tagOp  = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Entrée
     Animated.sequence([
       Animated.parallel([
         Animated.timing(fade,   { toValue: 1, duration: 400, useNativeDriver: true }),
@@ -146,12 +177,10 @@ const SessionSplash = memo(function SessionSplash({ onDone }: { onDone: () => vo
         Animated.timing(logoOp, { toValue: 1, duration: 600, useNativeDriver: true }),
       ]),
       Animated.timing(tagOp, { toValue: 1, duration: 400, delay: 200, useNativeDriver: true }),
-      // Pause
-      Animated.delay(SPLASH_DURATION - 400 - 600 - 400 - 200),
-      // Sortie
+      Animated.delay(SPLASH_TOTAL - 400 - 600 - 400 - 200),
       Animated.parallel([
-        Animated.timing(fade,   { toValue: 0, duration: SPLASH_FADE_OUT, useNativeDriver: true }),
-        Animated.timing(logoY,  { toValue: -12, duration: SPLASH_FADE_OUT, useNativeDriver: true }),
+        Animated.timing(fade,  { toValue: 0, duration: SPLASH_FADE_OUT, useNativeDriver: true }),
+        Animated.timing(logoY, { toValue: -12, duration: SPLASH_FADE_OUT, useNativeDriver: true }),
       ]),
     ]).start(() => {
       SESSION_SPLASH_DONE = true;
@@ -160,14 +189,14 @@ const SessionSplash = memo(function SessionSplash({ onDone }: { onDone: () => vo
   }, []);
 
   return (
-    <Animated.View style={[ss.root, { opacity: fade }]}>
+    <Animated.View style={[sp.root, { opacity: fade }]}>
       <GalaxyBG/>
-      <View style={ss.veil} pointerEvents="none"/>
-      <View style={ss.center}>
-        <Animated.Text style={[ss.logo, { opacity: logoOp, transform: [{ translateY: logoY }] }]}>
+      <View style={sp.veil} pointerEvents="none"/>
+      <View style={sp.center}>
+        <Animated.Text style={[sp.logo, { opacity: logoOp, transform: [{ translateY: logoY }] }]}>
           UNIVERSE
         </Animated.Text>
-        <Animated.Text style={[ss.tag, { opacity: tagOp }]}>
+        <Animated.Text style={[sp.tag, { opacity: tagOp }]}>
           Cinéma Indépendant
         </Animated.Text>
       </View>
@@ -175,7 +204,7 @@ const SessionSplash = memo(function SessionSplash({ onDone }: { onDone: () => vo
   );
 });
 
-const ss = StyleSheet.create({
+const sp = StyleSheet.create({
   root:   { ...StyleSheet.absoluteFillObject, zIndex: 8888, alignItems: 'center', justifyContent: 'center' },
   veil:   { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(3,0,10,0.30)' },
   center: { alignItems: 'center', gap: 10 },
@@ -184,7 +213,7 @@ const ss = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ SCREENSHOT BLOCKED OVERLAY
+// ★ SCREENSHOT OVERLAY
 // ─────────────────────────────────────────────────────────────────────────────
 const OVERLAY_MS = 4500;
 const FADE_MS    = 300;
@@ -203,7 +232,6 @@ const ScreenshotOverlay = memo(function ScreenshotOverlay({
         Animated.timing(fade,  { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
         Animated.spring(scale, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }),
       ]).start();
-
       setTimeout(() => {
         Animated.spring(lock, { toValue: 1, tension: 120, friction: 7, useNativeDriver: true }).start();
         Animated.sequence([
@@ -214,18 +242,15 @@ const ScreenshotOverlay = memo(function ScreenshotOverlay({
           Animated.timing(shake, { toValue: 0,   duration: 30, useNativeDriver: true }),
         ]).start();
       }, 100);
-
       const t = setTimeout(() => {
         Animated.parallel([
           Animated.timing(fade,  { toValue: 0, duration: FADE_MS, useNativeDriver: true }),
           Animated.timing(scale, { toValue: 0.88, duration: FADE_MS, useNativeDriver: true }),
         ]).start(onDismiss);
       }, OVERLAY_MS);
-
       return () => clearTimeout(t);
     } else {
-      fade.setValue(0); scale.setValue(0.84);
-      lock.setValue(0); shake.setValue(0);
+      fade.setValue(0); scale.setValue(0.84); lock.setValue(0); shake.setValue(0);
     }
   }, [visible]);
 
@@ -273,26 +298,26 @@ const ScreenshotOverlay = memo(function ScreenshotOverlay({
 });
 
 const so = StyleSheet.create({
-  root:         { ...StyleSheet.absoluteFillObject, zIndex: 9999, alignItems: 'center', justifyContent: 'center' },
-  veil:         { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(3,0,10,0.60)' },
-  card:         { width: W * 0.86, maxWidth: 360, borderRadius: 26, overflow: 'hidden', padding: 30, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.055)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.13)' },
-  lockWrap:     { width: 88, height: 88, borderRadius: 44, overflow: 'hidden', marginBottom: 20 },
-  lockGrad:     { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  lockRingOuter:{ position: 'absolute', top: -3, left: -3, right: -3, bottom: -3, borderRadius: 47, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
-  badge:        { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(239,68,68,0.16)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(239,68,68,0.38)', marginBottom: 16 },
-  badgeDot:     { width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' },
-  badgeTxt:     { color: '#EF4444', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
-  title:        { color: '#FFFFFF', fontSize: 23, fontWeight: '900', textAlign: 'center', lineHeight: 29, letterSpacing: -0.4, marginBottom: 18 },
-  sep:          { width: 38, height: 1, backgroundColor: 'rgba(255,255,255,0.11)', marginBottom: 18 },
-  body:         { color: 'rgba(255,255,255,0.62)', fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 10 },
-  appName:      { color: '#FFFFFF', fontWeight: '700' },
-  sub:          { color: 'rgba(255,255,255,0.35)', fontSize: 12, lineHeight: 18, textAlign: 'center', marginBottom: 22 },
-  footer:       { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  footerTxt:    { color: 'rgba(255,255,255,0.24)', fontSize: 10 },
+  root:          { ...StyleSheet.absoluteFillObject, zIndex: 9999, alignItems: 'center', justifyContent: 'center' },
+  veil:          { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(3,0,10,0.60)' },
+  card:          { width: W * 0.86, maxWidth: 360, borderRadius: 26, overflow: 'hidden', padding: 30, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.055)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.13)' },
+  lockWrap:      { width: 88, height: 88, borderRadius: 44, overflow: 'hidden', marginBottom: 20 },
+  lockGrad:      { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  lockRingOuter: { position: 'absolute', top: -3, left: -3, right: -3, bottom: -3, borderRadius: 47, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.12)' },
+  badge:         { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, backgroundColor: 'rgba(239,68,68,0.16)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(239,68,68,0.38)', marginBottom: 16 },
+  badgeDot:      { width: 6, height: 6, borderRadius: 3, backgroundColor: '#EF4444' },
+  badgeTxt:      { color: '#EF4444', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  title:         { color: '#FFFFFF', fontSize: 23, fontWeight: '900', textAlign: 'center', lineHeight: 29, letterSpacing: -0.4, marginBottom: 18 },
+  sep:           { width: 38, height: 1, backgroundColor: 'rgba(255,255,255,0.11)', marginBottom: 18 },
+  body:          { color: 'rgba(255,255,255,0.62)', fontSize: 14, lineHeight: 22, textAlign: 'center', marginBottom: 10 },
+  appName:       { color: '#FFFFFF', fontWeight: '700' },
+  sub:           { color: 'rgba(255,255,255,0.35)', fontSize: 12, lineHeight: 18, textAlign: 'center', marginBottom: 22 },
+  footer:        { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  footerTxt:     { color: 'rgba(255,255,255,0.24)', fontSize: 10 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ MOBILE-ONLY GATE — bloque l'accès web desktop
+// ★ MOBILE-ONLY GATE — affiché uniquement sur l'URL de production / desktop
 // ─────────────────────────────────────────────────────────────────────────────
 const MobileOnlyGate = memo(function MobileOnlyGate() {
   const fade = useRef(new Animated.Value(0)).current;
@@ -304,7 +329,6 @@ const MobileOnlyGate = memo(function MobileOnlyGate() {
       <GalaxyBG/>
       <View style={mg.veil} pointerEvents="none"/>
       <View style={mg.card}>
-        {/* Logo */}
         <View style={mg.logoWrap}>
           <Ionicons name="phone-portrait-outline" size={52} color="rgba(255,255,255,0.90)"/>
         </View>
@@ -315,7 +339,6 @@ const MobileOnlyGate = memo(function MobileOnlyGate() {
           Universe est conçu pour une expérience mobile.{'\n'}
           Téléchargez l'application depuis votre smartphone ou tablette.
         </Text>
-        {/* QR / Store badges */}
         <View style={mg.storeRow}>
           <View style={mg.storeBadge}>
             <Ionicons name="logo-apple" size={16} color="#fff"/>
@@ -352,17 +375,7 @@ const mg = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Détection mobile (web uniquement — natif est toujours mobile)
-// ─────────────────────────────────────────────────────────────────────────────
-function isMobileDevice(): boolean {
-  if (Platform.OS !== 'web') return true; // iOS / Android → toujours mobile
-  if (typeof navigator === 'undefined') return true;
-  return /iPhone|iPad|iPod|Android|Mobile|BlackBerry|IEMobile|Opera Mini|webOS/i
-    .test(navigator.userAgent);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// STACK — toutes les routes, structure originale conservée
+// STACK — toutes les routes
 // ─────────────────────────────────────────────────────────────────────────────
 const RootLayoutNav = memo(function RootLayoutNav() {
   return (
@@ -371,7 +384,6 @@ const RootLayoutNav = memo(function RootLayoutNav() {
       animation:    'none',
       contentStyle: { backgroundColor: COLORS.background },
     }}>
-      {/* Écrans existants */}
       <Stack.Screen name="reels" />
       <Stack.Screen name="search" />
       <Stack.Screen name="home"            options={{ animation: 'fade' }} />
@@ -384,8 +396,6 @@ const RootLayoutNav = memo(function RootLayoutNav() {
       <Stack.Screen name="notifications"   options={{ animation: 'fade' }} />
       <Stack.Screen name="category/[type]" options={{ animation: 'fade' }} />
       <Stack.Screen name="post/[id]"       options={{ animation: 'fade' }} />
-
-      {/* Nouveaux écrans Universe */}
       <Stack.Screen name="review/[id]"               options={{ animation: 'fade' }} />
       <Stack.Screen name="reel/[id]"                 options={{ animation: 'fade' }} />
       <Stack.Screen name="profile/edit"              options={{ animation: 'fade' }} />
@@ -399,24 +409,25 @@ const RootLayoutNav = memo(function RootLayoutNav() {
 // ROOT LAYOUT
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RootLayout() {
-  // Déterminé UNE FOIS à la création du composant, jamais recalculé
-  const isMobile = useRef(isMobileDevice()).current;
+  // ★ Calculé UNE SEULE FOIS — jamais recalculé
+  // Bloque desktop UNIQUEMENT sur l'URL de production, jamais sur localhost
+  const shouldBlockDesktop = useRef(
+    !isMobileDevice() && isDeployedOrigin(),
+  ).current;
 
   // Splash : skip si déjà joué dans cette session JS
   const [splashVisible, setSplashVisible] = useState(!SESSION_SPLASH_DONE);
   const [appReady,      setAppReady]      = useState(SESSION_SPLASH_DONE);
-
   const [screenshotBlocked, setScreenshotBlocked] = useState(false);
 
-  // ── Masque le splash natif Expo ──────────────────────────────────────────
+  // Cache le splash natif Expo dès que possible
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  // ── Screenshot prevention — monté une seule fois ─────────────────────────
+  // Screenshot prevention — mobile only, monté une seule fois
   useEffect(() => {
-    if (!isMobile) return; // inutile sur desktop
-
+    if (shouldBlockDesktop) return; // desktop bloqué, inutile
     let sub: { remove: () => void } | null = null;
     (async () => {
       try { await ScreenCapture.preventScreenCaptureAsync('universe-root'); } catch {}
@@ -424,20 +435,19 @@ export default function RootLayout() {
         sub = ScreenCapture.addScreenshotListener(() => setScreenshotBlocked(true));
       } catch {}
     })();
-
     return () => {
       ScreenCapture.allowScreenCaptureAsync('universe-root').catch(() => {});
       sub?.remove();
     };
-  }, [isMobile]);
+  }, [shouldBlockDesktop]);
 
   const onSplashDone = useCallback(() => {
     setSplashVisible(false);
     setAppReady(true);
   }, []);
 
-  // ── GATE : bureau → page de blocage ─────────────────────────────────────
-  if (!isMobile) {
+  // ── GATE desktop sur URL de production ───────────────────────────────────
+  if (shouldBlockDesktop) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <StatusBar style="light"/>
@@ -446,18 +456,38 @@ export default function RootLayout() {
     );
   }
 
+  // ── App normale (mobile natif + localhost web + mobile web production) ───
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
         <StatusBar style="light"/>
 
-        {/* App principale — rendue en arrière-plan dès que prête */}
-        {appReady && <RootLayoutNav/>}
+        {/*
+         * Structure :
+         *   flex:1 container
+         *     ├─ Stack (flex:1 — occupe tout l'espace disponible)
+         *     └─ CustomNavbar (marginTop: 8 — séparation légère, position naturelle en bas)
+         *
+         * CustomNavbar reste en bas, séparée du contenu par marginTop: 8
+         * exactement comme dans la version précédente.
+         */}
+        <View style={rl.container}>
+          {appReady && (
+            <View style={rl.stackWrapper}>
+              <RootLayoutNav/>
+            </View>
+          )}
+          {appReady && (
+            <View style={rl.navbarWrapper}>
+              <CustomNavbar/>
+            </View>
+          )}
+        </View>
 
-        {/* ★ Splash session — UNE SEULE fois par session, jamais après */}
+        {/* Splash — rendu PAR-DESSUS le contenu, zIndex 8888 */}
         {splashVisible && <SessionSplash onDone={onSplashDone}/>}
 
-        {/* ★ Overlay anti-screenshot — z-index 9999 */}
+        {/* Overlay anti-screenshot — zIndex 9999, au-dessus de tout */}
         <ScreenshotOverlay
           visible={screenshotBlocked}
           onDismiss={() => setScreenshotBlocked(false)}
@@ -466,3 +496,20 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+const rl = StyleSheet.create({
+  // Conteneur principal : colonne verticale
+  container: {
+    flex: 1,
+    flexDirection: 'column',
+    backgroundColor: COLORS.background,
+  },
+  // Stack prend tout l'espace restant
+  stackWrapper: {
+    flex: 1,
+  },
+  // Navbar en bas, marginTop: 8 pour la séparation légère originale
+  navbarWrapper: {
+    marginTop: 8,
+  },
+});
