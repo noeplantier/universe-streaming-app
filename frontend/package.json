@@ -14,7 +14,7 @@
     "@expo/metro-runtime": "~3.2.1",
     "@expo/vector-icons": "^14.0.0",
     "@react-native-async-storage/async-storage": "1.23.1",
-    "@shopify/react-native-skia": "0.1.242",
+    "@shopify/react-native-skia": "0.1.241",
     "@supabase/supabase-js": "^2.43.0",
     "base64-arraybuffer": "^1.0.2",
     "expo": "~51.0.14",
