@@ -39,6 +39,7 @@
     "react-native-webview": "13.8.6"
   },
   "devDependencies": {
+    "@expo/config-plugins": "^7.9.2",
     "@react-native-community/cli-server-api": "^13.6.9",
     "@types/react": "~18.2.79",
     "eslint": "^8.57.0",
