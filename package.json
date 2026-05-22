@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@react-native-community/slider": "4.5.2",
-    "@shopify/react-native-skia": "1.0.0",
+    "@shopify/react-native-skia": "0.1.241",
     "expo": "~51.0.28",
     "expo-constants": "~16.0.2",
     "expo-gl": "~14.0.2",
