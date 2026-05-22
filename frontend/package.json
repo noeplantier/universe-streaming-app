@@ -21,6 +21,7 @@
     "expo-av": "~14.0.5",
     "expo-blur": "~13.0.2",
     "expo-build-properties": "~0.12.3",
+    "expo-camera": "^56.0.7",
     "expo-font": "~12.0.7",
     "expo-image-picker": "~15.0.7",
     "expo-router": "~3.5.16",
