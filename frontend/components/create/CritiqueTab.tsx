@@ -335,73 +335,58 @@ const CritiqueTab = memo(function CritiqueTab() {
 
         {/* ── ÉTAPE 2 : Film / reel ──────────────────────────────────── */}
         <View style={ct.section}>
-          <SectionHead step={2} label="Oeuvre liée à ta critique" done={!!form.filmTitle.trim()} />
+          <SectionHead step={2} label="Oeuvre liée à ta critique" done={!!form.reelId} />
 
-          <TextInput
-            style={ct.input}
-            value={form.filmTitle}
-            onChangeText={set('filmTitle')}
-            placeholder="Ex : Inception"
-            placeholderTextColor={C.muted}
-            selectionColor={C.neonL}
-            maxLength={120}
-            returnKeyType="next"
-            autoCapitalize="sentences"
-          />
-
-          {/* Lien optionnel à un reel */}
-          <TouchableOpacity
-            style={ct.linkBtn}
-            onPress={() => setShowReels(o => !o)}
-            activeOpacity={0.80}
-          >
-            <Ionicons
-              name={form.reelId ? 'link' : 'link-outline'}
-              size={14}
-              color={form.reelId ? "#fff" : C.muted}
-            />
-            <Text style={[ct.linkTxt, form.reelId && { color: "#fff" }]}>
-              {form.reelId ? 'Oeuvre liée ✓' : 'Lier à une œuvre'}
-            </Text>
-            <Ionicons name={showReels ? 'chevron-up' : 'chevron-down'} size={12} color={C.muted} />
-          </TouchableOpacity>
-
-          {showReels && (
-            <View style={ct.reelPanel}>
-              {/* Search */}
-              <View style={ct.searchBar}>
-                <Ionicons name="search" size={13} color={C.muted} />
-                <TextInput
-                  style={ct.searchInput}
-                  value={reelSearch}
-                  onChangeText={setReelSearch}
-                  placeholder="Titre de l'oeuvre à associer…"
-                  placeholderTextColor={C.muted}
-                  selectionColor={"#fff"}
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                />
-                {reelBusy && <ActivityIndicator size="small" color={C.navyMid} />}
-              </View>
-
-              {/* Résultats */}
-              {reelList.map(r => (
-                <ReelRow
-                  key={r.id}
-                  reel={r}
-                  selected={form.reelId === r.id}
-                  onPress={() => selectReel(form.reelId === r.id ? null : r)}
-                />
-              ))}
-
-              {!!form.reelId && (
-                <TouchableOpacity style={ct.unlinkBtn} onPress={() => selectReel(null)}>
-                  <Ionicons name="close-circle-outline" size={13} color={C.muted} />
-                  <Text style={ct.unlinkTxt}>Délier le reel</Text>
-                </TouchableOpacity>
-              )}
+          <View style={ct.reelPanel}>
+            {/* Search */}
+            <View style={ct.searchBar}>
+              <Ionicons name="search" size={13} color={C.muted} />
+              <TextInput
+          style={ct.searchInput}
+          value={reelSearch}
+          onChangeText={setReelSearch}
+          placeholder="Cherche une oeuvre…"
+          placeholderTextColor={C.muted}
+          selectionColor={"#fff"}
+          autoCorrect={false}
+          autoCapitalize="none"
+              />
+              {reelBusy && <ActivityIndicator size="small" color={C.navyMid} />}
             </View>
-          )}
+
+            {/* Résultats */}
+            {reelList.length > 0 ? (
+              reelList.map(r => (
+          <ReelRow
+            key={r.id}
+            reel={r}
+            selected={form.reelId === r.id}
+            onPress={() => selectReel(form.reelId === r.id ? null : r)}
+          />
+              ))
+            ) : reelSearch.trim() ? (
+              <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center', paddingVertical: 16 }}>
+          Aucune oeuvre trouvée
+              </Text>
+            ) : form.reelId ? (
+              <ReelRow
+          reel={reelList.find(r => r.id === form.reelId) || { id: form.reelId, title: form.filmTitle, genre: null, year: null }}
+          selected
+          onPress={() => selectReel(null)}
+              />
+            ) : (
+              <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center', paddingVertical: 16 }}>
+          Commence à taper pour chercher
+              </Text>
+            )}
+
+            {!!form.reelId && (
+              <TouchableOpacity style={ct.unlinkBtn} onPress={() => selectReel(null)}>
+          <Ionicons name="close-circle-outline" size={13} color={C.muted} />
+          <Text style={ct.unlinkTxt}>Retirer cette oeuvre</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
 
         {/* ── ÉTAPE 3 : Note ─────────────────────────────────────────── */}

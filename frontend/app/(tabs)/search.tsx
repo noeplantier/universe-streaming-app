@@ -598,7 +598,7 @@ const SearchOverlay = memo(function SearchOverlay({
         {/* Barre de recherche */}
         <View style={[so.topBar, { paddingTop:insets.top + 10 }]}>
           <View style={so.inputRow}>
-            <Ionicons name="search-outline" size={15} color={C.muted}/>
+            <Ionicons name="search-outline" size={15}/>
             <TextInput
               ref={inputRef} style={so.input} value={q} onChangeText={setQ}
               placeholder="Titre, genre, réalisateur…" placeholderTextColor={C.muted}
@@ -641,7 +641,7 @@ const so = StyleSheet.create({
   backdrop:  { ...StyleSheet.absoluteFillObject, backgroundColor:'rgba(7,12,23,0.98)' },
   root:      { flex:1 },
   topBar:    { flexDirection:'row', alignItems:'center', paddingHorizontal:14, paddingBottom:10, gap:8 },
-  inputRow:  { flex:1, flexDirection:'row', alignItems:'center', backgroundColor:C.navyMid, borderRadius:10, paddingHorizontal:12, height:40, gap:8, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
+  inputRow:  { flex:1, flexDirection:'row', alignItems:'center', borderRadius:10, paddingHorizontal:12, height:40, gap:8, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
   input:     { flex:1, color:C.white, fontSize:14 },
   cancelTxt: { color:C.muted, fontSize:14, fontWeight:'600' },
   countRow:  { flexDirection:'row', alignItems:'center', gap:5, paddingHorizontal:16, marginBottom:12 },
@@ -809,5 +809,5 @@ const ss = StyleSheet.create({
   root:      { flex:1, backgroundColor:C.bg },
   header:    { position:'absolute', top:5, left:0, right:0, zIndex:10, flexDirection:'row', alignItems:'center', paddingHorizontal:20, paddingBottom:8 },
   brand:     { flex:1, color:C.white, fontSize:30, fontWeight:'800', letterSpacing:-0.5 },
-  searchBtn: { width:38, height:38, borderRadius:19, backgroundColor:C.navyMid, alignItems:'center', justifyContent:'center', borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
+  searchBtn: { width:38, height:38, borderRadius:19, backgroundColor:C.subtle, alignItems:'center', justifyContent:'center', borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
 });
