@@ -620,7 +620,7 @@ const SearchOverlay = memo(function SearchOverlay({
 
         {results.length === 0 ? (
           <View style={so.empty}>
-            <Ionicons name="search-outline" size={36} color={C.subtle}/>
+            <Ionicons name="search-outline" size={36} color={"#fff"}/>
             <Text style={so.emptyTxt}>Aucun résultat</Text>
           </View>
         ) : (
