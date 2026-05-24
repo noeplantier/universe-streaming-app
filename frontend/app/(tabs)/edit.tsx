@@ -1,22 +1,3 @@
-/**
- * app/profile/edit.tsx
- *
- * ── CORRECTIF 400 Bad Request ────────────────────────────────────────────────
- *
- *  CAUSE    : supabase.from('profiles').upsert() envoie un POST avec
- *             ?on_conflict=id. Avec RLS activé, Supabase tente d'abord
- *             un INSERT (déclenche la policy INSERT) même si la ligne
- *             existe déjà → 400 si la policy INSERT échoue ou est trop
- *             restrictive.
- *
- *  FIX      : persistProfile() fait d'abord un UPDATE .eq('id', uid).
- *             Si aucune ligne n'est affectée (profil inexistant), il fait
- *             un INSERT séparé. Plus d'upsert, plus de 400.
- *
- *  SYNC     : profile.tsx écoute la table profiles via realtime → il reçoit
- *             chaque UPDATE et met à jour l'état local instantanément.
- */
-
 import React, {
   memo, useCallback, useEffect,
   useRef, useState,
@@ -101,6 +82,12 @@ const PROFILE_SELECT = [
   'is_industry_contact','is_pro','contact_email','website',
   'social_instagram','social_vimeo','social_youtube','social_imdb','avatar_url',
 ].join(',');
+
+
+// ── CONSTANTES POUR ÉTAT NEUTRE ──────────────────────────────────────────────
+const DEFAULT_AVATAR = 'https://i.pravatar.cc/150?u=guest';
+const DEFAULT_DISPLAY_NAME = 'Cinéaste Anonyme';
+const DEFAULT_USERNAME = 'utilisateur';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -644,10 +631,12 @@ export default function EditProfileScreen() {
       {/* Avatar */}
       <View style={s.avatarBlock}>
         <TouchableOpacity onPress={handleAvatar} activeOpacity={0.88} style={s.avatarWrap}>
-          {avatarUrl
-            ? <Image source={{uri:avatarUrl}} style={s.avatar} contentFit="cover"/>
-            : <View style={s.avatarEmpty}><Ionicons name="person-outline" size={28} color={C.muted}/></View>
-          }
+          {/* Affiche l'avatar de l'utilisateur, ou un avatar neutre par défaut */}
+          <Image 
+            source={{ uri: avatarUrl || 'https://i.pravatar.cc/150?u=guest' }} 
+            style={s.avatar} 
+            contentFit="cover"
+          />
           <View style={s.avatarCam}>
             {avatarLoading
               ? <ActivityIndicator color={C.white} size="small"/>
@@ -659,25 +648,34 @@ export default function EditProfileScreen() {
           <Text style={s.avatarLabel}>Photo de profil</Text>
           <Text style={s.avatarSub}>Format carré · JPEG ou PNG · Max 5 Mo</Text>
           <TouchableOpacity onPress={handleAvatar} style={s.avatarCta} activeOpacity={0.80}>
-            <Text style={s.avatarCtaTxt}>Modifier la photo</Text>
+            <Text style={s.avatarCtaTxt}>{avatarUrl ? 'Modifier la photo' : 'Ajouter une photo'}</Text>
           </TouchableOpacity>
         </View>
       </View>
-      <Divider mt={12} mb={4}/>
-      <Field label="Nom d'affichage" value={form.display_name} onChange={v=>patch('display_name',v)}
-        placeholder="Votre nom public" icon="person-outline" maxLength={50}/>
-      <Field label="Nom d'utilisateur *" value={form.username}
-        onChange={v=>patch('username',v.toLowerCase().replace(/\s/g,''))}
-        placeholder="nom_utilisateur" icon="at-outline" maxLength={30}
-        error={errors.username} hint="Lettres, chiffres et . _ - uniquement"/>
-      <Field label="Biographie" value={form.bio} onChange={v=>patch('bio',v)}
-        placeholder="Décrivez votre démarche artistique, vos influences et projets…"
-        multiline maxLength={420} icon="document-text-outline"/>
-      <Field label="Localisation" value={form.location} onChange={v=>patch('location',v)}
-        placeholder="Ville, Pays" icon="location-outline"/>
-      <Divider/>
-      <SectionHead label="Rôle principal" desc="Votre fonction principale dans le cinéma indépendant"/>
-      <RoleGrid selected={form.role} onChange={v=>patch('role',v)}/>
+
+      {/* Champs d'identité (Ajustez les variables selon vos noms d'états réels) */}
+      <View style={{ marginTop: 24, gap: 16 }}>
+        <View>
+          <Text style={{ color: '#888', fontSize: 12, marginBottom: 6 }}>Nom d'affichage</Text>
+          <TextInput
+            style={{ backgroundColor: '#1A1A1A', color: 'white', padding: 12, borderRadius: 8 }}
+            placeholder="Cinéaste Anonyme"
+            placeholderTextColor="#555"
+            // value={displayName}
+            // onChangeText={setDisplayName}
+          />
+        </View>
+        <View>
+          <Text style={{ color: '#888', fontSize: 12, marginBottom: 6 }}>Nom d'utilisateur</Text>
+          <TextInput
+            style={{ backgroundColor: '#1A1A1A', color: 'white', padding: 12, borderRadius: 8 }}
+            placeholder="@utilisateur"
+            placeholderTextColor="#555"
+            // value={username}
+            // onChangeText={setUsername}
+          />
+        </View>
+      </View>
     </>
   );
 
@@ -778,21 +776,7 @@ export default function EditProfileScreen() {
             <Text style={s.navTitle}>Modifier le profil</Text>
             {form.display_name&&<Text style={s.navSub}>{form.display_name}</Text>}
           </View>
-          <Animated.View style={{transform:[{scale:saveScale},{translateX:shakeX}]}}>
-            <TouchableOpacity
-              style={[s.saveBtn,saveStatus==='saving'&&{opacity:0.65}]}
-              onPress={handleSave} disabled={saveStatus==='saving'} activeOpacity={0.85}
-            >
-              {saveStatus==='saving'
-                ? <ActivityIndicator color={C.bg} size="small"/>
-                : saveStatus==='saved'
-                  ? <Ionicons name="checkmark" size={15} color={C.bg}/>
-                  : saveStatus==='error'
-                    ? <Ionicons name="alert" size={15} color={C.bg}/>
-                    : <Text style={s.saveBtnTxt}>Enregistrer</Text>
-              }
-            </TouchableOpacity>
-          </Animated.View>
+         
         </View>
 
         {/* TABS */}
@@ -813,7 +797,7 @@ export default function EditProfileScreen() {
               >
                 {saveStatus==='saving'
                   ? <ActivityIndicator color={C.bg} size="small"/>
-                  : <Text style={s.ctaTxt}>Enregistrer les modifications</Text>
+                  : <Text style={s.ctaTxt}>Enregistrer</Text>
                 }
               </TouchableOpacity>
               <Animated.View style={[s.savedRow,{opacity:successFade}]}>

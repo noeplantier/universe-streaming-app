@@ -552,12 +552,14 @@ const ProfileHeader = memo(({profile,filmCount,critiqueCount,reelCount,level,onE
     {key:'im',icon:'film-outline'     as any,url:profile.social_imdb,     label:'IMDb'     },
     {key:'ws',icon:'globe-outline'    as any,url:profile.website,         label:'Portfolio'},
   ].filter(l=>!!l.url),[profile]);
-  const avatarUri=profile.avatar_url||`https://i.pravatar.cc/150?u=${profile.username}`;
+  
   return (
     <View style={hdr.wrap}>
       <View style={hdr.topRow}>
         <View style={hdr.avatarWrap}>
-          <ImageWithFallback uri={avatarUri} style={hdr.avatar} fallbackColors={[C.navyMid,C.navyLow]}/>
+          <View style={[hdr.avatar, {backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center'}]}>
+            <Ionicons name="person-circle-outline" size={60} color={C.mid}/>
+          </View>
           <View style={hdr.lvlBadge}><Text style={hdr.lvlTxt}>{level.level}</Text></View>
           {profile.is_pro&&<View style={hdr.proBadge}><Ionicons name="checkmark-circle" size={15} color={C.white}/></View>}
         </View>
