@@ -31,6 +31,7 @@ export interface SupabasePost {
 // Post — shape UI consommée par PostCard et InteractionCtx
 // ─────────────────────────────────────────────────────────────────────────────
 export interface Post {
+  works_id: any;
   id:            string;
   // ★ FIX 2/3 : work_id typé number | null (plus `any`)
   // null = critique non liée à une œuvre du catalogue

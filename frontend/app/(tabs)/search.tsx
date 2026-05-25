@@ -593,12 +593,13 @@ const SearchOverlay = memo(function SearchOverlay({
 
   return (
     <Modal visible animationType="none" onRequestClose={onClose} statusBarTranslucent>
+      <GalaxyBackground/>
       <View style={so.backdrop}/>
       <Animated.View style={[so.root, { transform:[{ translateY:slideY }] }]}>
         {/* Barre de recherche */}
         <View style={[so.topBar, { paddingTop:insets.top + 10 }]}>
           <View style={so.inputRow}>
-            <Ionicons name="search-outline" size={15}/>
+            <Ionicons name="search-outline" size={15} color={C.muted}/>
             <TextInput
               ref={inputRef} style={so.input} value={q} onChangeText={setQ}
               placeholder="Titre, genre, réalisateur…" placeholderTextColor={C.muted}
@@ -638,7 +639,7 @@ const SearchOverlay = memo(function SearchOverlay({
 });
 
 const so = StyleSheet.create({
-  backdrop:  { ...StyleSheet.absoluteFillObject, backgroundColor:'rgba(7,12,23,0.98)' },
+  backdrop:  { ...StyleSheet.absoluteFillObject },
   root:      { flex:1 },
   topBar:    { flexDirection:'row', alignItems:'center', paddingHorizontal:14, paddingBottom:10, gap:8 },
   inputRow:  { flex:1, flexDirection:'row', alignItems:'center', borderRadius:10, paddingHorizontal:12, height:40, gap:8, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
