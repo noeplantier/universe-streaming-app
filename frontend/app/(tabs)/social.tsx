@@ -670,10 +670,6 @@ const CompactPostCard = memo(function CompactPostCard({
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={cpc.actionBtn} onPress={goPost} activeOpacity={0.78}>
-          <Ionicons name="chatbubble-outline" size={15} color={C.muted}/>
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={cpc.actionBtn}
           onPress={() => sharePost(post.id, post.work_title, userId)}
@@ -2487,10 +2483,7 @@ export default function SocialScreen() {
           <Ionicons name="notifications-outline" size={17} color={C.mid}/>
           <View style={sc.notifDot}/>
         </TouchableOpacity>
-        <TouchableOpacity style={[sc.iconBtn, sc.composeBtn]}
-          onPress={() => setCompose(true)} activeOpacity={0.85}>
-          <Ionicons name="add" size={19} color={C.white}/>
-        </TouchableOpacity>
+       
       </View>
     </View>
   );
