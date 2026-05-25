@@ -25,9 +25,9 @@ import { Ionicons }               from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as ScreenCapture         from 'expo-screen-capture';
 
-import { AuthProvider } from '../contexts/AuthContext';
-import { COLORS }       from '../constants/theme';
-import CustomNavbar     from '../components/CustomNavBar';
+import { AuthProvider } from '../../contexts/AuthContext';
+import { COLORS }       from '../../constants/theme';
+import CustomNavbar     from '../../components/CustomNavBar';
 
 SplashScreen.preventAutoHideAsync();
 
