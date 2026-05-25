@@ -1,4 +1,3 @@
-// components/social/SocialTokens.ts
 export const C = {
   bg0:'#020810', bg1:'#060F1E', bg2:'#0A1830',
   surf:'rgba(13,34,64,0.55)', surfHi:'rgba(13,34,64,0.82)',

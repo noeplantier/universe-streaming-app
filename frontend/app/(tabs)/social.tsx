@@ -273,18 +273,45 @@ async function uploadImage(localUri:string): Promise<string|null> {
   } catch { return null; }
 }
 
-async function dbSendConnection(
-  proId:string, userId:string, message:string,
-): Promise<{ ok:boolean; error?:string }> {
-  try {
-    const { error } = await supabase.from('pro_connections').upsert(
-      { requester_id:userId, pro_id:proId, status:'pending',
-        message:message.trim(), updated_at:new Date().toISOString() },
-      { onConflict:'requester_id,pro_id' },
-    );
-    return error ? { ok:false, error:error.message } : { ok:true };
-  } catch (e:any) { return { ok:false, error:e?.message }; }
+async function dbSendConnection(proId: string, message: string) {
+  const { data: { user }, error: userErr } = await supabase.auth.getUser();
+  if (userErr || !user) return { ok: false, error: "Not authenticated" };
+
+  const requesterId = user.id;
+
+  // 1. Vérifier si une requête existe déjà
+  const { data: existing } = await supabase
+    .from('pro_connections')
+    .select('id')
+    .eq('requester_id', requesterId)
+    .eq('pro_id', proId)
+    .single();
+
+  if (existing) {
+    // 2. Mettre à jour l'existante
+    const { error } = await supabase
+      .from('pro_connections')
+      .update({
+        status: 'pending',
+        message: message.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', existing.id);
+    return error ? { ok: false, error: error.message } : { ok: true };
+  } else {
+    // 3. Créer une nouvelle
+    const { error } = await supabase
+      .from('pro_connections')
+      .insert({
+        requester_id: requesterId,
+        pro_id: proId,
+        status: 'pending',
+        message: message.trim(),
+      });
+    return error ? { ok: false, error: error.message } : { ok: true };
+  }
 }
+
 
 async function dbFetchConnections(userId:string): Promise<ProConnection[]> {
   const { data } = await supabase
@@ -317,7 +344,7 @@ function usePostsFeed(tab:FeedTab) {
       .then(({ data, error:err }) => {
         if (dead) return;
         if (err) { setError('Impossible de charger le feed.'); setLoading(false); return; }
-        setPosts((data ?? []).filter(r => r && 'id' in r).map(r => mapPost(r as SupabasePost)));
+        setPosts((data ?? []).filter(r => r && 'id' in r).map(r => mapPost(r as unknown as SupabasePost)));
         setLoading(false);
       });
     return () => { dead = true; };
@@ -668,10 +695,6 @@ const CompactPostCard = memo(function CompactPostCard({
           <Text style={[cpc.actionCount, isLiked && { color:C.offWhite }]}>
             {fmtK(post.likes + (isLiked ? 1 : 0))}
           </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={cpc.actionBtn} onPress={goPost} activeOpacity={0.78}>
-          <Ionicons name="chatbubble-outline" size={15} color={C.muted}/>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -1379,7 +1402,7 @@ const ConnectionRequestModal = memo(function ConnectionRequestModal({
     setSending(true);
     if (Platform.OS !== 'web')
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    const { ok, error:err } = await dbSendConnection(pro.id, userId, note);
+    const { ok, error:err } = await dbSendConnection(pro.id, userId);
     setSending(false);
     if (ok) {
       setPhase('success');
@@ -1406,6 +1429,7 @@ const ConnectionRequestModal = memo(function ConnectionRequestModal({
 
   return (
     <Modal visible animationType="none" transparent onRequestClose={onClose} statusBarTranslucent>
+      <GalaxyBackground/>
       <View style={crm.overlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose}/>
         <KeyboardAvoidingView
@@ -1472,6 +1496,7 @@ const ConnectionRequestModal = memo(function ConnectionRequestModal({
               )}
 
               {/* FORM */}
+              <GalaxyBackground/>
               {phase === 'form' && (
                 <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                   {/* Pro header */}
@@ -1618,7 +1643,7 @@ const ConnectionRequestModal = memo(function ConnectionRequestModal({
 });
 
 const crm = StyleSheet.create({
-  overlay:      { flex:1, justifyContent:'flex-end', backgroundColor:'rgba(7,12,23,0.88)' },
+  overlay:      { flex:1, justifyContent:'flex-end' },
   kav:          { flex:1, justifyContent:'flex-end' },
   sheet:        { maxHeight:'92%', borderTopLeftRadius:26, borderTopRightRadius:26,
                   overflow:'hidden', borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
@@ -2487,10 +2512,7 @@ export default function SocialScreen() {
           <Ionicons name="notifications-outline" size={17} color={C.mid}/>
           <View style={sc.notifDot}/>
         </TouchableOpacity>
-        <TouchableOpacity style={[sc.iconBtn, sc.composeBtn]}
-          onPress={() => setCompose(true)} activeOpacity={0.85}>
-          <Ionicons name="add" size={19} color={C.white}/>
-        </TouchableOpacity>
+       
       </View>
     </View>
   );

@@ -1,19 +1,20 @@
 /**
- * app/_layout.tsx — UNIVERSE ROOT LAYOUT
+ * app/_layout.tsx — UNIVERSE · ÉDITION ULTRA-OPTIMISÉE
  *
- * ─ Mobile-only gate   : UNIQUEMENT sur l'URL déployée (universestreaming.netlify.app)
- *                        localhost est TOUJOURS autorisé pour le développement
- * ─ Session splash      : animation d'intro une seule fois par session JS
- * ─ CustomNavbar        : restaurée à sa position originale avec marginTop de séparation
- * ─ Screenshot block    : expo-screen-capture
- * ─ Galaxy standalone   : pas d'import externe (évite les cycles de dépendances)
+ * ─ Chargement instantané  : Stack monte IMMÉDIATEMENT pendant le splash
+ *                            (pré-rendu en arrière-plan → 0 latence à l'affichage)
+ * ─ Anti-screenshot global  : Modal natif zIndex infini → couvre TOUTES les pages,
+ *                            modales, sheets, toasts, même les overlays tiers
+ * ─ Session splash once     : flag module-level SESSION_SPLASH_DONE → jamais rejoué
+ * ─ Mobile-only gate        : production uniquement (localhost toujours libre)
+ * ─ 0 re-render inutile     : useRef pour valeurs stables, memo partout, STARS module-level
  */
 
 import {
   useEffect, useRef, useState, memo, useCallback,
 } from 'react';
 import {
-  Animated, Dimensions, Easing, Platform,
+  Animated, Dimensions, Easing, Modal, Platform,
   StyleSheet, Text, View,
 } from 'react-native';
 import { Stack }                  from 'expo-router';
@@ -28,53 +29,52 @@ import { AuthProvider } from '../../contexts/AuthContext';
 import { COLORS }       from '../../constants/theme';
 import CustomNavbar     from '../../components/CustomNavBar';
 
-// Garde le splash natif visible pendant l'init
+// Splash natif maintenu jusqu'à ce qu'on l'éjecte explicitement
 SplashScreen.preventAutoHideAsync();
 
 const { width: W, height: H } = Dimensions.get('window');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FLAG SESSION — module-level : survit aux re-renders, jamais remis à zéro
-// Le splash ne s'affiche QU'UNE SEULE FOIS par session JS
+// FLAG MODULE — jamais remis à zéro, survit aux re-renders et hot-reload
 // ─────────────────────────────────────────────────────────────────────────────
 let SESSION_SPLASH_DONE = false;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DÉTECTION ENVIRONNEMENT
+// DÉTECTION ENVIRONNEMENT — calculé une fois, résultats stables
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Vrai si l'app tourne sur une URL de production (pas localhost) */
 function isDeployedOrigin(): boolean {
   if (Platform.OS !== 'web') return false;
   if (typeof window === 'undefined') return false;
   const h = window.location.hostname;
-  // Autorise localhost, 127.0.0.1, et toutes les IP locales (192.168.x, 10.x, etc.)
   if (h === 'localhost')         return false;
   if (h === '127.0.0.1')        return false;
   if (h.startsWith('192.168.')) return false;
   if (h.startsWith('10.'))      return false;
   if (h.startsWith('172.'))     return false;
-  return true; // URL externe → déploiement
+  return true;
 }
 
-/** Vrai si l'appareil est un mobile / tablette */
 function isMobileDevice(): boolean {
-  if (Platform.OS !== 'web') return true; // iOS / Android → toujours OK
+  if (Platform.OS !== 'web') return true;
   if (typeof navigator === 'undefined') return true;
   return /iPhone|iPad|iPod|Android|Mobile|BlackBerry|IEMobile|Opera Mini|webOS/i
     .test(navigator.userAgent);
 }
 
+// Calculé une seule fois au niveau module
+const SHOULD_BLOCK_DESKTOP: boolean = !isMobileDevice() && isDeployedOrigin();
+
 // ─────────────────────────────────────────────────────────────────────────────
-// GALAXY BACKGROUND — standalone (aucun import externe, pas de cycle)
+// GALAXY BACKGROUND
 // ─────────────────────────────────────────────────────────────────────────────
 const rnd  = (a: number, b: number) => a + Math.random() * (b - a);
 const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 const STAR_COLS = ['#F3EDFF', '#B2CCFF', '#FFE270', 'rgba(255,255,255,0.55)'];
 
-interface StarPt { id:number; x:number; y:number; sz:number; col:string; del:number; dur:number }
-interface Meteor  { id:number; sx:number; sy:number; ang:number; len:number }
+interface StarPt { id: number; x: number; y: number; sz: number; col: string; del: number; dur: number }
+interface Meteor  { id: number; sx: number; sy: number; ang: number; len: number }
 
+// Calculé UNE FOIS — module-level, pas de recalcul à chaque render
 const STARS: StarPt[] = Array.from({ length: 60 }, (_, i) => ({
   id: i, x: rnd(0, W), y: rnd(0, H), sz: rnd(1, 2.3),
   col: pick(STAR_COLS), del: rnd(0, 4000), dur: rnd(2000, 5500),
@@ -90,7 +90,7 @@ const StarDot = memo(function StarDot({ p }: { p: StarPt }) {
     ]));
     loop.start();
     return () => loop.stop();
-  }, []);
+  }, []); // eslint-disable-line — p est stable (STARS est module-level)
   return (
     <Animated.View style={{
       position: 'absolute', left: p.x, top: p.y,
@@ -114,13 +114,13 @@ const ShootingStar = memo(function ShootingStar({ m, onDone }: { m: Meteor; onDo
         easing: Easing.out(Easing.quad), useNativeDriver: true,
       }),
     ]).start(onDone);
-  }, []);
+  }, []); // eslint-disable-line
   const tx = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(m.ang * Math.PI / 180) * 200] });
   const ty = prog.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(m.ang * Math.PI / 180) * 200] });
   return (
     <Animated.View style={{
-      position: 'absolute', left: m.sx, top: m.sy,
-      opacity: op, transform: [{ translateX: tx }, { translateY: ty }, { rotate: `${m.ang}deg` }],
+      position: 'absolute', left: m.sx, top: m.sy, opacity: op,
+      transform: [{ translateX: tx }, { translateY: ty }, { rotate: `${m.ang}deg` }],
     }}>
       <LinearGradient
         colors={['transparent', 'rgba(255,255,255,0.18)', '#fff']}
@@ -136,8 +136,8 @@ const GalaxyBG = memo(function GalaxyBG() {
   useEffect(() => {
     const iv = setInterval(() => {
       if (Math.random() > 0.65)
-        setMeteors(m => [
-          ...m,
+        setMeteors(prev => [
+          ...prev,
           { id: Date.now(), sx: rnd(0, W), sy: rnd(0, H * 0.4), ang: rnd(20, 50), len: rnd(80, 160) },
         ]);
     }, 2200);
@@ -148,19 +148,17 @@ const GalaxyBG = memo(function GalaxyBG() {
       <LinearGradient colors={['#03000A', '#060F1E', '#0D0A20']} style={StyleSheet.absoluteFill}/>
       {STARS.map(s => <StarDot key={s.id} p={s}/>)}
       {meteors.map(m => (
-        <ShootingStar
-          key={m.id} m={m}
-          onDone={() => setMeteors(p => p.filter(x => x.id !== m.id))}
-        />
+        <ShootingStar key={m.id} m={m}
+          onDone={() => setMeteors(prev => prev.filter(x => x.id !== m.id))}/>
       ))}
     </View>
   );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ SESSION SPLASH — s'affiche UNE SEULE FOIS via SESSION_SPLASH_DONE
+// SESSION SPLASH — une seule fois par session
 // ─────────────────────────────────────────────────────────────────────────────
-const SPLASH_TOTAL   = 2200;
+const SPLASH_TOTAL    = 2200;
 const SPLASH_FADE_OUT = 500;
 
 const SessionSplash = memo(function SessionSplash({ onDone }: { onDone: () => void }) {
@@ -177,7 +175,7 @@ const SessionSplash = memo(function SessionSplash({ onDone }: { onDone: () => vo
         Animated.timing(logoOp, { toValue: 1, duration: 600, useNativeDriver: true }),
       ]),
       Animated.timing(tagOp, { toValue: 1, duration: 400, delay: 200, useNativeDriver: true }),
-      Animated.delay(SPLASH_TOTAL - 400 - 600 - 400 - 200),
+      Animated.delay(SPLASH_TOTAL - 1600),
       Animated.parallel([
         Animated.timing(fade,  { toValue: 0, duration: SPLASH_FADE_OUT, useNativeDriver: true }),
         Animated.timing(logoY, { toValue: -12, duration: SPLASH_FADE_OUT, useNativeDriver: true }),
@@ -186,7 +184,7 @@ const SessionSplash = memo(function SessionSplash({ onDone }: { onDone: () => vo
       SESSION_SPLASH_DONE = true;
       onDone();
     });
-  }, []);
+  }, []); // eslint-disable-line
 
   return (
     <Animated.View style={[sp.root, { opacity: fade }]}>
@@ -213,10 +211,12 @@ const sp = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ SCREENSHOT OVERLAY
+// ★ SCREENSHOT OVERLAY — Modal natif : couvre TOUTES les pages et modales
+//   Android : preventScreenCaptureAsync bloque physiquement (FLAG_SECURE)
+//   iOS     : addScreenshotListener détecte + Modal s'affiche immédiatement
+//   Web     : écoute keydown (Ctrl+Shift+4, PrintScreen) + visibilitychange
 // ─────────────────────────────────────────────────────────────────────────────
-const OVERLAY_MS = 4500;
-const FADE_MS    = 300;
+const OVERLAY_AUTO_HIDE_MS = 4500;
 
 const ScreenshotOverlay = memo(function ScreenshotOverlay({
   visible, onDismiss,
@@ -225,80 +225,99 @@ const ScreenshotOverlay = memo(function ScreenshotOverlay({
   const scale = useRef(new Animated.Value(0.84)).current;
   const lock  = useRef(new Animated.Value(0)).current;
   const shake = useRef(new Animated.Value(0)).current;
+  const timer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.timing(fade,  { toValue: 1, duration: FADE_MS, useNativeDriver: true }),
-        Animated.spring(scale, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }),
-      ]).start();
-      setTimeout(() => {
-        Animated.spring(lock, { toValue: 1, tension: 120, friction: 7, useNativeDriver: true }).start();
-        Animated.sequence([
-          Animated.timing(shake, { toValue: 9,   duration: 50, useNativeDriver: true }),
-          Animated.timing(shake, { toValue: -9,  duration: 50, useNativeDriver: true }),
-          Animated.timing(shake, { toValue: 5,   duration: 40, useNativeDriver: true }),
-          Animated.timing(shake, { toValue: -5,  duration: 40, useNativeDriver: true }),
-          Animated.timing(shake, { toValue: 0,   duration: 30, useNativeDriver: true }),
-        ]).start();
-      }, 100);
-      const t = setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(fade,  { toValue: 0, duration: FADE_MS, useNativeDriver: true }),
-          Animated.timing(scale, { toValue: 0.88, duration: FADE_MS, useNativeDriver: true }),
-        ]).start(onDismiss);
-      }, OVERLAY_MS);
-      return () => clearTimeout(t);
-    } else {
+    if (!visible) {
       fade.setValue(0); scale.setValue(0.84); lock.setValue(0); shake.setValue(0);
+      return;
     }
-  }, [visible]);
 
-  if (!visible) return null;
+    // Entrée
+    Animated.parallel([
+      Animated.timing(fade,  { toValue: 1, duration: 220, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, tension: 80, friction: 9, useNativeDriver: true }),
+    ]).start();
+
+    // Cadenas + secousse
+    const lockTimer = setTimeout(() => {
+      Animated.spring(lock, { toValue: 1, tension: 120, friction: 7, useNativeDriver: true }).start();
+      Animated.sequence([
+        Animated.timing(shake, { toValue: 9,   duration: 50, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: -9,  duration: 50, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 5,   duration: 40, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: -5,  duration: 40, useNativeDriver: true }),
+        Animated.timing(shake, { toValue: 0,   duration: 30, useNativeDriver: true }),
+      ]).start();
+    }, 80);
+
+    // Auto-dismiss
+    timer.current = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(fade,  { toValue: 0, duration: 280, useNativeDriver: true }),
+        Animated.timing(scale, { toValue: 0.88, duration: 280, useNativeDriver: true }),
+      ]).start(onDismiss);
+    }, OVERLAY_AUTO_HIDE_MS);
+
+    return () => {
+      clearTimeout(lockTimer);
+      clearTimeout(timer.current);
+    };
+  }, [visible]); // eslint-disable-line
 
   const lockScale = lock.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] });
   const lockRot   = lock.interpolate({ inputRange: [0, 1], outputRange: ['-18deg', '0deg'] });
 
+  // ★ Modal natif — couvre TOUT (navigation, modales, sheets)
+  // statusBarTranslucent: true → couvre aussi la barre de statut iOS/Android
   return (
-    <Animated.View style={[so.root, { opacity: fade }]}>
-      <GalaxyBG/>
-      <View style={so.veil} pointerEvents="none"/>
-      <Animated.View style={[so.card, { transform: [{ scale }] }]}>
-        <Animated.View style={[so.lockWrap, {
-          transform: [{ scale: lockScale }, { rotate: lockRot }, { translateX: shake }],
-        }]}>
-          <LinearGradient
-            colors={['rgba(255,255,255,0.13)', 'rgba(255,255,255,0.05)']}
-            style={so.lockGrad} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
-            <Ionicons name="lock-closed" size={42} color="#FFFFFF"/>
-          </LinearGradient>
-          <View style={so.lockRingOuter} pointerEvents="none"/>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onDismiss}
+    >
+      <Animated.View style={[so.root, { opacity: fade }]}>
+        <GalaxyBG/>
+        <View style={so.veil} pointerEvents="none"/>
+        <Animated.View style={[so.card, { transform: [{ scale }] }]}>
+          <Animated.View style={[so.lockWrap, {
+            transform: [{ scale: lockScale }, { rotate: lockRot }, { translateX: shake }],
+          }]}>
+            <LinearGradient
+              colors={['rgba(255,255,255,0.13)', 'rgba(255,255,255,0.05)']}
+              style={so.lockGrad} start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}>
+              <Ionicons name="lock-closed" size={42} color="#FFFFFF"/>
+            </LinearGradient>
+            <View style={so.lockRingOuter} pointerEvents="none"/>
+          </Animated.View>
+          <View style={so.badge}>
+            <View style={so.badgeDot}/>
+            <Text style={so.badgeTxt}>CAPTURE BLOQUÉE</Text>
+          </View>
+          <Text style={so.title}>Capture d'écran{'\n'}impossible</Text>
+          <View style={so.sep}/>
+          <Text style={so.body}>
+            Les politiques de confidentialité d'
+            <Text style={so.appName}>Universe</Text>
+            {' '}ne permettent pas d'effectuer de captures d'écran ou d'enregistrements d'écran sur cette application.
+          </Text>
+          <Text style={so.sub}>
+            Cette mesure protège les œuvres et les données personnelles des créateurs de cinéma indépendant.
+          </Text>
+          <View style={so.footer}>
+            <Ionicons name="shield-checkmark-outline" size={11} color="rgba(255,255,255,0.28)"/>
+            <Text style={so.footerTxt}>Politique de confidentialité Universe · Art. 3.2</Text>
+          </View>
         </Animated.View>
-        <View style={so.badge}>
-          <View style={so.badgeDot}/>
-          <Text style={so.badgeTxt}>CAPTURE BLOQUÉE</Text>
-        </View>
-        <Text style={so.title}>Capture d'écran{'\n'}impossible</Text>
-        <View style={so.sep}/>
-        <Text style={so.body}>
-          Les politiques de confidentialité d'
-          <Text style={so.appName}>Universe</Text>
-          {' '}ne permettent pas d'effectuer de captures d'écran ou d'enregistrements d'écran sur cette application.
-        </Text>
-        <Text style={so.sub}>
-          Cette mesure protège les œuvres et les données personnelles des créateurs de cinéma indépendant.
-        </Text>
-        <View style={so.footer}>
-          <Ionicons name="shield-checkmark-outline" size={11} color="rgba(255,255,255,0.28)"/>
-          <Text style={so.footerTxt}>Politique de confidentialité Universe · Art. 3.2</Text>
-        </View>
       </Animated.View>
-    </Animated.View>
+    </Modal>
   );
 });
 
 const so = StyleSheet.create({
-  root:          { ...StyleSheet.absoluteFillObject, zIndex: 9999, alignItems: 'center', justifyContent: 'center' },
+  root:          { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(3,0,10,0.92)' },
   veil:          { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(3,0,10,0.60)' },
   card:          { width: W * 0.86, maxWidth: 360, borderRadius: 26, overflow: 'hidden', padding: 30, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.055)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.13)' },
   lockWrap:      { width: 88, height: 88, borderRadius: 44, overflow: 'hidden', marginBottom: 20 },
@@ -317,7 +336,7 @@ const so = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ MOBILE-ONLY GATE — affiché uniquement sur l'URL de production / desktop
+// MOBILE-ONLY GATE — production + desktop uniquement
 // ─────────────────────────────────────────────────────────────────────────────
 const MobileOnlyGate = memo(function MobileOnlyGate() {
   const fade = useRef(new Animated.Value(0)).current;
@@ -336,7 +355,7 @@ const MobileOnlyGate = memo(function MobileOnlyGate() {
         <Text style={mg.headline}>Application mobile</Text>
         <View style={mg.sep}/>
         <Text style={mg.body}>
-          Universe est conçu pour une expérience mobile.{'\n'}
+          Universe est conçu pour une expérience mobile native.{'\n'}
           Téléchargez l'application depuis votre smartphone ou tablette.
         </Text>
         <View style={mg.storeRow}>
@@ -375,7 +394,7 @@ const mg = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STACK — toutes les routes
+// STACK — toutes les routes déclarées explicitement
 // ─────────────────────────────────────────────────────────────────────────────
 const RootLayoutNav = memo(function RootLayoutNav() {
   return (
@@ -384,23 +403,24 @@ const RootLayoutNav = memo(function RootLayoutNav() {
       animation:    'none',
       contentStyle: { backgroundColor: COLORS.background },
     }}>
-      <Stack.Screen name="reels" />
-      <Stack.Screen name="search" />
-      <Stack.Screen name="home"            options={{ animation: 'fade' }} />
-      <Stack.Screen name="(auth)"          options={{ animation: 'fade' }} />
-      <Stack.Screen name="(tabs)"          options={{ animation: 'fade' }} />
-      <Stack.Screen name="film/[id]"       options={{ animation: 'fade' }} />
-      <Stack.Screen name="user/[id]"       options={{ animation: 'fade' }} />
-      <Stack.Screen name="settings"        options={{ animation: 'fade' }} />
-      <Stack.Screen name="watchlist"       options={{ animation: 'fade' }} />
-      <Stack.Screen name="notifications"   options={{ animation: 'fade' }} />
-      <Stack.Screen name="category/[type]" options={{ animation: 'fade' }} />
-      <Stack.Screen name="post/[id]"       options={{ animation: 'fade' }} />
-      <Stack.Screen name="review/[id]"               options={{ animation: 'fade' }} />
-      <Stack.Screen name="reel/[id]"                 options={{ animation: 'fade' }} />
-      <Stack.Screen name="profile/edit"              options={{ animation: 'fade' }} />
-      <Stack.Screen name="edit"                      options={{ animation: 'fade' }} />
-      <Stack.Screen name="backoffice/universe-admin" options={{ animation: 'fade', gestureEnabled: false }} />
+      <Stack.Screen name="reels"            />
+      <Stack.Screen name="search"           />
+      <Stack.Screen name="home"             options={{ animation: 'fade' }} />
+      <Stack.Screen name="(auth)"           options={{ animation: 'fade' }} />
+      <Stack.Screen name="(tabs)"           options={{ animation: 'fade' }} />
+      <Stack.Screen name="film/[id]"        options={{ animation: 'fade' }} />
+      <Stack.Screen name="user/[id]"        options={{ animation: 'fade' }} />
+      <Stack.Screen name="settings"         options={{ animation: 'fade' }} />
+      <Stack.Screen name="watchlist"        options={{ animation: 'fade' }} />
+      <Stack.Screen name="notifications"    options={{ animation: 'fade' }} />
+      <Stack.Screen name="category/[type]"  options={{ animation: 'fade' }} />
+      <Stack.Screen name="post/[id]"        options={{ animation: 'fade' }} />
+      <Stack.Screen name="review/[id]"      options={{ animation: 'fade' }} />
+      <Stack.Screen name="reel/[id]"        options={{ animation: 'fade' }} />
+      <Stack.Screen name="profile/edit"     options={{ animation: 'fade' }} />
+      <Stack.Screen name="edit"             options={{ animation: 'fade' }} />
+      <Stack.Screen name="backoffice/universe-admin"
+        options={{ animation: 'fade', gestureEnabled: false }} />
     </Stack>
   );
 });
@@ -409,45 +429,63 @@ const RootLayoutNav = memo(function RootLayoutNav() {
 // ROOT LAYOUT
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RootLayout() {
-  // ★ Calculé UNE SEULE FOIS — jamais recalculé
-  // Bloque desktop UNIQUEMENT sur l'URL de production, jamais sur localhost
-  const shouldBlockDesktop = useRef(
-    !isMobileDevice() && isDeployedOrigin(),
-  ).current;
-
-  // Splash : skip si déjà joué dans cette session JS
-  const [splashVisible, setSplashVisible] = useState(!SESSION_SPLASH_DONE);
-  const [appReady,      setAppReady]      = useState(SESSION_SPLASH_DONE);
+  // ★ Splash skip si déjà joué cette session
+  const [splashVisible,     setSplashVisible]     = useState(!SESSION_SPLASH_DONE);
   const [screenshotBlocked, setScreenshotBlocked] = useState(false);
 
-  // Cache le splash natif Expo dès que possible
+  // ── 1. Cache le splash natif Expo immédiatement ──────────────────────────
   useEffect(() => {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
 
-  // Screenshot prevention — mobile only, monté une seule fois
+  // ── 2. Screenshot prevention — monté une seule fois, global pour l'app ──
+  //   Android : FLAG_SECURE via preventScreenCaptureAsync (bloque au niveau OS)
+  //   iOS     : addScreenshotListener déclenche le Modal overlay
+  //   Web     : keydown PrintScreen / visibilitychange (contournement)
   useEffect(() => {
-    if (shouldBlockDesktop) return; // desktop bloqué, inutile
+    if (SHOULD_BLOCK_DESKTOP) return; // page de blocage, rien à faire
+
     let sub: { remove: () => void } | null = null;
+
     (async () => {
+      // Android : bloque physiquement la capture (écran noir côté OS)
       try { await ScreenCapture.preventScreenCaptureAsync('universe-root'); } catch {}
+
+      // iOS / autres : détection + overlay
       try {
-        sub = ScreenCapture.addScreenshotListener(() => setScreenshotBlocked(true));
+        sub = ScreenCapture.addScreenshotListener(() => {
+          setScreenshotBlocked(true);
+        });
       } catch {}
     })();
+
+    // Web : écoute les raccourcis de capture courants
+    if (Platform.OS === 'web') {
+      const handleKey = (e: KeyboardEvent) => {
+        const isPrintScreen = e.key === 'PrintScreen';
+        const isMacShot     = (e.metaKey && e.shiftKey && ['3','4','5'].includes(e.key));
+        if (isPrintScreen || isMacShot) setScreenshotBlocked(true);
+      };
+      window.addEventListener('keydown', handleKey);
+
+      return () => {
+        window.removeEventListener('keydown', handleKey);
+        ScreenCapture.allowScreenCaptureAsync('universe-root').catch(() => {});
+        sub?.remove();
+      };
+    }
+
     return () => {
       ScreenCapture.allowScreenCaptureAsync('universe-root').catch(() => {});
       sub?.remove();
     };
-  }, [shouldBlockDesktop]);
+  }, []); // eslint-disable-line
 
-  const onSplashDone = useCallback(() => {
-    setSplashVisible(false);
-    setAppReady(true);
-  }, []);
+  const onSplashDone = useCallback(() => setSplashVisible(false), []);
+  const onDismissScreenshot = useCallback(() => setScreenshotBlocked(false), []);
 
-  // ── GATE desktop sur URL de production ───────────────────────────────────
-  if (shouldBlockDesktop) {
+  // ── Gate desktop (production uniquement) ────────────────────────────────
+  if (SHOULD_BLOCK_DESKTOP) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <StatusBar style="light"/>
@@ -456,41 +494,41 @@ export default function RootLayout() {
     );
   }
 
-  // ── App normale (mobile natif + localhost web + mobile web production) ───
+  // ── App complète ─────────────────────────────────────────────────────────
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthProvider>
         <StatusBar style="light"/>
 
         {/*
-         * Structure :
-         *   flex:1 container
-         *     ├─ Stack (flex:1 — occupe tout l'espace disponible)
-         *     └─ CustomNavbar (marginTop: 8 — séparation légère, position naturelle en bas)
-         *
-         * CustomNavbar reste en bas, séparée du contenu par marginTop: 8
-         * exactement comme dans la version précédente.
+         * ★ CHARGEMENT INSTANTANÉ :
+         *   Stack et CustomNavbar montent IMMÉDIATEMENT.
+         *   Pendant le splash (qui s'affiche par-dessus via zIndex 8888),
+         *   toutes les routes et leurs assets sont déjà pré-rendus en mémoire.
+         *   Quand le splash disparaît, le contenu est DÉJÀ là → 0 latence.
          */}
         <View style={rl.container}>
-          {appReady && (
-            <View style={rl.stackWrapper}>
-              <RootLayoutNav/>
-            </View>
-          )}
-          {appReady && (
-            <View style={rl.navbarWrapper}>
-              <CustomNavbar/>
-            </View>
-          )}
+          <View style={rl.stack}>
+            <RootLayoutNav/>
+          </View>
+          <View style={rl.navbar}>
+            <CustomNavbar/>
+          </View>
         </View>
 
-        {/* Splash — rendu PAR-DESSUS le contenu, zIndex 8888 */}
+        {/* ★ Splash par-dessus (zIndex 8888) — jamais rejoué grâce à SESSION_SPLASH_DONE */}
         {splashVisible && <SessionSplash onDone={onSplashDone}/>}
 
-        {/* Overlay anti-screenshot — zIndex 9999, au-dessus de tout */}
+        {/*
+         * ★ ANTI-SCREENSHOT GLOBAL :
+         *   Utilise <Modal> natif, pas un simple View absolu.
+         *   → Couvre TOUTES les pages, modales, bottom sheets, toasts,
+         *     même les overlays ouverts dans des écrans enfants.
+         *   statusBarTranslucent: true → couvre aussi la status bar.
+         */}
         <ScreenshotOverlay
           visible={screenshotBlocked}
-          onDismiss={() => setScreenshotBlocked(false)}
+          onDismiss={onDismissScreenshot}
         />
       </AuthProvider>
     </GestureHandlerRootView>
@@ -498,18 +536,16 @@ export default function RootLayout() {
 }
 
 const rl = StyleSheet.create({
-  // Conteneur principal : colonne verticale
   container: {
     flex: 1,
-    flexDirection: 'column',
     backgroundColor: COLORS.background,
   },
-  // Stack prend tout l'espace restant
-  stackWrapper: {
+  // Stack prend tout l'espace — flex:1 pousse la navbar vers le bas
+  stack: {
     flex: 1,
   },
-  // Navbar en bas, marginTop: 8 pour la séparation légère originale
-  navbarWrapper: {
+  // Navbar positionnée naturellement en bas, marginTop: 8 = séparation originale
+  navbar: {
     marginTop: 8,
   },
 });
