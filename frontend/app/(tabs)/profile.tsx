@@ -33,11 +33,13 @@ import {
 import { type ReviewItem } from '../../components/profile/data';
 import { supabase }        from '@/lib/supabase';
 
-let VideoThumbnails: any = null;
-if (Platform.OS !== 'web') {
-  try { VideoThumbnails = require('expo-video-thumbnails'); } catch {}
-}
-import LOGO from '../../assets/images/logouniverse2.png';
+// Platform.select est respecté par Metro pour le tree-shaking (contrairement à if/Platform.OS)
+const VideoThumbnails: any = Platform.select({
+  native: () => { try { return require('expo-video-thumbnails'); } catch { return null; } },
+  default: () => null,
+})?.() ?? null;
+let LOGO: any = null;
+try { LOGO = require('@/assets/images/logouniverse2.png'); } catch {}
 
 // ─── PALETTE ─────────────────────────────────────────────────────────────────
 const C = {
@@ -552,14 +554,12 @@ const ProfileHeader = memo(({profile,filmCount,critiqueCount,reelCount,level,onE
     {key:'im',icon:'film-outline'     as any,url:profile.social_imdb,     label:'IMDb'     },
     {key:'ws',icon:'globe-outline'    as any,url:profile.website,         label:'Portfolio'},
   ].filter(l=>!!l.url),[profile]);
-  
+  const avatarUri=profile.avatar_url||`https://i.pravatar.cc/150?u=${profile.username}`;
   return (
     <View style={hdr.wrap}>
       <View style={hdr.topRow}>
         <View style={hdr.avatarWrap}>
-          <View style={[hdr.avatar, {backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center'}]}>
-            <Ionicons name="person-circle-outline" size={60} color={C.mid}/>
-          </View>
+          <ImageWithFallback uri={avatarUri} style={hdr.avatar} fallbackColors={[C.navyMid,C.navyLow]}/>
           <View style={hdr.lvlBadge}><Text style={hdr.lvlTxt}>{level.level}</Text></View>
           {profile.is_pro&&<View style={hdr.proBadge}><Ionicons name="checkmark-circle" size={15} color={C.white}/></View>}
         </View>
@@ -700,6 +700,8 @@ const nav = StyleSheet.create({
   dot:     {position:'absolute',top:7,right:7,width:6,height:6,borderRadius:3,backgroundColor:C.white,borderWidth:1,borderColor:C.bg},
 });
 
+type GridTab = 0 | 1 | 2;
+
 // ─── SCREEN ───────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const router = useRouter();
@@ -716,23 +718,12 @@ export default function ProfileScreen() {
   const [refreshing,setRefreshing] = useState(false);
   const [activeTab,setActiveTab]   = useState<GridTab>(0);
 
-  // ── 1. Récupère le UID depuis la session locale ou crée une session anonyme ──
+  // ── 1. Récupère le UID depuis la session locale (gérée par Supabase) ────────
   useEffect(() => {
     // Lecture immédiate de la session stockée localement
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user?.id) {
-        setUid(session.user.id);
-      } else {
-        // ★ CRÉATION D'UNE SESSION ANONYME SI AUCUNE SESSION N'EXISTE
-        const { data: anonData, error } = await supabase.auth.signInAnonymously();
-        if (anonData?.session?.user?.id) {
-          setUid(anonData.session.user.id);
-        } else if (error) {
-          console.warn('[profile] Erreur signInAnonymously:', error.message);
-        }
-      }
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setUid(session.user.id);
     });
-
     // Écoute les changements (connexion, déconnexion, refresh token)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       setUid(session?.user?.id ?? null);
