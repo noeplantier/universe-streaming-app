@@ -521,7 +521,6 @@ export default function SocialScreen(){
   const Header=(
     <View style={sc.header}><View><Text style={sc.eyebrow}>UNIVERSE · CINÉMA</Text><Text style={sc.title}>Communauté</Text></View><View style={{flexDirection:'row',gap:8}}>
       <TouchableOpacity style={sc.iconBtn} onPress={()=>router.push('/notifications' as any)} activeOpacity={0.80}><Ionicons name="notifications-outline" size={17} color={C.mid}/><View style={sc.notifDot}/></TouchableOpacity>
-      <TouchableOpacity style={[sc.iconBtn,sc.composeBtnStyle]} onPress={()=>setCompose(true)} activeOpacity={0.85}><Ionicons name="create-outline" size={17} color={C.offWhite}/></TouchableOpacity>
     </View></View>
   );
   const Tabs=(
