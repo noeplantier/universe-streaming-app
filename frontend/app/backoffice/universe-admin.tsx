@@ -1,19 +1,3 @@
-/**
- * app/backoffice/universe-admin.tsx
- * Universe Office — Back-office de modération vidéo
- *
- * ✦ Analyse de sécurité autonome (AI-type) sur titre/synopsis/genre
- * ✦ Score de sécurité 0→100 + flags détaillés (vulgarité, vie privée, violence)
- * ✦ Recommandation automatique : Approuver / Vérifier / Rejeter
- * ✦ Miniatures vidéo dans chaque card (expo-video)
- * ✦ Filtres avancés : statut · genre · score · date · texte libre
- * ✦ Selection multiple + actions groupées (bulk)
- * ✦ Modal de détail complet : vidéo + métadonnées + timeline de modération
- * ✦ Re-approbation avec log de motif
- * ✦ Analytics en temps réel : compteurs, taux d'approbation, alertes IA
- * ✦ Realtime Supabase : INSERT/UPDATE live sans refresh
- */
-
 import React, {
     memo, useCallback, useEffect, useMemo, useRef, useState,
   } from 'react';
