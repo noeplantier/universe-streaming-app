@@ -5,7 +5,10 @@
 [build]
   command = "npx expo export --platform web"
   publish = "dist"
-  environment = { NODE_VERSION = "20" }
+
+# ★ SYNTAXE CORRIGÉE POUR FORCER NODE 20
+[build.environment]
+  NODE_VERSION = "20"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SPA Redirects (Expo Router / React Router)
