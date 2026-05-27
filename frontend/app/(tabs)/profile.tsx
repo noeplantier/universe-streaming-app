@@ -696,14 +696,6 @@ export default function ProfileScreen() {
             <BadgesRow badges={badges}/>
           </View>
           <View>
-            <View style={{flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:H_PAD,marginBottom:10}}>
-              <Ionicons name="compass-outline" size={12} color={C.mid}/>
-              <Text style={{color:C.white,fontSize:15,fontWeight:'800'}}>Missions</Text>
-              <View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginLeft:'auto' as any}}>
-                <Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{missions.filter(m=>m.completed).length}/{missions.length}</Text>
-              </View>
-            </View>
-            {missions.map(m=><MissionCard key={m.id} mission={m} onPress={()=>{}}/>)}
           </View>
         </View>
 
