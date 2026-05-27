@@ -1,52 +1,23 @@
-# netlify.toml
-# Configuration optimisée pour React Native Web x Supabase sur iOS Safari
-# Universe Streaming App - Expo Router + Netlify
-
 [build]
-  command = "npx expo export --platform web"
+  base = "frontend"
+  command = "npx expo export -p web"
   publish = "dist"
+  environment = { NODE_VERSION = "20" }
 
-# ★ SYNTAXE CORRIGÉE POUR FORCER NODE 20
-[build.environment]
-  NODE_VERSION = "20"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# SPA Redirects (Expo Router / React Router)
-# ─────────────────────────────────────────────────────────────────────────────
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CORS Headers (CRITIQUE pour Supabase sur iOS Safari)
-# ─────────────────────────────────────────────────────────────────────────────
 [[headers]]
   for = "/*"
   [headers.values]
-    # Security Headers
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
-    X-XSS-Protection = "1; mode=block"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co;"
 
-    # CORS (CRITIQUE pour fetch vers Supabase)
-    Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
-    Access-Control-Allow-Headers = "Content-Type, Authorization, ApiKey, x-client-info, x-supabase-api-version"
-    Access-Control-Max-Age = "86400"
-
-    # Content Security Policy (autorise styles inline + Supabase)
-    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' data: https:; font-src 'self' data: https:; connect-src 'self' https://*.supabase.co https://*.supabase.co/rest/v1/* https://*.supabase.co/auth/v1/* https://*.supabase.co/storage/v1/* wss://*.supabase.co/realtime/v1/*; frame-src 'self' https://*.supabase.co;"
-
-    # Performance Headers
-    Vary = "Accept-Encoding"
-    X-DNS-Prefetch-Control = "on"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Cache des assets statiques (optimisation)
-# ─────────────────────────────────────────────────────────────────────────────
 [[headers]]
   for = "/assets/*"
   [headers.values]
@@ -81,14 +52,3 @@
   for = "/*.svg"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Plugins Netlify
-# ─────────────────────────────────────────────────────────────────────────────
-[[plugins]]
-  package = "@netlify/plugin-gzip"
-
-[[plugins]]
-  package = "@netlify/plugin-lighthouse"
-  [plugins.inputs]
-    output_path = "reports/lighthouse.html"
