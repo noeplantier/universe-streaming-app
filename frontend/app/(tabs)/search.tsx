@@ -110,26 +110,7 @@ function buildMissions(stats:UserStats, works:Work[]): Mission[] {
       completed:stats.critiqueCount>=5,
       filter:(w)=>true,
     },
-    {
-      id:'cinephile_experimental',
-      title:'Cinéphile expérimental',
-      desc:'Explorez 3 films de la section Expérimental',
-      reward:'Badge · Esprit libre',
-      icon:'flask-outline',
-      target:3, progress:Math.min(3,stats.watchedGenres['Expérimental']??0),
-      completed:(stats.watchedGenres['Expérimental']??0)>=3,
-      filter:(w)=>(w.genre??'').toLowerCase().includes('expér'),
-    },
-    {
-      id:'ritual_dimanche',
-      title:'Rituel du dimanche',
-      desc:'Regardez un film original Universe',
-      reward:'Accès · Sélection secrète',
-      icon:'moon-outline',
-      target:1, progress:Math.min(1,stats.watchedGenres['Original']??0),
-      completed:(stats.watchedGenres['Original']??0)>=1,
-      filter:(w)=>w.is_original,
-    },
+   
   ];
 }
 
@@ -381,8 +362,6 @@ export default function SearchScreen(){
 
       <SearchOverlay visible={searchOpen} onClose={()=>setSearchOpen(false)} works={works}/>
 
-      {/* Mission filter banner */}
-      {missionFilter&&<View style={{position:'absolute',top:insets.top+60,left:EDGE,right:EDGE,zIndex:20}}><TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:10,padding:12,borderRadius:14,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.borderHi,overflow:'hidden'}} onPress={clearFilter} activeOpacity={0.88}><BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFillObject}/><Ionicons name="filter-outline" size={13} color={C.mid}/><Text style={{flex:1,color:C.offWhite,fontSize:12,fontWeight:'700'}}>Films filtrés par mission · Tap pour effacer</Text><Ionicons name="close-circle" size={16} color={C.muted}/></TouchableOpacity></View>}
 
       <Animated.ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom:120}} scrollEventThrottle={16} onScroll={Animated.event([{nativeEvent:{contentOffset:{y:scrollY}}}],{useNativeDriver:true})}>
 
