@@ -1,31 +1,54 @@
-# netlify.toml
-# Configuration de déploiement pour Universe (Expo Web → Netlify)
-
 [build]
-  # Commande de build Expo pour le web
-  command = "npx expo export --platform web"
-
-  # Répertoire de sortie d'Expo web
+  base = "frontend"
+  command = "npx expo export -p web"
   publish = "dist"
+  environment = { NODE_VERSION = "20" }
 
-# ── Redirects SPA ────────────────────────────────────────────────────────────
 [[redirects]]
-  from   = "/*"
-  to     = "/index.html"
+  from = "/*"
+  to = "/index.html"
   status = 200
 
-# ── En-têtes de sécurité ─────────────────────────────────────────────────────
 [[headers]]
   for = "/*"
   [headers.values]
-    X-Frame-Options        = "DENY"
+    X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
-    Referrer-Policy        = "strict-origin-when-cross-origin"
-    # ✨ Ajoute cette ligne :
-    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:;"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=(), microphone=(), camera=()"
+    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' ws: wss: https: https://*.supabase.co wss://*.supabase.co; media-src 'self' blob: data: https://*.supabase.co https:;"
 
-# ── Cache des assets statiques ───────────────────────────────────────────────
 [[headers]]
   for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/_expo/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.jpg"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.svg"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"

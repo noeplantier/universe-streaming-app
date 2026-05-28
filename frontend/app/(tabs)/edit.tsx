@@ -503,11 +503,7 @@ export default function EditProfileScreen() {
           </TouchableOpacity>
           <View style={{flex:1}}>
             <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
-              <Text style={{color:C.muted,fontSize:8,fontWeight:'800',letterSpacing:2,textTransform:'uppercase'}}>UNIVERSE</Text>
-              <View style={{width:1,height:9,backgroundColor:C.border}}/>
-              <Text style={s.navTitle}>Mon profil</Text>
             </View>
-            {form.display_name?<Text style={{color:C.muted,fontSize:11,marginTop:1}}>{form.display_name}</Text>:<Text style={{color:C.muted,fontSize:11,marginTop:1,fontStyle:'italic'}}>Cinéma indépendant</Text>}
           </View>
           <TouchableOpacity style={[s.saveBtn,saving&&{opacity:0.55}]} onPress={handleSave} disabled={saving} activeOpacity={0.85}>
             {saving?<ActivityIndicator color={C.bg} size="small" style={{width:88}}/>:<Text style={s.saveBtnTxt}>Sauvegarder</Text>}
