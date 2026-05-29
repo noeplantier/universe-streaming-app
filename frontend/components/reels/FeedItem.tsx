@@ -1,17 +1,15 @@
 /**
- * FeedItem.tsx — v FINAL
+ * FeedItem.tsx — UNIVERSE · v3
  *
- * CORRECTIF PRINCIPAL : callback setup stable au niveau module
- * ─────────────────────────────────────────────────────────────
- * Le bug "seule la 1ère vidéo joue" venait du callback inline :
- *
- *   _useVideoPlayer(src, (p) => { p.loop = false; ... })
- *                        ↑ fonction recréée à CHAQUE render
- *
- * expo-video détecte que le setup a changé → recrée le player
- * → la source est rechargée → la vidéo repart de zéro.
- *
- * FIX : callback défini UNE FOIS au niveau du module (jamais recréé).
+ * ★ Tap simple centre → toggle overlay (masque TopHeader, Sidebar, BottomCard, CustomNavBar)
+ * ★ Double-tap → like
+ * ★ Tap gauche/droite → skip ±10s (si overlay visible)
+ * ★ Auto-hide overlay après 3 s d'inactivité
+ * ★ Mise en pause/lecture au tap sur le centre quand overlay visible
+ * ★ TopHeader interne SUPPRIMÉ (duplicata des icônes latérales)
+ * ★ Sidebar gauche (like, mute, save, info) + BottomCard visibles = showUI
+ * ★ setupPlayer stable (module-level)
+ * ★ Seek bar haute précision dans BottomCard
  */
 
 import React, {
@@ -22,7 +20,6 @@ import {
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView }  from 'expo-blur';
 import { Ionicons }  from '@expo/vector-icons';
 import * as Haptics  from 'expo-haptics';
 
@@ -31,7 +28,7 @@ import { P }      from './types';
 import type { FeedFilm } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ CALLBACK STABLE — jamais recréé → expo-video ne recrée pas le player
+// Player setup stable
 // ─────────────────────────────────────────────────────────────────────────────
 function setupPlayer(p: any) {
   if (!p) return;
@@ -55,7 +52,7 @@ let _useEvent:       (player: any, event: string, initial: any) => any =
 
 if (Platform.OS !== 'web') {
   try {
-    const ev     = require('expo-video');
+    const ev        = require('expo-video');
     _useVideoPlayer = ev.useVideoPlayer;
     _VideoView      = ev.VideoView;
     _useEvent       = ev.useEvent ?? require('expo').useEvent;
@@ -64,9 +61,13 @@ if (Platform.OS !== 'web') {
   }
 }
 
-// Hook stable : retourne null si expo-video absent (web)
 const _nullHook = (_src: any, _setup: any) => null;
 const _playerHook = _useVideoPlayer ?? _nullHook;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Constantes
+// ─────────────────────────────────────────────────────────────────────────────
+const UI_AUTO_HIDE_MS = 3000;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
@@ -81,6 +82,8 @@ export interface FeedItemProps {
   insetBot:      number;
   onLike?:       (id: string) => void;
   onInfoPress?:  (f: FeedFilm) => void;
+  /** Callback pour cacher/montrer la CustomNavBar depuis le parent */
+  onUIVisibilityChange?: (visible: boolean) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -90,7 +93,7 @@ const Spinner = memo(function Spinner() {
   const rot = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const a = Animated.loop(
-      Animated.timing(rot, { toValue: 1, duration: 800, useNativeDriver: true })
+      Animated.timing(rot, { toValue:1, duration:800, useNativeDriver:true })
     );
     a.start();
     return () => a.stop();
@@ -100,7 +103,7 @@ const Spinner = memo(function Spinner() {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WebPlayer — <video> HTML pour Expo Web
+// WebPlayer
 // ─────────────────────────────────────────────────────────────────────────────
 interface WebPlayerProps {
   src:      string;
@@ -129,18 +132,18 @@ const WebPlayer = memo(function WebPlayer({
   useEffect(() => {
     const v = ref.current; if (!v) return;
     if (isActive) { v.currentTime = 0; v.play().catch(() => {}); }
-    else          { v.pause();          v.currentTime = 0;        }
+    else          { v.pause(); v.currentTime = 0; }
   }, [isActive]);
 
   useEffect(() => { if (ref.current) ref.current.muted = muted; }, [muted]);
 
   useEffect(() => {
     const v = ref.current; if (!v) return;
-    const onP = () => onPlay(true);
-    const onA = () => onPlay(false);
-    const onT = () => { if (v.duration > 0) onTime(v.currentTime, v.duration); };
-    const onW = () => onWait(true);
-    const onC = () => onWait(false);
+    const onP  = () => onPlay(true);
+    const onA  = () => onPlay(false);
+    const onT  = () => { if (v.duration > 0) onTime(v.currentTime, v.duration); };
+    const onW  = () => onWait(true);
+    const onC  = () => onWait(false);
     v.addEventListener('play',       onP);
     v.addEventListener('pause',      onA);
     v.addEventListener('ended',      onA);
@@ -170,22 +173,42 @@ const WebPlayer = memo(function WebPlayer({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Icône pause/play overlay — centre écran
+// ─────────────────────────────────────────────────────────────────────────────
+const PlayPauseFlash = memo(function PlayPauseFlash({
+  anim, playing,
+}: { anim: Animated.Value; playing: boolean }) {
+  return (
+    <Animated.View
+      style={[fi.ppFlash, { opacity: anim }]}
+      pointerEvents="none"
+    >
+      <View style={fi.ppCircle}>
+        <Ionicons
+          name={playing ? 'pause' : 'play'}
+          size={36}
+          color="rgba(255,255,255,0.95)"
+        />
+      </View>
+    </Animated.View>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FeedItem
 // ─────────────────────────────────────────────────────────────────────────────
 const FeedItem = memo(function FeedItem({
   film, isActive, isNear, screenFocused,
   itemW, itemH, insetBot, onLike, onInfoPress,
+  onUIVisibilityChange,
 }: FeedItemProps) {
   const isWeb = Platform.OS === 'web';
   const src   = film.video_url?.trim() || null;
 
   // ── Player natif ──────────────────────────────────────────────────────────
-  // nativeSrc change selon isNear → expo-video charge/libère la source
-  // setupPlayer est STABLE (module-level) → player jamais recréé par erreur
   const nativeSrc = !isWeb && isNear && src ? src : null;
   const player    = _playerHook(nativeSrc, setupPlayer);
 
-  // Events (depuis expo-video OU expo selon la version)
   const { isPlaying: nativePlaying } = _useEvent(
     player, 'playingChange', { isPlaying: false }
   );
@@ -198,30 +221,48 @@ const FeedItem = memo(function FeedItem({
   );
 
   // ── State ─────────────────────────────────────────────────────────────────
-  const [liked,     setLiked]     = useState(film.is_liked  ?? false);
-  const [muted,     setMuted]     = useState(false);
-  const [saved,     setSaved]     = useState(film.is_saved  ?? false);
-  const [buffering, setBuffering] = useState(true);
-  const [hasErr,    setHasErr]    = useState(false);
-  const [webPlaying,setWebPlaying]= useState(false);
-  const [webCT,     setWebCT]     = useState(0);
-  const [webDur,    setWebDur]    = useState(0);
+  const [liked,      setLiked]      = useState(film.is_liked ?? false);
+  const [muted,      setMuted]      = useState(false);
+  const [saved,      setSaved]      = useState(film.is_saved ?? false);
+  const [buffering,  setBuffering]  = useState(true);
+  const [hasErr,     setHasErr]     = useState(false);
+  const [webPlaying, setWebPlaying] = useState(false);
+  const [webCT,      setWebCT]      = useState(0);
+  const [webDur,     setWebDur]     = useState(0);
+  const [showUI,     setShowUI]     = useState(true);
+  const [isPaused,   setIsPaused]   = useState(false);
 
-  // ── Refs ─────────────────────────────────────────────────────────────────
-  const ctRef   = useRef(0);
-  const endRef  = useRef(false);
-  const seekRef = useRef<((t: number) => void) | null>(null);
-
-  // currentTime synchrone
-  useEffect(() => {
-    if (!isWeb) ctRef.current = nativeCT;
-    else        ctRef.current = webCT;
-  }, [nativeCT, webCT, isWeb]);
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const ctRef       = useRef(0);
+  const endRef      = useRef(false);
+  const seekRef     = useRef<((t: number) => void) | null>(null);
+  const hideTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ppFlashAnim = useRef(new Animated.Value(0)).current;
 
   // ── Métriques ─────────────────────────────────────────────────────────────
   const playing  = isWeb ? webPlaying : nativePlaying;
   const dur      = isWeb ? webDur : (player?.duration ?? 0);
   const progress = dur > 0 ? Math.min(ctRef.current / dur, 1) : 0;
+
+  // ── Sync currentTime ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isWeb) ctRef.current = nativeCT;
+    else        ctRef.current = webCT;
+  }, [nativeCT, webCT, isWeb]);
+
+  // ── Auto-hide overlay ─────────────────────────────────────────────────────
+  const resetHideTimer = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => {
+      setShowUI(false);
+      onUIVisibilityChange?.(false);
+    }, UI_AUTO_HIDE_MS);
+  }, [onUIVisibilityChange]);
+
+  useEffect(() => {
+    if (isActive && showUI && !isPaused) resetHideTimer();
+    return () => { if (hideTimer.current) clearTimeout(hideTimer.current); };
+  }, [isActive, showUI, isPaused, resetHideTimer]);
 
   // ── Status listener (natif) ───────────────────────────────────────────────
   useEffect(() => {
@@ -240,26 +281,21 @@ const FeedItem = memo(function FeedItem({
     return () => { try { sub?.remove(); } catch {} };
   }, [player, isWeb]);
 
-  // ── ★ AUTO-PLAY / AUTO-PAUSE ★ ────────────────────────────────────────────
-  //
-  //   isActive=true  → play() — expo-video met en queue si pas encore prêt
-  //   isActive=false → pause() + reset t=0
-  //
-  //   Note : player est dans les deps MAIS ne change pas entre renders
-  //   puisque le setupPlayer stable empêche expo-video de le recréer.
+  // ── Auto-play / pause ─────────────────────────────────────────────────────
   useEffect(() => {
     if (isWeb || !player) return;
-    if (isActive && screenFocused) {
+    if (isActive && screenFocused && !isPaused) {
       try { player.play(); } catch {}
     } else {
       try { player.pause(); } catch {}
-      const ct = ctRef.current;
-      if (ct > 0.3) {
-        // Tick suivant pour ne pas bloquer le thread natif
-        setTimeout(() => { try { player.seekBy(-ct); } catch {} }, 0);
+      if (!isPaused) {
+        const ct = ctRef.current;
+        if (ct > 0.3) {
+          setTimeout(() => { try { player.seekBy(-ct); } catch {} }, 0);
+        }
       }
     }
-  }, [isActive, screenFocused, player, isWeb]);
+  }, [isActive, screenFocused, player, isWeb, isPaused]);
 
   // Mute natif
   useEffect(() => {
@@ -267,27 +303,31 @@ const FeedItem = memo(function FeedItem({
     try { player.muted = muted; } catch {}
   }, [muted, player, isWeb]);
 
-  // Fin de vidéo → retour t=0
+  // Fin vidéo → retour t=0
   useEffect(() => {
     if (isWeb || !isPlaybackEnded || endRef.current || !player) return;
     endRef.current = true;
+    setIsPaused(false);
     try { player.seekBy(-ctRef.current); } catch {}
   }, [isPlaybackEnded, isWeb, player]);
 
-  // Reset sur changement de film
+  // Reset sur changement film
   useEffect(() => {
     endRef.current = false;
     setHasErr(false); setBuffering(true);
     setWebPlaying(false); setWebCT(0); setWebDur(0);
-  }, [film.id]);
+    setShowUI(true); setIsPaused(false);
+    onUIVisibilityChange?.(true);
+    resetHideTimer();
+  }, [film.id, resetHideTimer, onUIVisibilityChange]);
 
   // ── Callbacks Web ─────────────────────────────────────────────────────────
-  const onWebPlay  = useCallback((v: boolean) => { setWebPlaying(v); setBuffering(false); }, []);
-  const onWebTime  = useCallback((ct: number, d: number) => { setWebCT(ct); setWebDur(d); }, []);
-  const onWebWait  = useCallback((v: boolean) => setBuffering(v), []);
-  const onWebErr   = useCallback(() => { setHasErr(true); setBuffering(false); }, []);
+  const onWebPlay = useCallback((v: boolean) => { setWebPlaying(v); setBuffering(false); }, []);
+  const onWebTime = useCallback((ct: number, d: number) => { setWebCT(ct); setWebDur(d); }, []);
+  const onWebWait = useCallback((v: boolean) => setBuffering(v), []);
+  const onWebErr  = useCallback(() => { setHasErr(true); setBuffering(false); }, []);
 
-  // ── Seek ─────────────────────────────────────────────────────────────────
+  // ── Seek ──────────────────────────────────────────────────────────────────
   const handleSeek = useCallback((sec: number) => {
     if (isWeb) {
       seekRef.current?.(sec);
@@ -296,12 +336,26 @@ const FeedItem = memo(function FeedItem({
     }
   }, [isWeb, player]);
 
-  const handlePlayPause = useCallback(() => {
-    if (!isWeb && player) {
-      try { playing ? player.pause() : player.play(); } catch {}
-    }
-    if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-  }, [isWeb, player, playing]);
+  // ── Play/Pause toggle ─────────────────────────────────────────────────────
+  const flashPlayPause = useCallback(() => {
+    Animated.sequence([
+      Animated.timing(ppFlashAnim, { toValue:1, duration:60,  useNativeDriver:true }),
+      Animated.delay(320),
+      Animated.timing(ppFlashAnim, { toValue:0, duration:200, useNativeDriver:true }),
+    ]).start();
+  }, [ppFlashAnim]);
+
+  const togglePlayPause = useCallback(() => {
+    setIsPaused(prev => {
+      const next = !prev;
+      if (!isWeb && player) {
+        try { next ? player.pause() : player.play(); } catch {}
+      }
+      flashPlayPause();
+      if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      return next;
+    });
+  }, [isWeb, player, flashPlayPause]);
 
   // ── Skip ±10s ─────────────────────────────────────────────────────────────
   const leftBadge  = useRef(new Animated.Value(0)).current;
@@ -321,7 +375,7 @@ const FeedItem = memo(function FeedItem({
     if (!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   }, [dur, handleSeek, flash, leftBadge, rightBadge, isWeb]);
 
-  // ── Like + cœur ───────────────────────────────────────────────────────────
+  // ── Like + cœur animé ─────────────────────────────────────────────────────
   const heartOp    = useRef(new Animated.Value(0)).current;
   const heartScale = heartOp.interpolate({ inputRange:[0,0.4,1], outputRange:[0,1.3,1] });
   const heartAlpha = heartOp.interpolate({ inputRange:[0,0.1,0.85,1], outputRange:[0,1,1,0] });
@@ -336,13 +390,84 @@ const FeedItem = memo(function FeedItem({
     ]).start();
   }, [liked, heartOp, isWeb, film.id, onLike]);
 
-  // Zones de geste : double-tap = like / tap simple = action
+  // ── Gestion des zones de tap (détection simple/double) ───────────────────
   const tL = useRef(0), tC = useRef(0), tR = useRef(0);
-  const tapL = useCallback(() => { const n=Date.now(); n-tL.current<300 ? doLike() : skip(-10); tL.current=n; }, [doLike, skip]);
-  const tapC = useCallback(() => { const n=Date.now(); n-tC.current<300 ? doLike() : handlePlayPause(); tC.current=n; }, [doLike, handlePlayPause]);
-  const tapR = useCallback(() => { const n=Date.now(); n-tR.current<300 ? doLike() : skip(10);  tR.current=n; }, [doLike, skip]);
+
+  const tapL = useCallback(() => {
+    const n = Date.now();
+    if (n - tL.current < 300) {
+      doLike();
+    } else {
+      if (!showUI) {
+        setShowUI(true);
+        onUIVisibilityChange?.(true);
+        resetHideTimer();
+      } else {
+        skip(-10);
+        resetHideTimer();
+      }
+    }
+    tL.current = n;
+  }, [doLike, skip, showUI, resetHideTimer, onUIVisibilityChange]);
+
+  const tapC = useCallback(() => {
+    const n = Date.now();
+    if (n - tC.current < 300) {
+      doLike();
+    } else {
+      if (!showUI) {
+        // Ré-afficher l'overlay sans pauser
+        setShowUI(true);
+        onUIVisibilityChange?.(true);
+        resetHideTimer();
+      } else {
+        // Overlay visible → toggle pause/play
+        togglePlayPause();
+        resetHideTimer();
+      }
+    }
+    tC.current = n;
+  }, [doLike, showUI, togglePlayPause, resetHideTimer, onUIVisibilityChange]);
+
+  const tapR = useCallback(() => {
+    const n = Date.now();
+    if (n - tR.current < 300) {
+      doLike();
+    } else {
+      if (!showUI) {
+        setShowUI(true);
+        onUIVisibilityChange?.(true);
+        resetHideTimer();
+      } else {
+        skip(10);
+        resetHideTimer();
+      }
+    }
+    tR.current = n;
+  }, [doLike, skip, showUI, resetHideTimer, onUIVisibilityChange]);
+
+  // ── Long-tap → force hide (fullscreen propre) ─────────────────────────────
+  const handleLongPress = useCallback(() => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    setShowUI(false);
+    onUIVisibilityChange?.(false);
+  }, [onUIVisibilityChange]);
 
   const zW = itemW / 3;
+
+  // ── Sidebar handlers ──────────────────────────────────────────────────────
+  const handleSideLike = useCallback(() => {
+    setLiked(v => { if (!v) onLike?.(film.id); return !v; });
+    resetHideTimer();
+  }, [film.id, onLike, resetHideTimer]);
+
+  const handleSideMute = useCallback(() => {
+    setMuted(v => !v); resetHideTimer();
+  }, [resetHideTimer]);
+
+  const handleSideSave = useCallback(() => {
+    setSaved(v => !v); resetHideTimer();
+  }, [resetHideTimer]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
@@ -353,7 +478,7 @@ const FeedItem = memo(function FeedItem({
       {/* Fond noir */}
       <View style={[StyleSheet.absoluteFill, fi.bg]} />
 
-      {/* VideoView NATIF — jamais dans Animated.View */}
+      {/* VideoView NATIF */}
       {!isWeb && isNear && !!src && !hasErr && _VideoView && player && (
         <_VideoView
           player={player}
@@ -386,7 +511,7 @@ const FeedItem = memo(function FeedItem({
         </View>
       )}
 
-      {/* Gradient bas */}
+      {/* Gradient bas (toujours visible) */}
       <LinearGradient
         colors={['transparent', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.92)']}
         locations={[0.30, 0.68, 1]}
@@ -394,122 +519,179 @@ const FeedItem = memo(function FeedItem({
         pointerEvents="none"
       />
 
-      {/* Zones de geste */}
-      <TouchableOpacity style={[fi.zone, { left:0    }]} onPress={tapL} activeOpacity={1} />
-      <TouchableOpacity style={[fi.zone, { left:zW   }]} onPress={tapC} activeOpacity={1} />
-      <TouchableOpacity style={[fi.zone, { left:zW*2 }]} onPress={tapR} activeOpacity={1} />
+      {/* ── Zones de geste ────────────────────────────────────────────────── */}
+      <TouchableOpacity
+        style={[fi.zone, { left:0    }]}
+        onPress={tapL}
+        onLongPress={handleLongPress}
+        activeOpacity={1}
+      />
+      <TouchableOpacity
+        style={[fi.zone, { left:zW   }]}
+        onPress={tapC}
+        onLongPress={handleLongPress}
+        activeOpacity={1}
+      />
+      <TouchableOpacity
+        style={[fi.zone, { left:zW*2 }]}
+        onPress={tapR}
+        onLongPress={handleLongPress}
+        activeOpacity={1}
+      />
 
-      {/* Buffering */}
+      {/* ── Flash pause/play ──────────────────────────────────────────────── */}
+      <PlayPauseFlash anim={ppFlashAnim} playing={playing && !isPaused} />
+
+      {/* ── Buffering ─────────────────────────────────────────────────────── */}
       {isActive && buffering && !hasErr && !!src && (
         <View style={fi.center} pointerEvents="none"><Spinner /></View>
       )}
 
-      {/* Erreur */}
+      {/* ── Erreur ────────────────────────────────────────────────────────── */}
       {hasErr && (
         <View style={fi.errBox}>
           <Ionicons name="warning-outline" size={34} color={P.hot} />
           <Text style={fi.errTxt}>Impossible de lire la vidéo</Text>
           <Text style={fi.errUrl} numberOfLines={1}>{src}</Text>
-          <TouchableOpacity style={fi.retryBtn}
-            onPress={() => { setHasErr(false); setBuffering(true); }}>
+          <TouchableOpacity
+            style={fi.retryBtn}
+            onPress={() => { setHasErr(false); setBuffering(true); }}
+          >
             <Ionicons name="refresh" size={14} color="#fff" />
             <Text style={fi.retryTxt}>Réessayer</Text>
           </TouchableOpacity>
         </View>
       )}
 
+      {/* ── Badges skip ───────────────────────────────────────────────────── */}
+      <Animated.View
+        style={[fi.badge, { opacity:leftBadge,  left:16,  top:itemH*0.45 }]}
+        pointerEvents="none"
+      />
+      <Animated.View
+        style={[fi.badge, { opacity:rightBadge, right:16, top:itemH*0.45 }]}
+        pointerEvents="none"
+      />
 
-      {/* Badges skip */}
-      <Animated.View style={[fi.badge, { opacity:leftBadge,  left:16,  top:itemH*0.45 }]} pointerEvents="none">
-      
-      </Animated.View>
-      <Animated.View style={[fi.badge, { opacity:rightBadge, right:16, top:itemH*0.45 }]} pointerEvents="none">
-    
-      </Animated.View>
-
-      {/* Cœur */}
-      <Animated.View style={[fi.heart, { opacity:heartAlpha, transform:[{ scale:heartScale }] }]} pointerEvents="none">
+      {/* ── Cœur double-tap ───────────────────────────────────────────────── */}
+      <Animated.View
+        style={[fi.heart, { opacity:heartAlpha, transform:[{ scale:heartScale }] }]}
+        pointerEvents="none"
+      >
         <Ionicons name="heart" size={90} color={P.red} />
       </Animated.View>
 
-      {/* Sidebar droite */}
-      <View style={fi.sidebar} pointerEvents="box-none">
-
-        <TouchableOpacity style={fi.sBtn}
-          onPress={() => { setLiked(p => { onLike?.(film.id); return !p; }); }}>
-          <View style={[fi.sIcon, liked && fi.sIconOn]}>
-            <Ionicons name={liked ? 'heart' : 'heart-outline'} size={26} color={liked ? P.red : '#fff'} />
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={fi.sBtn} onPress={() => setMuted(p=>!p)}>
-          <View style={[fi.sIcon, muted && fi.sIconOn]}>
-            <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={23} color="#fff" />
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={fi.sBtn} onPress={() => setSaved(p=>!p)}>
-          <View style={[fi.sIcon, saved && fi.sIconOn]}>
-            <Ionicons name={saved ? 'star' : 'star-outline'} size={23} color={saved ? P.gold : '#fff'} />
-          </View>
-        </TouchableOpacity>
-
-        {onInfoPress && (
-          <TouchableOpacity style={fi.sBtn} onPress={() => onInfoPress(film)}>
-            <View style={fi.sIcon}>
-              <Ionicons name="list-outline" size={24} color="rgba(255,255,255,0.75)" />
+      {/* ── Sidebar — visible = showUI ─────────────────────────────────────── */}
+      {showUI && (
+        <View style={fi.sidebar} pointerEvents="box-none">
+          <TouchableOpacity
+            style={fi.sBtn}
+            onPress={handleSideLike}
+          >
+            <View style={[fi.sIcon, liked && fi.sIconOn]}>
+              <Ionicons
+                name={liked ? 'heart' : 'heart-outline'}
+                size={26}
+                color={liked ? P.red : '#fff'}
+              />
             </View>
           </TouchableOpacity>
-        )}
-      </View>
 
-      {/* BottomCard */}
+          <TouchableOpacity style={fi.sBtn} onPress={handleSideMute}>
+            <View style={[fi.sIcon, muted && fi.sIconOn]}>
+              <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={23} color="#fff" />
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={fi.sBtn} onPress={handleSideSave}>
+            <View style={[fi.sIcon, saved && fi.sIconOn]}>
+              <Ionicons
+                name={saved ? 'star' : 'star-outline'}
+                size={23}
+                color={saved ? P.gold : '#fff'}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {onInfoPress && (
+            <TouchableOpacity style={fi.sBtn} onPress={() => { onInfoPress(film); resetHideTimer(); }}>
+              <View style={fi.sIcon}>
+                <Ionicons name="list-outline" size={24} color="rgba(255,255,255,0.75)" />
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* ── BottomCard — visible = showUI ──────────────────────────────────── */}
       <BottomCard
         film={film}
         progress={progress}
         duration={dur}
+        currentTime={ctRef.current}
         isReady={!buffering && !hasErr && !!src}
         insetBot={insetBot}
         onSeek={handleSeek}
+        visible={showUI}
       />
+
     </View>
   );
 });
 
 export default FeedItem;
 
-function fmtN(n: number): string {
-  if (n >= 1_000_000) return `${(n/1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${Math.round(n/1_000)}K`;
-  return String(n || 0);
-}
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const fi = StyleSheet.create({
-  root:       { overflow:'hidden' },
-  bg:         { backgroundColor:'#000' },
-  grad:       { position:'absolute', bottom:0, left:0, right:0, height:'62%' },
-  zone:       { position:'absolute', top:0, bottom:0, width:'33.33%', zIndex:10 },
-  center:     { ...StyleSheet.absoluteFillObject, alignItems:'center', justifyContent:'center', zIndex:20 },
+  root:    { overflow: 'hidden' },
+  bg:      { backgroundColor: '#000' },
+  grad:    { position:'absolute', bottom:0, left:0, right:0, height:'62%' },
+  zone:    { position:'absolute', top:0, bottom:0, width:'33.33%', zIndex:10 },
+  center:  { ...StyleSheet.absoluteFillObject, alignItems:'center', justifyContent:'center', zIndex:20 },
+
   spinner: {
     width:38, height:38, borderRadius:19, borderWidth:3,
     borderColor:'transparent',
     borderTopColor:'rgba(255,255,255,0.90)',
     borderRightColor:'rgba(255,255,255,0.20)',
   },
-  diagBox:    { ...StyleSheet.absoluteFillObject, zIndex:5, alignItems:'center', justifyContent:'center', gap:10 },
-  diagTxt:    { color:'rgba(255,255,255,0.35)', fontSize:13, textAlign:'center' },
-  errBox:     { ...StyleSheet.absoluteFillObject, zIndex:20, alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.88)', gap:12, padding:32 },
-  errTxt:     { color:'rgba(255,255,255,0.70)', fontSize:14, fontWeight:'600' },
-  errUrl:     { color:'rgba(255,255,255,0.28)', fontSize:10, textAlign:'center' },
-  retryBtn:   { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:P.primary, borderRadius:12, paddingHorizontal:18, paddingVertical:10 },
-  retryTxt:   { color:'#fff', fontSize:13, fontWeight:'700' },
-  pauseCircle:{ width:60, height:60, borderRadius:30, overflow:'hidden', alignItems:'center', justifyContent:'center' },
-  badge:      { position:'absolute', zIndex:20 },
-  badgeBlur:  { flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:14, paddingVertical:9, borderRadius:20, overflow:'hidden', borderWidth:1, borderColor:'rgba(255,255,255,0.14)' },
-  badgeTxt:   { color:'#fff', fontSize:14, fontWeight:'800' },
-  heart:      { position:'absolute', top:'50%', left:'50%', marginTop:-45, marginLeft:-45, zIndex:20 },
-  sidebar:    { position:'absolute', right:14, bottom:270, alignItems:'center', gap:20, zIndex:15 },
-  sBtn:       { alignItems:'center', gap:4 },
-  sIcon:      { width:50, height:50, borderRadius:25, backgroundColor:'rgba(0,0,0,0.40)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.12)' },
-  sLbl:       { color:'rgba(255,255,255,0.78)', fontSize:12, fontWeight:'700' },
+
+  diagBox: { ...StyleSheet.absoluteFillObject, zIndex:5, alignItems:'center', justifyContent:'center', gap:10 },
+  diagTxt: { color:'rgba(255,255,255,0.35)', fontSize:13, textAlign:'center' },
+
+  errBox:   { ...StyleSheet.absoluteFillObject, zIndex:20, alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.88)', gap:12, padding:32 },
+  errTxt:   { color:'rgba(255,255,255,0.70)', fontSize:14, fontWeight:'600' },
+  errUrl:   { color:'rgba(255,255,255,0.28)', fontSize:10, textAlign:'center' },
+  retryBtn: { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:P.primary, borderRadius:12, paddingHorizontal:18, paddingVertical:10 },
+  retryTxt: { color:'#fff', fontSize:13, fontWeight:'700' },
+
+  badge: { position:'absolute', zIndex:20 },
+  heart: { position:'absolute', top:'50%', left:'50%', marginTop:-45, marginLeft:-45, zIndex:20 },
+
+  ppFlash: {
+    position:'absolute', zIndex:25,
+    top:'50%', left:'50%',
+    marginTop:-40, marginLeft:-40,
+  },
+  ppCircle: {
+    width:80, height:80, borderRadius:40,
+    backgroundColor:'rgba(0,0,0,0.55)',
+    alignItems:'center', justifyContent:'center',
+    borderWidth:1.5,
+    borderColor:'rgba(255,255,255,0.25)',
+  },
+
+  sidebar: {
+    position:  'absolute',
+    right:      14,
+    bottom:    270,
+    alignItems:'center',
+    gap:        20,
+    zIndex:     15,
+  },
+  sBtn:    { alignItems:'center', gap:4 },
+  sIcon:   { width:50, height:50, borderRadius:25, backgroundColor:'rgba(0,0,0,0.40)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.12)' },
+  sIconOn: { backgroundColor:'rgba(255,255,255,0.15)' },
 });

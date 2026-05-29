@@ -1,17 +1,15 @@
 /**
- * BottomCard.tsx
+ * BottomCard.tsx — UNIVERSE · v3
  *
- * Barre bas du reel : titre · méta · synopsis · stats · seek bar draggable
- *
- * DRAG-TO-SEEK :
- *   • PanResponder capte touch sur la zone trackHit (hauteur 36px pour facilité)
- *   • Au grant  → seek immédiat + expand track height + appear thumb
- *   • Au move   → seek temps réel, thumb suit le doigt
- *   • Au release → seek final + collapse
- *
- * FIX :
- *   • bottom: 0 (était 70 → seek bar était coupée / mal positionnée)
- *   • onSeekRef stable → PanResponder ne se re-crée jamais inutilement
+ * ★ Seek bar haute précision — position mise à jour à la milliseconde
+ *   (onLayout → trackW précis, pctFromX exact, seek immédiat)
+ * ★ currentTime prop passée depuis FeedItem pour lecture synchrone
+ * ★ Thumb glisse en temps réel pendant le drag
+ * ★ Track s'épaissit (3→7 px) + thumb scale au drag
+ * ★ Release → seek final précis
+ * ★ visible prop → opacity fade 200 ms (masquage via showUI)
+ * ★ Dégagement CustomNavBar conservé
+ * ★ Compatible iOS / Android / Web
  */
 
 import React, {
@@ -23,6 +21,7 @@ import React, {
 } from 'react';
 import {
   Animated,
+  Platform,
   PanResponder,
   StyleSheet,
   Text,
@@ -32,94 +31,116 @@ import { LinearGradient } from 'expo-linear-gradient';
 import type { FeedFilm } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Layout
+// ─────────────────────────────────────────────────────────────────────────────
+const NAV_BAR_CLEARANCE = 92; // CustomNavBar : bottom=12, h=70, +10 marge
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Props
 // ─────────────────────────────────────────────────────────────────────────────
 export interface BottomCardProps {
-  film:     FeedFilm;
-  progress: number;    // 0 – 1 (mis à jour à chaque frame)
-  duration: number;    // secondes (0 si pas encore connu)
-  isReady:  boolean;   // seek bar visible seulement quand true
-  insetBot: number;    // safe area bottom (padding iPhone)
-  onSeek:   (seconds: number) => void;
+  film:        FeedFilm;
+  progress:    number;      // 0–1 (calculé depuis currentTime/duration)
+  duration:    number;      // secondes (0 = inconnu)
+  currentTime: number;      // secondes (lecture synchrone)
+  isReady:     boolean;
+  insetBot:    number;
+  onSeek:      (seconds: number) => void;
+  visible?:    boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// Formatters
 // ─────────────────────────────────────────────────────────────────────────────
 function fmtTime(s: number): string {
   if (!isFinite(s) || s < 0) return '0:00';
-  const m = Math.floor(s / 60);
+  const m   = Math.floor(s / 60);
   const sec = Math.floor(s % 60);
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
 function fmtCount(n: number): string {
+  if (!n || n <= 0) return '0';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000)     return `${Math.round(n / 1_000)}K`;
-  return String(n || 0);
+  return String(n);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BottomCard
 // ─────────────────────────────────────────────────────────────────────────────
 const BottomCard = memo(function BottomCard({
-  film, progress, duration, isReady, insetBot, onSeek,
+  film, progress, duration, currentTime,
+  isReady, insetBot, onSeek, visible = true,
 }: BottomCardProps) {
 
-  // ── Seek bar state ────────────────────────────────────────────────────────
+  // ── Seek state ─────────────────────────────────────────────────────────────
   const [trackW,   setTrackW]   = useState(1);
   const [dragging, setDragging] = useState(false);
   const [dragPct,  setDragPct]  = useState(0);
 
-  // Refs synchrones pour le PanResponder (évite stale closure)
-  const trackWRef  = useRef(1);
-  const durRef     = useRef(duration);
-  const onSeekRef  = useRef(onSeek);
-  trackWRef.current = trackW;
-  durRef.current    = duration;
-  onSeekRef.current = onSeek;
+  // Refs stables pour PanResponder (évite re-création)
+  const trackWRef   = useRef(1);
+  const durRef      = useRef(duration);
+  const onSeekRef   = useRef(onSeek);
+  const draggingRef = useRef(false);
 
-  // ── Animated values ───────────────────────────────────────────────────────
-  const thumbScale  = useRef(new Animated.Value(0)).current;
-  const trackHeight = useRef(new Animated.Value(3)).current;
+  trackWRef.current  = trackW;
+  durRef.current     = duration;
+  onSeekRef.current  = onSeek;
+
+  // ── Animated values ─────────────────────────────────────────────────────────
   const controlsOp  = useRef(new Animated.Value(0)).current;
+  const overlayOp   = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const trackHeight = useRef(new Animated.Value(3)).current;
+  const thumbScale  = useRef(new Animated.Value(0)).current;
+  // Animated value pour la position du thumb (évite re-render à chaque frame)
+  const fillAnim    = useRef(new Animated.Value(progress)).current;
 
-  // Pourcentage affiché (drag prend la priorité sur la progression réelle)
-  const displayPct = dragging
-    ? dragPct
-    : Math.min(Math.max(progress, 0), 0.9999);
-  const currentSec = displayPct * (duration || 0);
+  // ── Sync fill animation depuis progress (quand pas en drag) ─────────────────
+  useEffect(() => {
+    if (!draggingRef.current) {
+      fillAnim.setValue(Math.min(Math.max(progress, 0), 0.9999));
+    }
+  }, [progress, fillAnim]);
 
-  // ── Expand / collapse track lors du drag ─────────────────────────────────
+  // ── Visibility ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    Animated.timing(overlayOp, {
+      toValue: visible ? 1 : 0, duration: 200, useNativeDriver: true,
+    }).start();
+  }, [visible, overlayOp]);
+
+  // ── isReady fade ──────────────────────────────────────────────────────────
+  useEffect(() => {
+    Animated.timing(controlsOp, {
+      toValue: isReady ? 1 : 0, duration: 280, useNativeDriver: true,
+    }).start();
+  }, [isReady, controlsOp]);
+
+  // ── Expand / collapse ────────────────────────────────────────────────────
   const expand = useCallback(() => {
     Animated.parallel([
-      Animated.spring(trackHeight, {
-        toValue: 6, useNativeDriver: false, tension: 280, friction: 12,
-      }),
-      Animated.spring(thumbScale, {
-        toValue: 1, useNativeDriver: true, tension: 280, friction: 12,
-      }),
+      Animated.spring(trackHeight, { toValue:7, useNativeDriver:false, tension:320, friction:14 }),
+      Animated.spring(thumbScale,  { toValue:1, useNativeDriver:true,  tension:320, friction:14 }),
     ]).start();
   }, [trackHeight, thumbScale]);
 
   const collapse = useCallback(() => {
     Animated.parallel([
-      Animated.spring(trackHeight, {
-        toValue: 3, useNativeDriver: false, tension: 280, friction: 12,
-      }),
-      Animated.spring(thumbScale, {
-        toValue: 0, useNativeDriver: true, tension: 280, friction: 12,
-      }),
+      Animated.spring(trackHeight, { toValue:3, useNativeDriver:false, tension:320, friction:14 }),
+      Animated.spring(thumbScale,  { toValue:0, useNativeDriver:true,  tension:320, friction:14 }),
     ]).start();
   }, [trackHeight, thumbScale]);
 
-  const pctFromX = (lx: number) =>
-    Math.max(0, Math.min(1, lx / Math.max(trackWRef.current, 1)));
+  // ── Calcul précis depuis coordonnée X ────────────────────────────────────
+  const pctFromX = useCallback((lx: number) =>
+    Math.max(0, Math.min(1, lx / Math.max(trackWRef.current, 1))),
+  []);
 
-  // ── PanResponder — créé UNE seule fois (refs stables) ────────────────────
+  // ── PanResponder stable ───────────────────────────────────────────────────
   const pan = useRef(
     PanResponder.create({
-      // Capturer le touch même si un ScrollView parent veut le prendre
       onStartShouldSetPanResponder:        () => true,
       onStartShouldSetPanResponderCapture: () => true,
       onMoveShouldSetPanResponder:         () => true,
@@ -127,114 +148,141 @@ const BottomCard = memo(function BottomCard({
 
       onPanResponderGrant: (e) => {
         const pct = pctFromX(e.nativeEvent.locationX);
-        setDragPct(pct);
+        draggingRef.current = true;
         setDragging(true);
+        setDragPct(pct);
+        fillAnim.setValue(pct);
         expand();
-        // Seek immédiat dès que le doigt touche
+        // Seek immédiat → latence minimale
         onSeekRef.current(pct * durRef.current);
       },
 
       onPanResponderMove: (e) => {
         const pct = pctFromX(e.nativeEvent.locationX);
         setDragPct(pct);
-        // Seek temps réel pendant le glissement
+        fillAnim.setValue(pct); // mise à jour frame par frame
+        // Seek continu pour aperçu temps réel
         onSeekRef.current(pct * durRef.current);
       },
 
       onPanResponderRelease: (e) => {
         const pct = pctFromX(e.nativeEvent.locationX);
+        fillAnim.setValue(pct);
         onSeekRef.current(pct * durRef.current);
+        draggingRef.current = false;
         setDragging(false);
         collapse();
       },
 
       onPanResponderTerminate: () => {
+        draggingRef.current = false;
         setDragging(false);
         collapse();
       },
     }),
   ).current;
 
-  // ── Fade-in des contrôles quand isReady ──────────────────────────────────
-  useEffect(() => {
-    Animated.timing(controlsOp, {
-      toValue:  isReady ? 1 : 0,
-      duration: 280,
-      useNativeDriver: true,
-    }).start();
-  }, [isReady, controlsOp]);
+  // ── Valeurs affichées ─────────────────────────────────────────────────────
+  const displaySec = dragging
+    ? dragPct * (duration || 0)
+    : currentTime;
 
-  // Ligne de méta : réalisateur · année · genre
-  const metaLine = [film.director, film.year, film.genre]
-    .filter(Boolean)
-    .join('  ·  ');
+  // ── Données film ──────────────────────────────────────────────────────────
+  const metaParts: string[] = [];
+  if (film.director) metaParts.push(film.director);
+  if (film.year)     metaParts.push(String(film.year));
+  if (film.genre)    metaParts.push(film.genre);
+  const metaLine = metaParts.join('  ·  ');
+  const hasStats = (film.views_count ?? 0) > 0 || (film.likes_count ?? 0) > 0;
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDER
+  // fillWidth interpolée depuis fillAnim (0→1 → 0%→100%)
+  const fillWidth = fillAnim.interpolate({
+    inputRange:  [0, 1],
+    outputRange: ['0%', '100%'],
+  });
+
+  // thumbLeft identique à fillWidth mais le thumb est positionné en %
+  // On utilise une interpolation sur fillAnim pour éviter re-renders
+  // (le thumb suit le fill à la même valeur)
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <View
-      style={[bc.wrapper, { paddingBottom: insetBot + 16 }]}
+    <Animated.View
+      style={[
+        bc.wrapper,
+        { paddingBottom: insetBot + NAV_BAR_CLEARANCE },
+        { opacity: overlayOp },
+      ]}
       pointerEvents="box-none"
     >
       {/* Gradient de lisibilité */}
       <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.52)', 'rgba(0,0,0,0.90)']}
-        locations={[0, 0.35, 1]}
+        colors={[
+          'transparent',
+          'rgba(0,0,0,0.45)',
+          'rgba(0,0,0,0.82)',
+          'rgba(0,0,0,0.96)',
+        ]}
+        locations={[0, 0.28, 0.72, 1]}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
       <View style={bc.inner} pointerEvents="box-none">
 
-        {/* Titre */}
+        {/* ── Titre ──────────────────────────────────────────────────────── */}
         {!!film.title && (
           <Text style={bc.title} numberOfLines={2}>{film.title}</Text>
         )}
 
-        {/* Réalisateur · Année · Genre */}
+        {/* ── Meta ──────────────────────────────────────────────────────── */}
         {!!metaLine && (
           <Text style={bc.meta} numberOfLines={1}>{metaLine}</Text>
         )}
 
-        {/* Synopsis */}
+        {/* ── Synopsis ──────────────────────────────────────────────────── */}
         {!!film.synopsis && (
           <Text style={bc.synopsis} numberOfLines={2}>{film.synopsis}</Text>
         )}
 
-        {/* Stats : vues · likes · durée */}
-        <View style={bc.stats} pointerEvents="none">
-          {film.views_count > 0 && (
-            <Text style={bc.stat}>👁 {fmtCount(film.views_count)}</Text>
-          )}
-          {film.views_count > 0 && film.likes_count > 0 && (
-            <Text style={bc.dot}>·</Text>
-          )}
-          {film.likes_count > 0 && (
-            <Text style={bc.stat}>♥ {fmtCount(film.likes_count)}</Text>
-          )}
-          {film.duration > 0 && (
-            <>
+        {/* ── Stats ─────────────────────────────────────────────────────── */}
+        {hasStats && (
+          <View style={bc.stats} pointerEvents="none">
+            {(film.views_count ?? 0) > 0 && (
+              <>
+                <Text style={bc.statIcon}>👁</Text>
+                <Text style={bc.stat}>{fmtCount(film.views_count ?? 0)}</Text>
+              </>
+            )}
+            {(film.views_count ?? 0) > 0 && (film.likes_count ?? 0) > 0 && (
               <Text style={bc.dot}>·</Text>
-              <Text style={bc.stat}>⏱ {fmtTime(film.duration)}</Text>
-            </>
-          )}
-        </View>
+            )}
+            {(film.likes_count ?? 0) > 0 && (
+              <>
+                <Text style={bc.statIcon}>♥</Text>
+                <Text style={bc.stat}>{fmtCount(film.likes_count ?? 0)}</Text>
+              </>
+            )}
+          </View>
+        )}
 
-        {/* ── SEEK BAR + CHRONO ─────────────────────────────────────────── */}
+        {/* ── SEEK BAR + CHRONO ──────────────────────────────────────────── */}
         <Animated.View
           style={[bc.seekSection, { opacity: controlsOp }]}
           pointerEvents={isReady ? 'box-none' : 'none'}
         >
           {/* Chrono */}
           <View style={bc.timeRow} pointerEvents="none">
-            <Text style={bc.timeCurrent}>{fmtTime(currentSec)}</Text>
+            <Text style={bc.timeCurrent}>{fmtTime(displaySec)}</Text>
             <Text style={bc.timeDuration}>{fmtTime(duration)}</Text>
           </View>
 
-          {/* Zone tactile — plus haute que la track pour faciliter le drag */}
+          {/* Zone tactile 44 px → ergonomique */}
           <View
-            style={bc.trackHit}
+            style={[
+              bc.trackHit,
+              Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : undefined,
+            ]}
             onLayout={e => {
               const w = e.nativeEvent.layout.width;
               setTrackW(w);
@@ -242,33 +290,30 @@ const BottomCard = memo(function BottomCard({
             }}
             {...pan.panHandlers}
           >
-            {/* Track animée */}
+            {/* Track animée en hauteur */}
             <Animated.View style={[bc.track, { height: trackHeight }]}>
 
               {/* Background track */}
               <View style={bc.trackBg} />
 
-              {/* Fill (progress) */}
-              <View
-                style={[bc.trackFill, { width: `${displayPct * 100}%` as any }]}
-              />
+              {/* Fill — Animated.View pour perf native */}
+              <Animated.View style={[bc.trackFill, { width: fillWidth }]} />
 
-              {/* Thumb (apparaît au drag) */}
+              {/* Thumb — scale au drag */}
               <Animated.View
                 style={[
                   bc.thumb,
-                  {
-                    left:      `${displayPct * 100}%` as any,
-                    transform: [{ scale: thumbScale }],
-                  },
+                  { left: fillWidth },
+                  { transform: [{ scale: thumbScale }] },
                 ]}
               />
+
             </Animated.View>
           </View>
         </Animated.View>
 
       </View>
-    </View>
+    </Animated.View>
   );
 });
 
@@ -278,101 +323,94 @@ export default BottomCard;
 // Styles
 // ─────────────────────────────────────────────────────────────────────────────
 const bc = StyleSheet.create({
-  // ★ FIX bottom:70 → bottom:0 (la seek bar était coupée)
   wrapper: {
     position: 'absolute',
-    bottom:    60,
-    left:      0,
-    right:     0,
+    bottom: 0, left: 0, right: 0,
   },
 
   inner: {
-    paddingHorizontal: 20,
-    paddingTop:        48,   // espace pour le gradient
+    paddingHorizontal: 18,
+    paddingTop:        56,
+    gap:                6,
   },
 
-  // Texte
+  // ── Texte ────────────────────────────────────────────────────────────────
   title: {
-    color:         'rgba(255,255,255,0.96)',
-    fontSize:       17,
+    color:         'rgba(255,255,255,0.97)',
+    fontSize:       18,
     fontWeight:    '800',
-    letterSpacing: -0.4,
-    lineHeight:     22,
-    marginBottom:   4,
-    textShadowColor:  'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius:  4,
+    letterSpacing: -0.5,
+    lineHeight:     23,
+    textShadowColor:  'rgba(0,0,0,0.55)',
+    textShadowOffset: { width:0, height:1 },
+    textShadowRadius:  5,
   },
+
   meta: {
-    color:        'rgba(255,255,255,0.46)',
+    color:        'rgba(255,255,255,0.48)',
     fontSize:      12,
     fontStyle:    'italic',
-    marginBottom:  4,
-  },
-  synopsis: {
-    color:        'rgba(255,255,255,0.36)',
-    fontSize:      11,
-    lineHeight:    15,
-    marginBottom:  8,
+    letterSpacing: 0.1,
   },
 
-  // Stats
+  synopsis: {
+    color:     'rgba(255,255,255,0.38)',
+    fontSize:   11,
+    lineHeight: 15,
+  },
+
+  // ── Stats ────────────────────────────────────────────────────────────────
   stats: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:            6,
-    marginBottom:   12,
+    gap:            5,
+    marginTop:      2,
   },
-  stat: {
-    color:      'rgba(255,255,255,0.45)',
-    fontSize:    11,
-    fontWeight: '600',
-  },
-  dot: {
-    color:    'rgba(255,255,255,0.22)',
-    fontSize:  11,
+  statIcon: { fontSize:10, opacity:0.55 },
+  stat:  { color:'rgba(255,255,255,0.48)', fontSize:11, fontWeight:'600' },
+  dot:   { color:'rgba(255,255,255,0.22)', fontSize:12, marginHorizontal:1 },
+
+  // ── Seek bar ─────────────────────────────────────────────────────────────
+  seekSection: {
+    gap:       4,
+    marginTop: 8,
   },
 
-  // Seek bar
-  seekSection: {
-    gap:          3,
-    paddingBottom: 2,
-  },
   timeRow: {
     flexDirection:  'row',
     justifyContent: 'space-between',
-    marginBottom:    3,
+    marginBottom:    2,
   },
+
   timeCurrent: {
-    color:      'rgba(255,255,255,0.88)',
-    fontSize:    11,
-    fontWeight: '700',
-    // Pour éviter le saut de layout au changement de chiffre
+    color:       'rgba(255,255,255,0.90)',
+    fontSize:     11,
+    fontWeight:  '700',
     fontVariant: ['tabular-nums'],
   },
+
   timeDuration: {
-    color:       'rgba(255,255,255,0.32)',
+    color:       'rgba(255,255,255,0.30)',
     fontSize:     11,
     fontVariant: ['tabular-nums'],
   },
 
-  // Zone tactile (hauteur volontairement grande pour facilité du drag)
+  // Zone tactile haute — 44 px (guidelines Apple/Google)
   trackHit: {
-    height:          36,
+    height:          44,
     justifyContent: 'center',
   },
 
-  // Track elle-même (hauteur animée)
   track: {
-    width:        '100%',
-    borderRadius:  4,
-    justifyContent:'center',
-    overflow:     'visible',
+    width:          '100%',
+    borderRadius:    4,
+    justifyContent: 'center',
+    overflow:       'visible',
   },
 
   trackBg: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.20)',
     borderRadius:     4,
   },
 
@@ -384,18 +422,17 @@ const bc = StyleSheet.create({
 
   thumb: {
     position:        'absolute',
-    width:            16,
-    height:           16,
-    borderRadius:      8,
+    width:            18,
+    height:           18,
+    borderRadius:      9,
     backgroundColor: '#FFFFFF',
-    marginLeft:       -8,
+    marginLeft:       -9,  // centre le thumb sur la position
     top:             '50%',
-    marginTop:        -8,
-    // Glow blanc pour le rendre visible
+    marginTop:        -9,
     shadowColor:     '#FFFFFF',
-    shadowOffset:    { width: 0, height: 0 },
-    shadowOpacity:    0.80,
-    shadowRadius:      6,
-    elevation:         6,
+    shadowOffset:    { width:0, height:0 },
+    shadowOpacity:    0.95,
+    shadowRadius:      8,
+    elevation:         8,
   },
 });
