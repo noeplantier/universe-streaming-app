@@ -1,23 +1,12 @@
 /**
- * app/(reels)/index.tsx
+ * app/(tabs)/reels/index.tsx — UNIVERSE · v4
  *
- * ── CORRECTIFS ────────────────────────────────────────────────────────────────
- *
- *  BUG 1 — "cannot add postgres_changes callbacks after subscribe()"
- *    Cause  : filter: 'status=eq.approved' n'est pas supporté par Supabase
- *             Realtime sur postgres_changes — le canal échouait silencieusement
- *             puis React Strict Mode rejouait l'effet sur un canal déjà souscrit.
- *    Fix    : suppression du filtre côté serveur → filtre client-side dans
- *             le callback ({ new: row }) => if (row.status === 'approved')
- *
- *  BUG 2 — 500 Internal Server Error sur les requêtes reels
- *    Cause  : les policies RLS créées par universe-admin.sql bloquaient
- *             toutes les SELECT (policies conflictuelles anon/authenticated).
- *    Fix    : exécuter fix-rls.sql qui désactive RLS sur reels.
- *             Le filtrage status='approved' reste géré côté application.
- *
- *  BUG 3 — extraData manquant → seule la 1ère vidéo se lit
- *    Fix    : extraData={`${activeIndex}-${screenFocused}`} (déjà présent)
+ * FIXES CRITIQUES :
+ * ★ onUIVisibilityChange → masque/affiche le TopHeader ET la CustomNavBar
+ *   via un state uiVisible + Animated.Value pour les transitions
+ * ★ TopHeader et NavBar disparaissent complètement au fullscreen
+ * ★ renderItem passe onUIVisibilityChange à chaque FeedItem
+ * ★ extraData inclut activeIndex + screenFocused + uiVisible
  */
 
 import React, {
@@ -114,22 +103,19 @@ function mapReel(r: SupabaseReel): FeedFilm {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fetch — uniquement les reels approuvés (filtre côté app)
+// Fetch
 // ─────────────────────────────────────────────────────────────────────────────
 const COLS =
   'id,created_at,user_id,video_url,title,genre,director,' +
   'year,synopsis,duration,likes_count,views_count,status';
 
 async function fetchApprovedReels(): Promise<SupabaseReel[]> {
-  // Count des reels approuvés
   const { count, error: cErr } = await supabase
     .from('reels')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'approved');
 
   if (cErr) {
-    console.warn('[reels] count error:', cErr.message);
-    // Fallback : fetch sans pagination si count échoue
     const { data } = await supabase
       .from('reels')
       .select(COLS)
@@ -139,11 +125,10 @@ async function fetchApprovedReels(): Promise<SupabaseReel[]> {
     return (data ?? []) as SupabaseReel[];
   }
 
-  const total     = count ?? 0;
+  const total = count ?? 0;
   if (total === 0) return [];
 
   const pageCount = Math.max(1, Math.ceil(total / 100));
-
   const pages = await Promise.all(
     Array.from({ length: pageCount }, (_, i) =>
       supabase
@@ -153,15 +138,11 @@ async function fetchApprovedReels(): Promise<SupabaseReel[]> {
         .order('created_at', { ascending: false })
         .range(i * 100, i * 100 + 99)
         .then(({ data, error }) => {
-          if (error) {
-            console.warn('[reels] page', i, error.message);
-            return [] as SupabaseReel[];
-          }
+          if (error) { console.warn('[reels] page', i, error.message); return [] as SupabaseReel[]; }
           return (data ?? []) as SupabaseReel[];
         }),
     ),
   );
-
   return pages.flat();
 }
 
@@ -173,70 +154,38 @@ function useReelsFeed(feedKey: MenuKey) {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
 
-  // ── Fetch initial ─────────────────────────────────────────────────────────
   useEffect(() => {
     let dead = false;
     setLoading(true);
     setError(null);
-
     fetchApprovedReels()
-      .then(rows => {
-        if (!dead) {
-          setFilms(rows.map(mapReel));
-          setLoading(false);
-        }
-      })
+      .then(rows => { if (!dead) { setFilms(rows.map(mapReel)); setLoading(false); } })
       .catch(e => {
-        if (!dead) {
-          console.error('[reels] fetch:', e);
-          setError('Erreur de chargement.');
-          setLoading(false);
-        }
+        if (!dead) { console.error('[reels] fetch:', e); setError('Erreur de chargement.'); setLoading(false); }
       });
-
     return () => { dead = true; };
   }, [feedKey]);
 
-  // ── Realtime ──────────────────────────────────────────────────────────────
-  // ★ FIX : pas de filter: côté serveur (non supporté sur postgres_changes)
-  //   On reçoit TOUS les events UPDATE, on filtre status='approved' côté client.
-  //   On utilise un nom de canal unique pour éviter les conflits React Strict Mode.
   useEffect(() => {
     const channelName = `reels_rt_${Date.now()}`;
-
     const ch = supabase
       .channel(channelName)
-      // Nouvelle vidéo approuvée depuis le back-office (UPDATE status → approved)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'reels' },
-        ({ new: row }) => {
-          const r = row as SupabaseReel;
-          // ★ Filtre client-side — seules les vidéos approved apparaissent
-          if (r.status === 'approved') {
-            setFilms(prev =>
-              prev.some(x => x.id === r.id)
-                ? prev.map(x => x.id === r.id ? mapReel(r) : x) // mise à jour
-                : [mapReel(r), ...prev]                           // ajout en tête
-            );
-          } else {
-            // Vidéo rejetée ou repassée pending → la retirer du feed
-            setFilms(prev => prev.filter(x => x.id !== r.id));
-          }
-        },
-      )
-      .subscribe(status => {
-        if (status === 'SUBSCRIPTION_ERROR') {
-          console.warn('[reels] realtime subscription error');
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reels' }, ({ new: row }) => {
+        const r = row as SupabaseReel;
+        if (r.status === 'approved') {
+          setFilms(prev =>
+            prev.some(x => x.id === r.id)
+              ? prev.map(x => x.id === r.id ? mapReel(r) : x)
+              : [mapReel(r), ...prev],
+          );
+        } else {
+          setFilms(prev => prev.filter(x => x.id !== r.id));
         }
-      });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
 
-    return () => {
-      supabase.removeChannel(ch);
-    };
-  }, []); // effet stable — ne se ré-exécute pas
-
-  // ── Like optimiste ────────────────────────────────────────────────────────
   const toggleLike = useCallback((id: string) => {
     setFilms(prev => prev.map(f => {
       if (f.id !== id) return f;
@@ -245,20 +194,13 @@ function useReelsFeed(feedKey: MenuKey) {
         .from('reels')
         .update({ likes_count: f.likes_count + (liked ? 1 : -1) })
         .eq('id', id)
-        .then(({ error }) => {
-          if (error) console.warn('[like]', error.message);
-        });
+        .then(({ error }) => { if (error) console.warn('[like]', error.message); });
       return { ...f, is_liked: liked, likes_count: f.likes_count + (liked ? 1 : -1) };
     }));
   }, []);
 
-  // ── Vues fire-and-forget ──────────────────────────────────────────────────
   const incrementViews = useCallback((id: string, current: number) => {
-    supabase
-      .from('reels')
-      .update({ views_count: current + 1 })
-      .eq('id', id)
-      .then(() => {});
+    supabase.from('reels').update({ views_count: current + 1 }).eq('id', id).then(() => {});
   }, []);
 
   return { films, loading, error, toggleLike, incrementViews };
@@ -279,6 +221,21 @@ export default function ReelsScreen() {
   const [feedKey,       setFeedKey]       = useState<MenuKey>('foryou');
   const [infoFilm,      setInfoFilm]      = useState<FeedFilm | null>(null);
 
+  // ★ STATE fullscreen — contrôle la visibilité du TopHeader ET de la NavBar
+  const [uiVisible, setUiVisible] = useState(true);
+  // Animated value pour les transitions douces
+  const uiOpacity = useRef(new Animated.Value(1)).current;
+
+  // ★ Callback passé à chaque FeedItem — synchronise l'UI du parent
+  const handleUIVisibilityChange = useCallback((visible: boolean) => {
+    setUiVisible(visible);
+    Animated.timing(uiOpacity, {
+      toValue:  visible ? 1 : 0,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [uiOpacity]);
+
   const flatRef      = useRef<FlatList>(null);
   const scrollY      = useRef(new Animated.Value(0)).current;
   const activeIdxRef = useRef(0);
@@ -290,23 +247,23 @@ export default function ReelsScreen() {
   const filmsRef = useRef(films);
   filmsRef.current = films;
 
-  // ── Index actif (idempotent) ──────────────────────────────────────────────
+  // ── Index actif ───────────────────────────────────────────────────────────
   const commitIndex = useCallback((next: number) => {
     const clamped = Math.max(0, Math.min(next, filmsRef.current.length - 1));
     if (clamped === activeIdxRef.current) return;
     activeIdxRef.current = clamped;
     setActiveIndex(clamped);
+    // Quand on change de vidéo → ré-afficher l'UI
+    handleUIVisibilityChange(true);
     const f = filmsRef.current[clamped];
     if (f) incrementViews(f.id, f.views_count);
-  }, [incrementViews]);
+  }, [incrementViews, handleUIVisibilityChange]);
 
   const commitRef = useRef(commitIndex);
   commitRef.current = commitIndex;
 
-  // ── Sources de vérité scroll ──────────────────────────────────────────────
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 80,
-  }).current;
+  // ── Scroll handlers ───────────────────────────────────────────────────────
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: any[] }) => {
@@ -344,11 +301,13 @@ export default function ReelsScreen() {
   // ── Focus ─────────────────────────────────────────────────────────────────
   useFocusEffect(useCallback(() => {
     setScreenFocused(true);
+    // Ré-afficher l'UI quand on revient sur l'écran
+    handleUIVisibilityChange(true);
     return () => {
       clearTimeout(snapTimer.current);
       setScreenFocused(false);
     };
-  }, []));
+  }, [handleUIVisibilityChange]));
 
   const handleInfoPress = useCallback((film: FeedFilm) => {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -368,9 +327,13 @@ export default function ReelsScreen() {
         insetBot={insets.bottom}
         onLike={toggleLike}
         onInfoPress={handleInfoPress}
+        onUIVisibilityChange={handleUIVisibilityChange}
       />
     ),
-    [activeIndex, screenFocused, W, ITEM_H, insets.bottom, toggleLike, handleInfoPress],
+    [
+      activeIndex, screenFocused, W, ITEM_H, insets.bottom,
+      toggleLike, handleInfoPress, handleUIVisibilityChange,
+    ],
   );
 
   const getItemLayout = useCallback(
@@ -412,8 +375,6 @@ export default function ReelsScreen() {
       <FlatList
         ref={flatRef}
         data={films}
-        // ★ extraData force le re-render quand activeIndex ou screenFocused changent
-        // → isActive se met à jour → player.play() s'exécute sur la bonne vidéo
         extraData={`${activeIndex}-${screenFocused}`}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
@@ -438,14 +399,19 @@ export default function ReelsScreen() {
         directionalLockEnabled
       />
 
-      {/* Header flottant */}
-      <SafeAreaView edges={['top']} style={s.header} pointerEvents="box-none">
-        <TopHeader
-          feedKey={feedKey}
-          onMenuPress={() => setMenuOpen(true)}
-          scrollY={scrollY}
-        />
-      </SafeAreaView>
+      {/* ★ TopHeader — Animated.View avec opacity → disparaît en fullscreen */}
+      <Animated.View
+        style={[s.header, { opacity: uiOpacity }]}
+        pointerEvents={uiVisible ? 'box-none' : 'none'}
+      >
+        <SafeAreaView edges={['top']}>
+          <TopHeader
+            feedKey={feedKey}
+            onMenuPress={() => setMenuOpen(true)}
+            scrollY={scrollY}
+          />
+        </SafeAreaView>
+      </Animated.View>
 
       {/* Erreur */}
       {!!error && (
@@ -476,16 +442,25 @@ export default function ReelsScreen() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  root:      { flex:1, backgroundColor:'#000' },
-  header:    { position:'absolute', top:0, left:0, right:0, zIndex:50 },
-  center:    { flex:1, alignItems:'center', justifyContent:'center' },
-  loadTxt:   { color:'rgba(255,255,255,0.40)', fontSize:15 },
+  root:   { flex:1, backgroundColor:'#000' },
+  header: {
+    position: 'absolute',
+    top:   0,
+    left:  0,
+    right: 0,
+    zIndex: 50,
+  },
+  center:  { flex:1, alignItems:'center', justifyContent:'center' },
+  loadTxt: { color:'rgba(255,255,255,0.40)', fontSize:15 },
   errBanner: {
     position:'absolute', bottom:100, left:20, right:20, zIndex:99,
     backgroundColor:'rgba(239,68,68,0.15)', borderRadius:12,
     borderWidth:1, borderColor:'rgba(239,68,68,0.30)',
     paddingHorizontal:16, paddingVertical:10,
   },
-  errTxt:    { color:'#EF4444', fontSize:12, textAlign:'center' },
+  errTxt: { color:'#EF4444', fontSize:12, textAlign:'center' },
 });

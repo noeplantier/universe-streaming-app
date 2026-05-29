@@ -170,13 +170,6 @@ const Div=memo(()=>(<View style={{height:StyleSheet.hairlineWidth,backgroundColo
 const SecHead=memo(({icon,label,count,onMore}:{icon:keyof typeof Ionicons.glyphMap;label:string;count?:number;onMore?:()=>void})=>(<View style={{flexDirection:'row',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:22,paddingBottom:12,gap:7}}><Ionicons name={icon} size={13} color={C.mid}/><Text style={{color:C.white,fontSize:15,fontWeight:'800',letterSpacing:-0.2,flex:1}}>{label}</Text>{count!=null&&<View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}><Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{count}</Text></View>}{onMore&&<TouchableOpacity onPress={onMore} hitSlop={8}><Text style={{color:C.muted,fontSize:11,fontWeight:'600'}}>Tout voir</Text></TouchableOpacity>}</View>));
 const Empty=memo(({icon,text,sub}:{icon:keyof typeof Ionicons.glyphMap;text:string;sub?:string})=>(<View style={{alignItems:'center',paddingVertical:32,paddingHorizontal:H_PAD,gap:8}}><View style={{width:52,height:52,borderRadius:26,backgroundColor:C.navyLow,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center'}}><Ionicons name={icon} size={22} color={C.muted}/></View><Text style={{color:C.muted,fontSize:13,fontWeight:'600'}}>{text}</Text>{sub&&<Text style={{color:C.muted,fontSize:11,textAlign:'center',lineHeight:17}}>{sub}</Text>}</View>));
 
-// ─── ★ LEVEL-UP TOAST ─────────────────────────────────────────────────────────
-const LevelUpToast=memo(({visible,level}:{visible:boolean;level:number})=>{
-  const ty=useRef(new Animated.Value(-80)).current,op=useRef(new Animated.Value(0)).current;
-  useEffect(()=>{if(visible){Animated.parallel([Animated.spring(ty,{toValue:0,tension:60,friction:10,useNativeDriver:true}),Animated.timing(op,{toValue:1,duration:300,useNativeDriver:true})]).start();setTimeout(()=>Animated.parallel([Animated.timing(ty,{toValue:-80,duration:300,useNativeDriver:true}),Animated.timing(op,{toValue:0,duration:300,useNativeDriver:true})]).start(),3000);}else{ty.setValue(-80);op.setValue(0);}},[visible]);
-  if(!visible)return null;
-  return(<Animated.View style={{position:'absolute',top:0,left:H_PAD,right:H_PAD,zIndex:999,transform:[{translateY:ty}],opacity:op}}><BlurView intensity={60} tint="dark" style={{borderRadius:16,overflow:'hidden',borderWidth:1,borderColor:C.gold,padding:16}}><View style={{flexDirection:'row',alignItems:'center',gap:12}}><View style={{width:44,height:44,borderRadius:22,backgroundColor:C.goldFaint,borderWidth:1,borderColor:C.gold,alignItems:'center',justifyContent:'center'}}><Text style={{color:C.gold,fontSize:18,fontWeight:'900'}}>{level}</Text></View><View style={{flex:1}}><Text style={{color:C.gold,fontSize:13,fontWeight:'900',letterSpacing:0.5}}>NIVEAU {level} ATTEINT !</Text><Text style={{color:C.muted,fontSize:11,marginTop:2}}>Votre cinéphilie évolue…</Text></View><Ionicons name="star" size={20} color={C.gold}/></View></BlurView></Animated.View>);
-});
 
 // ─── AVATAR / MONOGRAMME ──────────────────────────────────────────────────────
 const Avatar=memo(({name,level,isPro,url}:{name:string;level:number;isPro:boolean;url:string})=>{
@@ -608,7 +601,6 @@ export default function ProfileScreen() {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <StatusBar style="light" />
       <GalaxyBackground />
-      <LevelUpToast visible={levelUpVisible} level={level.n} />
       <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRef(true); if (isUUID(uid)) loadAll(uid!); }} tintColor={C.mid} />}>
         <SafeAreaView edges={['top']}>
           <LinearGradient colors={['rgba(7,12,23,0.70)', 'transparent']} style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 160 }} pointerEvents="none" />

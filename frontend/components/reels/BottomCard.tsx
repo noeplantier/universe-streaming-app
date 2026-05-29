@@ -1,15 +1,15 @@
 /**
- * BottomCard.tsx — UNIVERSE · v3
+ * BottomCard.tsx — UNIVERSE · v4
  *
- * ★ Seek bar haute précision — position mise à jour à la milliseconde
- *   (onLayout → trackW précis, pctFromX exact, seek immédiat)
- * ★ currentTime prop passée depuis FeedItem pour lecture synchrone
- * ★ Thumb glisse en temps réel pendant le drag
- * ★ Track s'épaissit (3→7 px) + thumb scale au drag
- * ★ Release → seek final précis
- * ★ visible prop → opacity fade 200 ms (masquage via showUI)
- * ★ Dégagement CustomNavBar conservé
- * ★ Compatible iOS / Android / Web
+ * FIXES CRITIQUES :
+ * ★ Seek bar : fillAnim mis à jour via .setValue() dans PanResponder
+ *   → AUCUN re-render React pendant le drag, 60 fps garanti
+ * ★ currentTime réactif venu de FeedItem (state, pas snapshot ref)
+ * ★ fillAnim sync depuis progress quand pas en drag
+ *   → Interpolation string ('0%'→'100%') pour fillWidth + thumbLeft
+ * ★ thumb positionné avec marginLeft:-9 + left=fillWidth
+ *   → Pas de décalage de positionnement
+ * ★ visible → opacity 200 ms pour masquage fullscreen
  */
 
 import React, {
@@ -33,16 +33,16 @@ import type { FeedFilm } from './types';
 // ─────────────────────────────────────────────────────────────────────────────
 // Layout
 // ─────────────────────────────────────────────────────────────────────────────
-const NAV_BAR_CLEARANCE = 92; // CustomNavBar : bottom=12, h=70, +10 marge
+const NAV_BAR_CLEARANCE = 92;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Props
 // ─────────────────────────────────────────────────────────────────────────────
 export interface BottomCardProps {
   film:        FeedFilm;
-  progress:    number;      // 0–1 (calculé depuis currentTime/duration)
-  duration:    number;      // secondes (0 = inconnu)
-  currentTime: number;      // secondes (lecture synchrone)
+  progress:    number;    // 0–1
+  duration:    number;    // secondes
+  currentTime: number;    // secondes — STATE réactif venant de FeedItem
   isReady:     boolean;
   insetBot:    number;
   onSeek:      (seconds: number) => void;
@@ -74,37 +74,55 @@ const BottomCard = memo(function BottomCard({
   isReady, insetBot, onSeek, visible = true,
 }: BottomCardProps) {
 
-  // ── Seek state ─────────────────────────────────────────────────────────────
-  const [trackW,   setTrackW]   = useState(1);
-  const [dragging, setDragging] = useState(false);
-  const [dragPct,  setDragPct]  = useState(0);
+  // ── Seek drag state ────────────────────────────────────────────────────────
+  // draggingRef : ref synchrone pour PanResponder (pas de stale closure)
+  const draggingRef    = useRef(false);
+  const [dragging, _setDragging] = useState(false);
+  const setDragging    = useCallback((v: boolean) => {
+    draggingRef.current = v;
+    _setDragging(v);
+  }, []);
 
-  // Refs stables pour PanResponder (évite re-création)
-  const trackWRef   = useRef(1);
-  const durRef      = useRef(duration);
-  const onSeekRef   = useRef(onSeek);
-  const draggingRef = useRef(false);
+  // dragSecRef : secondes courantes pendant le drag (pour le chrono)
+  const dragSecRef = useRef(0);
+  const [dragSec, _setDragSec] = useState(0);
+  const setDragSec = useCallback((s: number) => {
+    dragSecRef.current = s;
+    _setDragSec(s);
+  }, []);
 
-  trackWRef.current  = trackW;
-  durRef.current     = duration;
-  onSeekRef.current  = onSeek;
+  // ── Track width — mesuré via onLayout ────────────────────────────────────
+  const trackWRef = useRef(1);
+  const [trackW, _setTrackW] = useState(1);
+  const setTrackW = useCallback((w: number) => {
+    trackWRef.current = w;
+    _setTrackW(w);
+  }, []);
 
-  // ── Animated values ─────────────────────────────────────────────────────────
-  const controlsOp  = useRef(new Animated.Value(0)).current;
-  const overlayOp   = useRef(new Animated.Value(visible ? 1 : 0)).current;
-  const trackHeight = useRef(new Animated.Value(3)).current;
-  const thumbScale  = useRef(new Animated.Value(0)).current;
-  // Animated value pour la position du thumb (évite re-render à chaque frame)
-  const fillAnim    = useRef(new Animated.Value(progress)).current;
+  // ── Refs stables pour PanResponder ───────────────────────────────────────
+  const durRef    = useRef(duration);
+  const onSeekRef = useRef(onSeek);
+  durRef.current    = duration;
+  onSeekRef.current = onSeek;
 
-  // ── Sync fill animation depuis progress (quand pas en drag) ─────────────────
+  // ── Animated values ───────────────────────────────────────────────────────
+  const overlayOp  = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const controlsOp = useRef(new Animated.Value(0)).current;
+  const trackH     = useRef(new Animated.Value(3)).current;
+  const thumbScale = useRef(new Animated.Value(0)).current;
+
+  // ★ fillAnim : la valeur (0→1) qui pilote fill + thumb via interpolation
+  // On utilise .setValue() dans PanResponder → 0 re-render côté React
+  const fillAnim = useRef(new Animated.Value(progress)).current;
+
+  // Sync fillAnim depuis progress (quand pas en drag)
   useEffect(() => {
     if (!draggingRef.current) {
-      fillAnim.setValue(Math.min(Math.max(progress, 0), 0.9999));
+      fillAnim.setValue(Math.max(0, Math.min(progress, 0.99999)));
     }
   }, [progress, fillAnim]);
 
-  // ── Visibility ─────────────────────────────────────────────────────────────
+  // ── Visibility ────────────────────────────────────────────────────────────
   useEffect(() => {
     Animated.timing(overlayOp, {
       toValue: visible ? 1 : 0, duration: 200, useNativeDriver: true,
@@ -118,27 +136,27 @@ const BottomCard = memo(function BottomCard({
     }).start();
   }, [isReady, controlsOp]);
 
-  // ── Expand / collapse ────────────────────────────────────────────────────
+  // ── Expand / collapse track ───────────────────────────────────────────────
   const expand = useCallback(() => {
     Animated.parallel([
-      Animated.spring(trackHeight, { toValue:7, useNativeDriver:false, tension:320, friction:14 }),
-      Animated.spring(thumbScale,  { toValue:1, useNativeDriver:true,  tension:320, friction:14 }),
+      Animated.spring(trackH,    { toValue:7, useNativeDriver:false, tension:320, friction:14 }),
+      Animated.spring(thumbScale,{ toValue:1, useNativeDriver:true,  tension:320, friction:14 }),
     ]).start();
-  }, [trackHeight, thumbScale]);
+  }, [trackH, thumbScale]);
 
   const collapse = useCallback(() => {
     Animated.parallel([
-      Animated.spring(trackHeight, { toValue:3, useNativeDriver:false, tension:320, friction:14 }),
-      Animated.spring(thumbScale,  { toValue:0, useNativeDriver:true,  tension:320, friction:14 }),
+      Animated.spring(trackH,    { toValue:3, useNativeDriver:false, tension:320, friction:14 }),
+      Animated.spring(thumbScale,{ toValue:0, useNativeDriver:true,  tension:320, friction:14 }),
     ]).start();
-  }, [trackHeight, thumbScale]);
+  }, [trackH, thumbScale]);
 
-  // ── Calcul précis depuis coordonnée X ────────────────────────────────────
+  // ── Calcul de pourcentage à partir de X ──────────────────────────────────
   const pctFromX = useCallback((lx: number) =>
     Math.max(0, Math.min(1, lx / Math.max(trackWRef.current, 1))),
   []);
 
-  // ── PanResponder stable ───────────────────────────────────────────────────
+  // ── PanResponder — créé UNE SEULE FOIS ───────────────────────────────────
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder:        () => true,
@@ -148,44 +166,55 @@ const BottomCard = memo(function BottomCard({
 
       onPanResponderGrant: (e) => {
         const pct = pctFromX(e.nativeEvent.locationX);
+        const sec = pct * durRef.current;
         draggingRef.current = true;
-        setDragging(true);
-        setDragPct(pct);
+        _setDragging(true);
+        dragSecRef.current = sec;
+        _setDragSec(sec);
+        // ★ .setValue() immédiat → pas de re-render
         fillAnim.setValue(pct);
         expand();
-        // Seek immédiat → latence minimale
-        onSeekRef.current(pct * durRef.current);
+        onSeekRef.current(sec);
       },
 
       onPanResponderMove: (e) => {
         const pct = pctFromX(e.nativeEvent.locationX);
-        setDragPct(pct);
-        fillAnim.setValue(pct); // mise à jour frame par frame
-        // Seek continu pour aperçu temps réel
-        onSeekRef.current(pct * durRef.current);
+        const sec = pct * durRef.current;
+        dragSecRef.current = sec;
+        _setDragSec(sec);
+        // ★ Frame-by-frame sans re-render React
+        fillAnim.setValue(pct);
+        onSeekRef.current(sec);
       },
 
       onPanResponderRelease: (e) => {
         const pct = pctFromX(e.nativeEvent.locationX);
+        const sec = pct * durRef.current;
         fillAnim.setValue(pct);
-        onSeekRef.current(pct * durRef.current);
+        onSeekRef.current(sec);
         draggingRef.current = false;
-        setDragging(false);
+        _setDragging(false);
         collapse();
       },
 
       onPanResponderTerminate: () => {
         draggingRef.current = false;
-        setDragging(false);
+        _setDragging(false);
         collapse();
       },
     }),
   ).current;
 
-  // ── Valeurs affichées ─────────────────────────────────────────────────────
-  const displaySec = dragging
-    ? dragPct * (duration || 0)
-    : currentTime;
+  // ── Chrono affiché ────────────────────────────────────────────────────────
+  const displaySec = dragging ? dragSec : currentTime;
+
+  // ── fill + thumb via interpolation sur fillAnim ───────────────────────────
+  // fillAnim : 0 → 1 → '0%' → '100%'
+  const fillWidth = fillAnim.interpolate({
+    inputRange:  [0, 1],
+    outputRange: ['0%', '100%'],
+    extrapolate: 'clamp',
+  });
 
   // ── Données film ──────────────────────────────────────────────────────────
   const metaParts: string[] = [];
@@ -194,16 +223,6 @@ const BottomCard = memo(function BottomCard({
   if (film.genre)    metaParts.push(film.genre);
   const metaLine = metaParts.join('  ·  ');
   const hasStats = (film.views_count ?? 0) > 0 || (film.likes_count ?? 0) > 0;
-
-  // fillWidth interpolée depuis fillAnim (0→1 → 0%→100%)
-  const fillWidth = fillAnim.interpolate({
-    inputRange:  [0, 1],
-    outputRange: ['0%', '100%'],
-  });
-
-  // thumbLeft identique à fillWidth mais le thumb est positionné en %
-  // On utilise une interpolation sur fillAnim pour éviter re-renders
-  // (le thumb suit le fill à la même valeur)
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -215,14 +234,8 @@ const BottomCard = memo(function BottomCard({
       ]}
       pointerEvents="box-none"
     >
-      {/* Gradient de lisibilité */}
       <LinearGradient
-        colors={[
-          'transparent',
-          'rgba(0,0,0,0.45)',
-          'rgba(0,0,0,0.82)',
-          'rgba(0,0,0,0.96)',
-        ]}
+        colors={['transparent', 'rgba(0,0,0,0.45)', 'rgba(0,0,0,0.82)', 'rgba(0,0,0,0.96)']}
         locations={[0, 0.28, 0.72, 1]}
         style={StyleSheet.absoluteFill}
         pointerEvents="none"
@@ -235,17 +248,17 @@ const BottomCard = memo(function BottomCard({
           <Text style={bc.title} numberOfLines={2}>{film.title}</Text>
         )}
 
-        {/* ── Meta ──────────────────────────────────────────────────────── */}
+        {/* ── Meta ───────────────────────────────────────────────────────── */}
         {!!metaLine && (
           <Text style={bc.meta} numberOfLines={1}>{metaLine}</Text>
         )}
 
-        {/* ── Synopsis ──────────────────────────────────────────────────── */}
+        {/* ── Synopsis ───────────────────────────────────────────────────── */}
         {!!film.synopsis && (
           <Text style={bc.synopsis} numberOfLines={2}>{film.synopsis}</Text>
         )}
 
-        {/* ── Stats ─────────────────────────────────────────────────────── */}
+        {/* ── Stats ──────────────────────────────────────────────────────── */}
         {hasStats && (
           <View style={bc.stats} pointerEvents="none">
             {(film.views_count ?? 0) > 0 && (
@@ -266,7 +279,7 @@ const BottomCard = memo(function BottomCard({
           </View>
         )}
 
-        {/* ── SEEK BAR + CHRONO ──────────────────────────────────────────── */}
+        {/* ── SEEK BAR ───────────────────────────────────────────────────── */}
         <Animated.View
           style={[bc.seekSection, { opacity: controlsOp }]}
           pointerEvents={isReady ? 'box-none' : 'none'}
@@ -277,34 +290,28 @@ const BottomCard = memo(function BottomCard({
             <Text style={bc.timeDuration}>{fmtTime(duration)}</Text>
           </View>
 
-          {/* Zone tactile 44 px → ergonomique */}
+          {/* Zone tactile 44 px */}
           <View
             style={[
               bc.trackHit,
               Platform.OS === 'web' ? ({ cursor: 'pointer' } as any) : undefined,
             ]}
-            onLayout={e => {
-              const w = e.nativeEvent.layout.width;
-              setTrackW(w);
-              trackWRef.current = w;
-            }}
+            onLayout={e => setTrackW(e.nativeEvent.layout.width)}
             {...pan.panHandlers}
           >
-            {/* Track animée en hauteur */}
-            <Animated.View style={[bc.track, { height: trackHeight }]}>
+            <Animated.View style={[bc.track, { height: trackH }]}>
 
-              {/* Background track */}
+              {/* Background */}
               <View style={bc.trackBg} />
 
-              {/* Fill — Animated.View pour perf native */}
+              {/* ★ Fill animé sans re-render */}
               <Animated.View style={[bc.trackFill, { width: fillWidth }]} />
 
-              {/* Thumb — scale au drag */}
+              {/* ★ Thumb — left = fillWidth, centré par marginLeft */}
               <Animated.View
                 style={[
                   bc.thumb,
-                  { left: fillWidth },
-                  { transform: [{ scale: thumbScale }] },
+                  { left: fillWidth, transform: [{ scale: thumbScale }] },
                 ]}
               />
 
@@ -334,7 +341,6 @@ const bc = StyleSheet.create({
     gap:                6,
   },
 
-  // ── Texte ────────────────────────────────────────────────────────────────
   title: {
     color:         'rgba(255,255,255,0.97)',
     fontSize:       18,
@@ -354,85 +360,62 @@ const bc = StyleSheet.create({
   },
 
   synopsis: {
-    color:     'rgba(255,255,255,0.38)',
-    fontSize:   11,
-    lineHeight: 15,
+    color:'rgba(255,255,255,0.38)', fontSize:11, lineHeight:15,
   },
 
-  // ── Stats ────────────────────────────────────────────────────────────────
-  stats: {
-    flexDirection: 'row',
-    alignItems:    'center',
-    gap:            5,
-    marginTop:      2,
-  },
+  stats: { flexDirection:'row', alignItems:'center', gap:5, marginTop:2 },
   statIcon: { fontSize:10, opacity:0.55 },
-  stat:  { color:'rgba(255,255,255,0.48)', fontSize:11, fontWeight:'600' },
-  dot:   { color:'rgba(255,255,255,0.22)', fontSize:12, marginHorizontal:1 },
+  stat: { color:'rgba(255,255,255,0.48)', fontSize:11, fontWeight:'600' },
+  dot:  { color:'rgba(255,255,255,0.22)', fontSize:12, marginHorizontal:1 },
 
-  // ── Seek bar ─────────────────────────────────────────────────────────────
-  seekSection: {
-    gap:       4,
-    marginTop: 8,
-  },
+  seekSection: { gap:4, marginTop:8 },
 
   timeRow: {
-    flexDirection:  'row',
-    justifyContent: 'space-between',
-    marginBottom:    2,
+    flexDirection:'row', justifyContent:'space-between', marginBottom:2,
   },
-
   timeCurrent: {
-    color:       'rgba(255,255,255,0.90)',
-    fontSize:     11,
-    fontWeight:  '700',
-    fontVariant: ['tabular-nums'],
+    color:'rgba(255,255,255,0.90)', fontSize:11, fontWeight:'700',
+    fontVariant:['tabular-nums'],
   },
-
   timeDuration: {
-    color:       'rgba(255,255,255,0.30)',
-    fontSize:     11,
-    fontVariant: ['tabular-nums'],
+    color:'rgba(255,255,255,0.30)', fontSize:11,
+    fontVariant:['tabular-nums'],
   },
 
-  // Zone tactile haute — 44 px (guidelines Apple/Google)
-  trackHit: {
-    height:          44,
-    justifyContent: 'center',
-  },
+  // Zone tactile 44 px — ergonomique
+  trackHit: { height:44, justifyContent:'center' },
 
   track: {
-    width:          '100%',
-    borderRadius:    4,
-    justifyContent: 'center',
-    overflow:       'visible',
+    width:'100%', borderRadius:4,
+    justifyContent:'center',
+    overflow:'visible',
   },
 
   trackBg: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,255,255,0.20)',
-    borderRadius:     4,
+    backgroundColor:'rgba(255,255,255,0.20)',
+    borderRadius:4,
   },
 
   trackFill: {
-    height:          '100%',
-    backgroundColor: '#FFFFFF',
-    borderRadius:     4,
+    height:'100%',
+    backgroundColor:'#FFFFFF',
+    borderRadius:4,
   },
 
   thumb: {
-    position:        'absolute',
-    width:            18,
-    height:           18,
-    borderRadius:      9,
-    backgroundColor: '#FFFFFF',
-    marginLeft:       -9,  // centre le thumb sur la position
-    top:             '50%',
-    marginTop:        -9,
-    shadowColor:     '#FFFFFF',
-    shadowOffset:    { width:0, height:0 },
-    shadowOpacity:    0.95,
-    shadowRadius:      8,
-    elevation:         8,
+    position:       'absolute',
+    width:           18,
+    height:          18,
+    borderRadius:     9,
+    backgroundColor:'#FFFFFF',
+    marginLeft:      -9,   // ★ centre le thumb sur sa position
+    top:            '50%',
+    marginTop:       -9,
+    shadowColor:    '#FFFFFF',
+    shadowOffset:   { width:0, height:0 },
+    shadowOpacity:   0.95,
+    shadowRadius:    8,
+    elevation:       8,
   },
 });

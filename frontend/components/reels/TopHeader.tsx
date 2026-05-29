@@ -1,26 +1,27 @@
 /**
- * components/reels/TopHeader.tsx — UNIVERSE · v3
+ * components/reels/TopHeader.tsx — UNIVERSE · v2
  *
- * ★ GAUCHE  : hamburger + label feed COMPLET (ex: "Pour vous") sans troncature
- * ★ DROITE  : pile de 3 avatars amis (FRIENDS_POOL) — sans label "Amis"
- *             border semi-transparent (plus de border #03000A opaque)
- * ★ Scroll  : opacity fade conservé
+ * ★ Label feed complet affiché (ex : "Pour vous", "Tendances"…)
+ * ★ "AMIS" supprimé — 3 cercles amis sans bordure noire (border transparent)
+ * ★ Visible prop pour se masquer en plein écran
+ * ★ Fetch depuis FRIENDS_POOL (mockData) — 3 avatars max
  */
 
 import React, {
-  memo, useCallback, useMemo,
+  memo, useCallback, useMemo, useEffect, useRef,
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Platform,
 } from 'react-native';
-import { Image }     from 'expo-image';
-import { Ionicons }  from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Image }          from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons }       from '@expo/vector-icons';
+import { useRouter }      from 'expo-router';
 
-import { type MenuKey } from '../DropDownMenu';
-import { FRIENDS_POOL } from './mockData';
+import { type MenuKey }   from '../DropDownMenu';
+import { FRIENDS_POOL }   from './mockData';
 
-// ── Haptics web-safe ──────────────────────────────────────────────────────────
+// ── Haptics web-safe ──────────────────────────────────────────────────────
 let _Haptics: any = null;
 if (Platform.OS !== 'web') {
   try { _Haptics = require('expo-haptics'); } catch {}
@@ -35,29 +36,30 @@ function hapticLight() {
 const T = {
   white:  '#FFFFFF',
   muted:  'rgba(255,255,255,0.45)',
+  faint:  'rgba(255,255,255,0.22)',
+  surf:   'rgba(255,255,255,0.10)',
   bg:     '#03000A',
-  border: 'rgba(255,255,255,0.18)', // ★ border semi-transparent
+  /** ★ Bordure transparente pour les cercles amis */
+  avatarBorder: 'rgba(255,255,255,0.25)',
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
-interface MenuItem {
-  key:   string;
-  label: string;
+interface MenuItem { key: string; label: string; }
+
+export interface TopHeaderProps {
+  feedKey:      MenuKey;
+  menuItems?:   MenuItem[];
+  onMenuPress:  () => void;
+  scrollY:      Animated.Value;
+  /** Masquer/afficher (plein écran) */
+  visible?:     boolean;
+  /** Inset top pour safe area */
+  insetTop?:    number;
 }
 
-interface TopHeaderProps {
-  feedKey:     MenuKey;
-  menuItems?:  MenuItem[];
-  onMenuPress: () => void;
-  scrollY:     Animated.Value;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FALLBACK LABELS
-// ─────────────────────────────────────────────────────────────────────────────
-const STATIC_LABELS: Record<string, string> = {
+const STATIC_LABELS: Record<string,string> = {
   foryou:   'Pour vous',
   trending: 'Tendances',
   original: 'Originaux',
@@ -65,77 +67,55 @@ const STATIC_LABELS: Record<string, string> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ FRIENDS PILE — 3 cercles, sans label, border transparent
+// FRIENDS PILE — 3 cercles, sans label "Amis", bordure transparente
 // ─────────────────────────────────────────────────────────────────────────────
 const FriendsPile = memo(function FriendsPile({ onPress }: { onPress: () => void }) {
-  // Toujours 3 avatars (compléter avec fallback si pool < 3)
-  const visible = FRIENDS_POOL.slice(0, 3);
+  // Toujours 3 avatars (mockData + globe si besoin)
+  const slots = useMemo(() => {
+    const base = FRIENDS_POOL.slice(0, 3);
+    // Si moins de 3 amis, compléter avec le globe
+    const result: { type: 'avatar'; id: string; uri: string }[] | { type: 'globe' }[] = [];
+    base.forEach(f => result.push({ type:'avatar', id:f.id, uri:f.avatar }));
+    while (result.length < 3) result.push({ type:'globe' } as any);
+    return result;
+  }, []);
 
   return (
-    <TouchableOpacity
-      style={fp.wrap}
-      onPress={onPress}
-      activeOpacity={0.75}
-      hitSlop={{ top:12, bottom:12, left:12, right:12 }}
-    >
-      {visible.map((f, i) => (
-        <View
-          key={f.id}
-          style={[
-            fp.avatarRing,
-            { marginLeft: i > 0 ? -11 : 0, zIndex: 10 - i },
-          ]}
-        >
-          {f.avatar ? (
+    <TouchableOpacity style={fp.wrap} onPress={onPress} activeOpacity={0.75}>
+      <View style={fp.pile}>
+        {slots.map((slot: any, i) => (
+          slot.type === 'avatar' ? (
             <Image
-              source={{ uri: f.avatar }}
-              style={fp.avatarImg}
+              key={slot.id}
+              source={{ uri: slot.uri }}
+              style={[fp.avatar, { marginLeft: i > 0 ? -9 : 0, zIndex: 10 - i }]}
               contentFit="cover"
             />
           ) : (
-            // Fallback initiales si pas d'avatar
-            <View style={fp.avatarFallback}>
-              <Text style={fp.avatarInitial}>
-                {(f.name ?? f.username ?? '?').charAt(0).toUpperCase()}
-              </Text>
+            <View key={`globe-${i}`}
+              style={[fp.avatar, fp.globe, { marginLeft: i > 0 ? -9 : 0, zIndex: 10 - i }]}
+            >
+              <Text style={{ fontSize: 13 }}>🌍</Text>
             </View>
-          )}
-        </View>
-      ))}
+          )
+        ))}
+      </View>
     </TouchableOpacity>
   );
 });
 
 const fp = StyleSheet.create({
-  wrap: {
-    flexDirection: 'row',
-    alignItems:    'center',
+  wrap:   { flexDirection:'row', alignItems:'center' },
+  pile:   { flexDirection:'row', alignItems:'center' },
+  avatar: {
+    width:30, height:30, borderRadius:15,
+    /** ★ Bordure transparente (pas noire) */
+    borderWidth:   1.5,
+    borderColor:   T.avatarBorder,
+    backgroundColor: T.surf,
   },
-  // Anneau extérieur — border semi-transparent
-  avatarRing: {
-    width:         34,
-    height:        34,
-    borderRadius:  17,
-    borderWidth:    2,
-    borderColor:   T.border,   // ★ semi-transparent
-    overflow:      'hidden',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  avatarImg: {
-    width:  30,
-    height: 30,
-  },
-  avatarFallback: {
-    width:           30,
-    height:          30,
-    alignItems:      'center',
-    justifyContent:  'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
-  },
-  avatarInitial: {
-    color:      T.white,
-    fontSize:   13,
-    fontWeight: '700',
+  globe: {
+    alignItems:'center', justifyContent:'center',
   },
 });
 
@@ -144,58 +124,71 @@ const fp = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────────────────────
 const TopHeader = memo(function TopHeader({
   feedKey, menuItems = [], onMenuPress, scrollY,
+  visible = true, insetTop = 0,
 }: TopHeaderProps) {
   const router = useRouter();
 
-  // ── Label feed complet — aucune troncature forcée ─────────────────────────
+  // ── Opacity animée (visible + scroll fade) ────────────────────────────────
+  const visOp = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.timing(visOp, {
+      toValue: visible ? 1 : 0, duration: 200, useNativeDriver: true,
+    }).start();
+  }, [visible, visOp]);
+
+  const scrollOp = scrollY.interpolate({
+    inputRange: [0, 100], outputRange: [1, 0.30], extrapolate: 'clamp',
+  });
+
+  // Combiner les deux opacités
+  const opacity = Animated.multiply(visOp, scrollOp);
+
+  // ── Label feed (texte complet) ────────────────────────────────────────────
   const feedLabel = useMemo(() => {
     const found = menuItems.find(m => m.key === feedKey);
-    if (found)                   return found.label;
-    if (STATIC_LABELS[feedKey])  return STATIC_LABELS[feedKey];
+    if (found)                  return found.label;
+    if (STATIC_LABELS[feedKey]) return STATIC_LABELS[feedKey];
     return feedKey.charAt(0).toUpperCase() + feedKey.slice(1);
   }, [feedKey, menuItems]);
 
-  // ── Scroll fade ───────────────────────────────────────────────────────────
-  const opacity = scrollY.interpolate({
-    inputRange: [0, 100], outputRange: [1, 0.35], extrapolate: 'clamp',
-  });
-
-  const handleMenuPress    = useCallback(() => { hapticLight(); onMenuPress(); }, [onMenuPress]);
+  const handleMenuPress  = useCallback(() => { hapticLight(); onMenuPress(); }, [onMenuPress]);
   const handleFriendsPress = useCallback(() => router.push('/(tabs)/social' as any), [router]);
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <Animated.View style={[s.container, { opacity }]} pointerEvents="box-none">
+    <Animated.View
+      style={[s.container, { paddingTop: insetTop + 10 }, { opacity }]}
+      pointerEvents={visible ? 'box-none' : 'none'}
+    >
+      {/* Gradient haut pour lisibilité */}
+      <LinearGradient
+        colors={['rgba(0,0,0,0.55)', 'rgba(0,0,0,0.20)', 'transparent']}
+        locations={[0, 0.65, 1]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
 
-      {/* ── Gauche : hamburger + label feed complet ── */}
-      <TouchableOpacity
-        onPress={handleMenuPress}
-        style={s.leftBtn}
-        activeOpacity={0.70}
-        hitSlop={{ top:14, bottom:14, left:14, right:14 }}
-      >
-        <View style={s.hamburger}>
-          <View style={[s.hLine, { width: 20 }]} />
-          <View style={[s.hLine, { width: 13 }]} />
-          <View style={[s.hLine, { width: 20 }]} />
-        </View>
+      <View style={s.inner} pointerEvents="box-none">
+        {/* ── Gauche : hamburger + label feed complet ── */}
+        <TouchableOpacity
+          onPress={handleMenuPress}
+          style={s.leftBtn}
+          activeOpacity={0.70}
+          hitSlop={{ top:14, bottom:14, left:14, right:14 }}
+        >
+          <View style={s.hamburger}>
+            <View style={[s.hLine, { width:20 }]}/>
+            <View style={[s.hLine, { width:13 }]}/>
+            <View style={[s.hLine, { width:20 }]}/>
+          </View>
+          {/* ★ Label complet, pas tronqué côté gauche */}
+          <Text style={s.feedLabel}>{feedLabel}</Text>
+          <Ionicons name="chevron-down" size={13} color={T.muted} style={{ marginTop:1 }}/>
+        </TouchableOpacity>
 
-        {/* ★ Label complet — pas de maxWidth restrictif, wrap naturel */}
-        <Text style={s.feedLabel}>
-          {feedLabel}
-        </Text>
-
-        <Ionicons
-          name="chevron-down"
-          size={13}
-          color={T.muted}
-          style={{ marginTop: 1 }}
-        />
-      </TouchableOpacity>
-
-      {/* ── Droite : pile de 3 avatars amis (sans label) ── */}
-      <FriendsPile onPress={handleFriendsPress} />
-
+        {/* ── Droite : 3 cercles amis (sans label "Amis") ── */}
+        <FriendsPile onPress={handleFriendsPress}/>
+      </View>
     </Animated.View>
   );
 });
@@ -203,44 +196,41 @@ const TopHeader = memo(function TopHeader({
 export default TopHeader;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   container: {
+    position:   'absolute',
+    top:         0,
+    left:        0,
+    right:       0,
+    zIndex:      30,
+    paddingBottom: 8,
+  },
+  inner: {
     flexDirection:     'row',
     alignItems:        'center',
     justifyContent:    'space-between',
-    paddingHorizontal: 20,
-    paddingVertical:   10,
+    paddingHorizontal: 18,
+    paddingVertical:   6,
   },
-
   leftBtn: {
     flexDirection: 'row',
     alignItems:    'center',
-    gap:           10,
-    // ★ flex:1 + shrink=1 → le label prend tout l'espace disponible
-    //   sans mordre sur la pile d'avatars
-    flex:          1,
-    marginRight:   16,
+    gap:            10,
+    // ★ Pas de maxWidth restrictif — label s'affiche en entier
+    flexShrink:     1,
+    paddingRight:   12,
   },
-
-  hamburger: {
-    gap:       4.5,
-    flexShrink: 0, // ne se compresse jamais
-  },
-
-  hLine: {
-    height:          2.5,
-    borderRadius:    2,
-    backgroundColor: T.white,
-  },
-
+  hamburger: { gap:4.5 },
+  hLine:     { height:2.5, borderRadius:2, backgroundColor:T.white },
   feedLabel: {
     color:         T.white,
     fontSize:      16,
     fontWeight:    '700',
     letterSpacing: 0.2,
-    flexShrink:    1,
-    // ★ Pas de numberOfLines={1} → affichage complet si le label est long
+    // Texte en entier, pas de troncature
+    flexShrink:    0,
+    textShadowColor:  'rgba(0,0,0,0.50)',
+    textShadowOffset: { width:0, height:1 },
+    textShadowRadius: 4,
   },
 });
