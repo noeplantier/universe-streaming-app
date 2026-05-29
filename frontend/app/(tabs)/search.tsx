@@ -126,13 +126,7 @@ function buildBadges(stats:UserStats): Badge[] {
   ];
 }
 
-// Niveau cinéphile depuis le score
-function cinephileLevel(score:number):{n:number;label:string;pct:number}{
-  const L=[{at:0,n:1,l:'Spectateur curieux'},{at:50,n:2,l:'Explorateur indé'},{at:150,n:3,l:'Critique amateur'},{at:400,n:4,l:'Curateur underground'},{at:900,n:5,l:'Ambassadeur cinéma'}];
-  const c=[...L].reverse().find(x=>score>=x.at)??L[0];
-  const ni=L.findIndex(x=>x.n===c.n)+1;const nx=L[ni]??L[L.length-1];
-  return{n:c.n,label:c.l,pct:c.n===5?1:Math.min(1,(score-c.at)/(nx.at-c.at))};
-}
+
 
 // ─── HOOK GAMIFICATION ────────────────────────────────────────────────────────
 function useGamification(userId:string, works:Work[]) {
@@ -164,9 +158,8 @@ function useGamification(userId:string, works:Work[]) {
   const missions=useMemo(()=>buildMissions(stats,works),[stats,works]);
   const badges  =useMemo(()=>buildBadges(stats),[stats]);
   const score   =useMemo(()=>stats.watchCount*3+stats.critiqueCount*8+stats.favCount*2+stats.totalLikedLowPopularity*10+(stats.isNight?5:0),[stats]);
-  const level   =useMemo(()=>cinephileLevel(score),[score]);
 
-  return{missions,badges,stats,score,level,loading};
+  return{missions,badges,stats,score,loading};
 }
 
 // ─── FETCH ────────────────────────────────────────────────────────────────────
@@ -329,7 +322,7 @@ export default function SearchScreen(){
   useEffect(()=>{let dead=false;setLoading(true);fetchAllWorks().then(data=>{if(!dead){setWorks(data);setLoading(false);}}).catch(()=>{if(!dead)setLoading(false);});return()=>{dead=true;};},[]);
   useEffect(()=>{supabase.auth.getSession().then(({data:{session}})=>{if(session?.user?.id)setUserId(session.user.id);});const{data:{subscription}}=supabase.auth.onAuthStateChange((_,s)=>{if(s?.user?.id)setUserId(s.user.id);});return()=>subscription.unsubscribe();},[]);
 
-  const{missions,badges,score,level,loading:gLoading}=useGamification(userId,works);
+  const{missions,badges,score,loading:gLoading}=useGamification(userId,works);
 
   // Sections
   const heroItems=useMemo(()=>works.slice(0,20),[works]);
@@ -366,13 +359,12 @@ export default function SearchScreen(){
       <Animated.ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom:120}} scrollEventThrottle={16} onScroll={Animated.event([{nativeEvent:{contentOffset:{y:scrollY}}}],{useNativeDriver:true})}>
 
         {/* Hero */}
-        <HeroBanner works={heroItems} loading={loading} level={userId!=='anonymous'?level:undefined}/>
+        <HeroBanner works={heroItems} loading={loading}/>
         <View style={{height:24}}/>
 
         {/* ★ Profil cinéphile */}
         {userId!=='anonymous'&&!gLoading&&(
           <View style={{gap:16,marginBottom:28}}>
-            <CinephileBanner level={level} score={score} badges={badges}/>
             <View>
               <View style={{flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:EDGE,marginBottom:12}}>
                 <Ionicons name="ribbon-outline" size={13} color={C.mid}/>
