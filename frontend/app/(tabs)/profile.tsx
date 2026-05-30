@@ -277,7 +277,7 @@ const ProfileHeader=memo(({profile,filmCount,critiqueCount,reelCount,level,onEdi
   </View>);
 });
 
-const TopNav=memo(({name}:{name:string})=>{const router=useRouter();return(<View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:6,paddingBottom:2}}><View style={{flexDirection:'row',alignItems:'center',gap:6}}><Text style={{color:C.muted,fontSize:8,fontWeight:'800',letterSpacing:2,textTransform:'uppercase'}}>UNIVERSE</Text><View style={{width:1,height:10,backgroundColor:C.faint}}/><Text style={{color:C.white,fontSize:15,fontWeight:'800',letterSpacing:-0.2}}>{name}</Text></View><View style={{flexDirection:'row',gap:7}}>{([{icon:'notifications-outline',route:'/notifications',dot:true},{icon:'settings-outline',route:'/settings',dot:false}] as const).map(({icon,route,dot})=>(<TouchableOpacity key={icon} style={{width:34,height:34,borderRadius:17,alignItems:'center',justifyContent:'center',overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.navyLow}} onPress={()=>router.push(route as any)} activeOpacity={0.75}><Ionicons name={icon} size={14} color={C.offWhite}/>{dot&&<View style={{position:'absolute',top:7,right:7,width:5,height:5,borderRadius:2.5,backgroundColor:C.white,borderWidth:1,borderColor:C.bg}}/>}</TouchableOpacity>))}</View></View>);});
+const TopNav=memo(({name}:{name:string})=>{const router=useRouter();return(<View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:6,paddingBottom:2}}><View style={{flexDirection:'row',alignItems:'center',gap:6}}><Text style={{color:C.muted,fontSize:8,fontWeight:'800',letterSpacing:2,textTransform:'uppercase'}}>UNIVERSE</Text><View style={{width:1,height:10,backgroundColor:C.faint}}/></View><View style={{flexDirection:'row',gap:7}}>{([{icon:'notifications-outline',route:'/notifications',dot:true},{icon:'settings-outline',route:'/settings',dot:false},{icon:'eye-outline', route:'/backoffice/universe-admin'}] as const).map(({icon,route,dot})=>(<TouchableOpacity key={icon} style={{width:34,height:34,borderRadius:17,alignItems:'center',justifyContent:'center',overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.navyLow}} onPress={()=>router.push(route as any)} activeOpacity={0.75}><Ionicons name={icon} size={14} color={C.offWhite}/>{dot&&<View style={{position:'absolute',top:7,right:7,width:5,height:5,borderRadius:2.5,backgroundColor:C.white,borderWidth:1,borderColor:C.bg}}/>}</TouchableOpacity>))}</View></View>);});
 const SkeletonSection=memo(()=>(<View><View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:H_PAD,paddingTop:20,paddingBottom:12}}><Shimmer w={24} h={24} r={8}/><Shimmer w={120} h={11} r={6}/></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,gap:10}}>{[0,1,2,3].map(i=><Shimmer key={i} w={CARD_W} h={CARD_H} r={12}/>)}</ScrollView></View>));
 
 // ─── ★★★ SCREEN ★★★ ──────────────────────────────────────────────────────────
@@ -622,14 +622,7 @@ export default function ProfileScreen() {
             </ScrollView>
           </View>
           <View>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: H_PAD, marginBottom: 10 }}>
-              <Ionicons name="compass-outline" size={12} color={C.mid} />
-              <Text style={{ color: C.white, fontSize: 15, fontWeight: '800' }}>Missions</Text>
-              <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: C.faint, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, marginLeft: 'auto' as any }}>
-                <Text style={{ color: C.muted, fontSize: 9, fontWeight: '700' }}>{missions.filter(m => m.completed).length}/{missions.length}</Text>
-              </View>
-            </View>
-            {missions.map(m => <MCard key={m.id} m={m} />)}
+
           </View>
         </View>
 

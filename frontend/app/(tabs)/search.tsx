@@ -384,27 +384,7 @@ export default function SearchScreen(){
           <WeeklyChallenge works={works} onPress={f=>setMissionFilter(()=>f)}/>
         </View>
 
-        {/* ★ Missions de découverte */}
-        {userId!=='anonymous'&&(
-          <View style={{marginBottom:28}}>
-            <View style={{flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:EDGE,marginBottom:12}}>
-              <Ionicons name="compass-outline" size={13} color={C.mid}/>
-              <Text style={{color:C.white,fontSize:17,fontWeight:'800'}}>Missions de découverte</Text>
-              <View style={{paddingHorizontal:8,paddingVertical:2,borderRadius:8,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginLeft:'auto' as any}}>
-                <Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{missions.filter(m=>m.completed).length}/{missions.length}</Text>
-              </View>
-            </View>
-            {missions.map(m=><MissionCard key={m.id} mission={m} onPress={handleMission}/>)}
-          </View>
-        )}
-
-        {/* Mission filter results */}
-        {filteredWorks&&<>
-          <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginHorizontal:EDGE,marginBottom:24}}/>
-          <RowSection title="Résultats de la mission" count={filteredWorks.length} items={filteredWorks} loading={false} variant="portrait" showPepite/>
-          <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginHorizontal:EDGE,marginVertical:24}}/>
-        </>}
-
+  
         {/* Populaires */}
         <RowSection title="Les plus populaires" count={loading?undefined:works.length} items={popular} loading={loading} variant="portrait" showRank/>
         <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginHorizontal:EDGE,marginVertical:24}}/>
