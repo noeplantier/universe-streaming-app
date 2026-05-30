@@ -1,22 +1,20 @@
 /**
- * app/_layout.tsx — UNIVERSE · ROOT LAYOUT · v4
+ * app/_layout.tsx — UNIVERSE · ROOT LAYOUT · v10
  *
- * FIX CRASH useRouter dans CustomNavBar :
- * ★ CustomNavBar est montée APRÈS que la navigation est prête
- *   via le flag `navReady` (passé à true dans onReady du Stack)
- *   → useRouter() ne peut plus crasher au montage initial
- *
- * ★ AnimatedNavBar :
- *   - Sur /reels → opacity animée par navBarOpacity (peut disparaître)
- *   - Sur tous les autres écrans → View normale opacity 1 fixe, toujours visible
- *
- * ★ Quand on quitte /reels → restoreNavBar() instantané (setValue 1)
- * ★ Tout le reste conservé à l'identique
+ * FIXES :
+ * ★ NavBarWrapper simplifié — CustomNavBar gère elle-même sa disponibilité
+ *   (plus de navReady flag, plus de crash useRouter)
+ * ★ Zéro typeof/document/window au module-level
+ * ★ expo-screen-capture via require() dynamique dans useEffect
+ * ★ Overlay anti-screenshot natif uniquement (iOS détection, Android FLAG_SECURE)
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback, useEffect, useRef, useState,
+} from 'react';
 import {
   Animated,
   AppState,
+  Dimensions,
   Platform,
   StyleSheet,
   Text,
@@ -28,92 +26,192 @@ import { SafeAreaProvider }  from 'react-native-safe-area-context';
 import { StatusBar }         from 'expo-status-bar';
 import * as SplashScreen     from 'expo-splash-screen';
 import { Ionicons }          from '@expo/vector-icons';
+import { LinearGradient }    from 'expo-linear-gradient';
 import { supabase }          from '@/lib/supabase';
 import CustomNavBar          from '@/components/CustomNavBar';
 import { ReelsUIProvider, useReelsUI } from '@/contexts/ReelsUIContext';
 
-// expo-screen-capture optionnel
-let ScreenCapture: {
-  preventScreenCaptureAsync: () => Promise<void>;
-  allowScreenCaptureAsync:   () => Promise<void>;
-} | null = null;
-try { ScreenCapture = require('expo-screen-capture'); } catch {}
-
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// ─── CSS WEB ──────────────────────────────────────────────────────────────────
-if (Platform.OS === 'web' && typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    * { -webkit-user-select:none; -moz-user-select:none; user-select:none; }
-    input, textarea { -webkit-user-select:text; user-select:text; }
-    body { -webkit-tap-highlight-color:transparent; }
-  `;
-  document.head.appendChild(style);
+const { width: SW, height: SH } = Dimensions.get('window');
 
-  document.addEventListener('keyup', (e: KeyboardEvent) => {
-    if (
-      e.key === 'PrintScreen' ||
-      (e.metaKey && e.shiftKey && ['3', '4', '5'].includes(e.key))
-    ) {
-      const el = document.createElement('div');
-      el.style.cssText =
-        'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:99999;display:flex;' +
-        'align-items:center;justify-content:center;color:#fff;font-size:16px;' +
-        'font-family:system-ui;flex-direction:column;gap:12px;transition:opacity 0.5s';
-      el.innerHTML =
-        '<div style="font-size:32px">⛔</div>' +
-        '<div>Capture d\'écran non autorisée</div>' +
-        '<div style="font-size:12px;opacity:0.5">UNIVERSE · Cinéma indépendant</div>';
-      document.body.appendChild(el);
-      setTimeout(() => {
-        el.style.opacity = '0';
-        setTimeout(() => el.remove(), 500);
-      }, 2000);
-    }
-  });
-}
+const STARS = Array.from({ length: 80 }, (_, i) => ({
+  key: i,
+  x:   ((Math.sin(i * 2.399) + 1) / 2) * SW,
+  y:   ((Math.cos(i * 1.618) + 1) / 2) * SH,
+  r:   i % 7 === 0 ? 1.6 : i % 3 === 0 ? 0.9 : 0.5,
+  op:  0.12 + (i % 8) * 0.06,
+}));
 
-// ─── Anti-screenshot ──────────────────────────────────────────────────────────
-function useAntiScreenshot() {
-  const [isPrivate, setIsPrivate] = useState(false);
+// ─────────────────────────────────────────────────────────────────────────────
+// OVERLAY ANTI-SCREENSHOT (natif uniquement)
+// ─────────────────────────────────────────────────────────────────────────────
+const ScreenshotOverlay = React.memo(function ScreenshotOverlay({
+  visible,
+}: { visible: boolean }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [mounted, setMounted] = useState(false);
+
   useEffect(() => {
-    if (Platform.OS === 'web') return;
-    ScreenCapture?.preventScreenCaptureAsync().catch(() => {});
-    const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
-      setIsPrivate(next === 'background' || next === 'inactive');
-    });
-    return () => {
-      sub.remove();
-      ScreenCapture?.allowScreenCaptureAsync().catch(() => {});
-    };
-  }, []);
-  return isPrivate;
-}
+    if (visible) {
+      setMounted(true);
+      Animated.timing(anim, { toValue: 1, duration: 100, useNativeDriver: true }).start();
+    } else {
+      Animated.timing(anim, { toValue: 0, duration: 280, useNativeDriver: true }).start(
+        ({ finished }) => { if (finished) setMounted(false); },
+      );
+    }
+  }, [visible, anim]);
 
-// ─── Privacy overlay ──────────────────────────────────────────────────────────
-function PrivacyOverlay() {
+  if (!mounted) return null;
+
   return (
-    <View style={ov.wrap} pointerEvents="none">
-      <View style={ov.inner}>
-        <View style={ov.logo}>
-          <Ionicons name="film-outline" size={34} color="rgba(255,255,255,0.70)" />
+    <Animated.View
+      style={[StyleSheet.absoluteFillObject, { zIndex: 99999, opacity: anim }]}
+      pointerEvents="none"
+    >
+      <LinearGradient
+        colors={['#020810', '#070C17', '#0A1830', '#070C17']}
+        locations={[0, 0.35, 0.70, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {STARS.map(s => (
+        <View key={s.key} style={{
+          position: 'absolute',
+          left: s.x - s.r, top: s.y - s.r,
+          width: s.r * 2, height: s.r * 2,
+          borderRadius: s.r, backgroundColor: '#fff', opacity: s.op,
+        }} />
+      ))}
+      <View style={ov.center}>
+        <View style={ov.iconBox}>
+          <Ionicons name="film-outline" size={36} color="rgba(255,255,255,0.68)" />
         </View>
         <Text style={ov.title}>UNIVERSE</Text>
-        <Text style={ov.sub}>Cinéma indépendant</Text>
+        <Text style={ov.eyebrow}>Cinéma indépendant</Text>
+        <View style={ov.divider} />
+        <Text style={ov.msg}>Capture d'écran non autorisée</Text>
+        <Text style={ov.sub}>
+          Ce contenu est protégé par le droit d'auteur.{'\n'}
+          Toute reproduction est strictement interdite.
+        </Text>
+        <View style={ov.badge}>
+          <Ionicons name="shield-checkmark-outline" size={11} color="rgba(255,255,255,0.32)" />
+          <Text style={ov.badgeTxt}>CONTENU PROTÉGÉ</Text>
+        </View>
       </View>
-    </View>
+    </Animated.View>
   );
-}
-const ov = StyleSheet.create({
-  wrap:  { ...StyleSheet.absoluteFillObject, backgroundColor: '#020810', zIndex: 9999, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  inner: { alignItems: 'center', gap: 14 },
-  logo:  { width: 72, height: 72, borderRadius: 20, backgroundColor: 'rgba(13,32,64,0.80)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center' },
-  title: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
-  sub:   { color: 'rgba(255,255,255,0.36)', fontSize: 12, letterSpacing: 1.2 },
 });
 
-// ─── Auth guard ───────────────────────────────────────────────────────────────
+const ov = StyleSheet.create({
+  center:  { flex:1, alignItems:'center', justifyContent:'center', gap:14, paddingHorizontal:44 },
+  iconBox: { width:84, height:84, borderRadius:22, backgroundColor:'rgba(13,32,64,0.90)', borderWidth:1.5, borderColor:'rgba(255,255,255,0.09)', alignItems:'center', justifyContent:'center', marginBottom:4 },
+  title:   { color:'#fff', fontSize:26, fontWeight:'900', letterSpacing:5, textTransform:'uppercase' },
+  eyebrow: { color:'rgba(255,255,255,0.27)', fontSize:10, letterSpacing:2.5, textTransform:'uppercase', marginTop:-6 },
+  divider: { width:44, height:1, backgroundColor:'rgba(255,255,255,0.08)', borderRadius:1, marginVertical:2 },
+  msg:     { color:'rgba(255,255,255,0.72)', fontSize:15, fontWeight:'700', textAlign:'center', letterSpacing:-0.2 },
+  sub:     { color:'rgba(255,255,255,0.26)', fontSize:11, textAlign:'center', lineHeight:17, marginTop:-2 },
+  badge:   { flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:13, paddingVertical:6, borderRadius:20, borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(255,255,255,0.07)', backgroundColor:'rgba(255,255,255,0.03)', marginTop:6 },
+  badgeTxt:{ color:'rgba(255,255,255,0.28)', fontSize:8.5, fontWeight:'800', letterSpacing:1.8, textTransform:'uppercase' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOK ANTI-SCREENSHOT — natif uniquement, tout dans useEffect
+// ─────────────────────────────────────────────────────────────────────────────
+function useAntiScreenshot() {
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const show = useCallback((ms = 0) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setVisible(true);
+    if (ms > 0) timerRef.current = setTimeout(() => setVisible(false), ms);
+  }, []);
+
+  const hide = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    let SC: any = null;
+    try { SC = require('expo-screen-capture'); } catch {}
+
+    SC?.preventScreenCaptureAsync?.().catch(() => {});
+
+    let screenshotSub: { remove: () => void } | null = null;
+    if (SC?.addScreenshotListener) {
+      try { screenshotSub = SC.addScreenshotListener(() => show(3000)); } catch {}
+    }
+
+    const appSub = AppState.addEventListener('change', (s: AppStateStatus) => {
+      if (s === 'background' || s === 'inactive') show(0);
+      else if (s === 'active') hide();
+    });
+
+    return () => {
+      screenshotSub?.remove();
+      appSub.remove();
+      SC?.allowScreenCaptureAsync?.().catch(() => {});
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [show, hide]);
+
+  // Web : l'overlay RN n'est pas rendu — géré par CSS/DOM dans useEffect séparé
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const doc = document;
+    const win = window;
+
+    const style = doc.createElement('style');
+    style.setAttribute('data-universe', 'shield');
+    style.textContent = [
+      '* { -webkit-user-select:none!important; user-select:none!important; }',
+      'input,textarea,[contenteditable]{ -webkit-user-select:text!important; user-select:text!important; }',
+      'img,video,canvas{ -webkit-user-drag:none!important; pointer-events:none; }',
+      'input,textarea,button,a,select{ pointer-events:auto!important; }',
+    ].join('');
+    doc.head.appendChild(style);
+
+    const onContext  = (e: MouseEvent)   => e.preventDefault();
+    const onKeyDown  = (e: KeyboardEvent) => {
+      if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && 'IJCK'.includes(e.key.toUpperCase())) || (e.metaKey && e.altKey && 'IJCK'.includes(e.key.toUpperCase()))) {
+        e.preventDefault(); e.stopPropagation();
+      }
+    };
+    const onKeyUp       = (e: KeyboardEvent) => { if (e.key === 'PrintScreen') show(2500); };
+    const onVisibility  = () => { if (doc.hidden) show(0); else hide(); };
+    const onBlur        = () => show(1800);
+    const onFocus       = () => hide();
+
+    doc.addEventListener('contextmenu',      onContext);
+    doc.addEventListener('keydown',          onKeyDown);
+    doc.addEventListener('keyup',            onKeyUp);
+    doc.addEventListener('visibilitychange', onVisibility);
+    win.addEventListener('blur',  onBlur);
+    win.addEventListener('focus', onFocus);
+
+    return () => {
+      doc.removeEventListener('contextmenu',      onContext);
+      doc.removeEventListener('keydown',          onKeyDown);
+      doc.removeEventListener('keyup',            onKeyUp);
+      doc.removeEventListener('visibilitychange', onVisibility);
+      win.removeEventListener('blur',  onBlur);
+      win.removeEventListener('focus', onFocus);
+      try { doc.head.removeChild(style); } catch {}
+    };
+  }, [show, hide]);
+
+  return Platform.OS !== 'web' && visible;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auth guard
+// ─────────────────────────────────────────────────────────────────────────────
 function useAuthGuard(ready: boolean) {
   const router   = useRouter();
   const segments = useSegments();
@@ -129,50 +227,37 @@ function useAuthGuard(ready: boolean) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ★ AnimatedNavBar
-//
-//   Rendu UNIQUEMENT quand `navReady` est true (navigation complètement montée)
-//   → useRouter() à l'intérieur de CustomNavBar ne peut plus crasher
-//
-//   Sur /reels  → Animated.View piloté par navBarOpacity (fullscreen possible)
-//   Ailleurs    → View normale opacity 1, jamais animée
+// NavBarWrapper
 // ─────────────────────────────────────────────────────────────────────────────
-function AnimatedNavBar({ navReady }: { navReady: boolean }) {
-  const { navBarOpacity, restoreNavBar } = useReelsUI();
-  const pathname = usePathname();
-
-  const isReels = pathname === '/reels'
-    || pathname === '/(tabs)/reels'
-    || pathname.endsWith('/reels');
-
-  // Quand on quitte /reels → restore instantané
+function NavBarWrapper() {
+  const { navBarOpacity, uiVisible, restoreNavBar } = useReelsUI();
+  const pathname   = usePathname();
   const wasOnReels = useRef(false);
+
+  const isReels =
+    pathname === '/reels' ||
+    pathname === '/(tabs)/reels' ||
+    pathname.endsWith('/reels');
+
   useEffect(() => {
-    if (!isReels && wasOnReels.current) {
-      restoreNavBar();
-    }
+    if (!isReels && wasOnReels.current) restoreNavBar();
     wasOnReels.current = isReels;
   }, [isReels, restoreNavBar]);
 
-  // ★ Ne rien rendre tant que la navigation n'est pas prête
-  //   → évite le crash de useRouter() dans CustomNavBar
-  if (!navReady) return null;
-
+  // Hors /reels → View normale, opacity 1, toujours visible + cliquable
   if (!isReels) {
-    // Hors reels → NavBar normale, toujours visible, opacity fixe
     return (
-      <View style={lay.navBarWrapper}>
+      <View style={lay.nav}>
         <CustomNavBar />
       </View>
     );
   }
 
-  // Sur reels → opacity animée par le contexte
+  // Sur /reels → opacity + pointerEvents animés par le contexte
   return (
     <Animated.View
-      style={[lay.navBarWrapper, { opacity: navBarOpacity }]}
-      // pointerEvents dynamique : quand invisible → pas de clics fantômes
-      pointerEvents="box-none"
+      style={[lay.nav, { opacity: navBarOpacity }]}
+      pointerEvents={uiVisible ? 'box-none' : 'none'}
     >
       <CustomNavBar />
     </Animated.View>
@@ -183,23 +268,14 @@ function AnimatedNavBar({ navReady }: { navReady: boolean }) {
 // RootLayout
 // ─────────────────────────────────────────────────────────────────────────────
 export default function RootLayout() {
-  const [ready,    setReady]    = useState(false);
-  // ★ navReady : true uniquement après que Stack a appelé onReady
-  //   → CustomNavBar (et son useRouter) ne monte qu'à ce moment
-  const [navReady, setNavReady] = useState(false);
-  const isPrivate = useAntiScreenshot();
+  const [ready, setReady] = useState(false);
+  const screenshotVisible = useAntiScreenshot();
   useAuthGuard(ready);
 
   useEffect(() => {
     supabase.auth.getSession()
-      .then(() => {
-        setReady(true);
-        SplashScreen.hideAsync().catch(() => {});
-      })
-      .catch(() => {
-        setReady(true);
-        SplashScreen.hideAsync().catch(() => {});
-      });
+      .then(() => { setReady(true); SplashScreen.hideAsync().catch(() => {}); })
+      .catch(() => { setReady(true); SplashScreen.hideAsync().catch(() => {}); });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {});
     return () => subscription.unsubscribe();
@@ -213,8 +289,6 @@ export default function RootLayout() {
         <StatusBar style="light" />
 
         <Stack
-          // ★ onReady → navigation complètement montée → safe pour useRouter
-          onReady={() => setNavReady(true)}
           screenOptions={{
             headerShown:      false,
             contentStyle:     { backgroundColor: '#070C17' },
@@ -235,22 +309,17 @@ export default function RootLayout() {
           <Stack.Screen name="+not-found" options={{ title: 'Page introuvable' }} />
         </Stack>
 
-        {/* ★ NavBar — montée seulement après onReady, animée seulement sur /reels */}
-        <AnimatedNavBar navReady={navReady} />
+        {/* NavBar — toujours visible hors /reels, disparaît après 4s sur /reels */}
+        <NavBarWrapper />
 
-        {Platform.OS !== 'web' && isPrivate && <PrivacyOverlay />}
+        {/* Overlay anti-screenshot — natif uniquement */}
+        <ScreenshotOverlay visible={screenshotVisible} />
+
       </SafeAreaProvider>
     </ReelsUIProvider>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 const lay = StyleSheet.create({
-  navBarWrapper: {
-    position: 'absolute',
-    bottom:   0,
-    left:     0,
-    right:    0,
-    zIndex:   100,
-  },
+  nav: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 100 },
 });

@@ -496,54 +496,89 @@ const CritiqueCard = memo(function CritiqueCard({
   const isLong = item.content.length > 180;
   const displayContent = isLong && !expanded ? item.content.slice(0, 180) + '…' : item.content;
 
+
+
   return (
     <View style={cc.wrap}>
-      <BlurView intensity={Platform.OS === 'ios' ? 18 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
-
+      <BlurView
+        intensity={Platform.OS === 'ios' ? 18 : 12}
+        tint="dark"
+        style={StyleSheet.absoluteFillObject}
+      />
+  
       {/* ── Header auteur ─────────────────────────────────────────────── */}
       <View style={cc.header}>
         <TouchableOpacity
           style={cc.authorRow}
-          onPress={() => router.push(`/profile/${item.user_id}` as any)}
-          activeOpacity={0.80}
+          onPress={() => {
+            // public.profiles via item.user_id
+            router.push(`/profile/${item.user_id}` as any);
+          }}
+          activeOpacity={0.8}
         >
           <Image source={{ uri: avatar }} style={cc.avatar} />
           <View style={{ flex: 1, gap: 1 }}>
-            <Text style={cc.authorName} numberOfLines={1}>{displayName}</Text>
+            <Text style={cc.authorName} numberOfLines={1}>
+              {displayName}
+            </Text>
             <Text style={cc.date}>{timeAgo(item.created_at)}</Text>
           </View>
         </TouchableOpacity>
+  
         <StarRating rating={item.rating} />
       </View>
-
-      {/* ── Film title ────────────────────────────────────────────────── */}
+  
+      {/* ── Film title + "Voir le reel" ──────────────────────────────── */}
       <View style={cc.filmRow}>
         <Ionicons name="film-outline" size={11} color={C.blue} />
-        <Text style={cc.filmTitle} numberOfLines={1}>{item.film_title}</Text>
+        <Text style={cc.filmTitle} numberOfLines={1}>
+          {item.film_title}
+        </Text>
+  
         {item.reel_id && (
           <TouchableOpacity
-            onPress={() => router.push(`/reels?id=${item.reel_id}` as any)}
+            onPress={() => {
+              // reel correspondant (public.reels) via item.reel_id
+              router.push(`/reels?id=${item.reel_id}` as any);
+            }}
             style={cc.reelChip}
+            activeOpacity={0.8}
           >
-            <Ionicons name="play-circle-outline" size={10} color={C.blue} />
-            <Text style={{ color: C.blue, fontSize: 9, fontWeight: '700' }}>Voir le reel</Text>
+            <Ionicons
+              name="play-circle-outline"
+              size={10}
+              color={C.blue}
+            />
+            <Text style={{ color: C.blue, fontSize: 9, fontWeight: '700' }}>
+              Voir le reel
+            </Text>
           </TouchableOpacity>
         )}
       </View>
-
+  
       {/* ── Titre critique ────────────────────────────────────────────── */}
       <Text style={cc.title}>{item.title}</Text>
-
+  
       {/* ── Contenu ───────────────────────────────────────────────────── */}
       <Text style={cc.content}>{displayContent}</Text>
       {isLong && (
-        <TouchableOpacity onPress={() => setExpanded(v => !v)} hitSlop={6}>
-          <Text style={{ color: C.blue, fontSize: 12, fontWeight: '700', marginTop: 4 }}>
+        <TouchableOpacity
+          onPress={() => setExpanded((v) => !v)}
+          hitSlop={6}
+        >
+          <Text
+            style={{
+              color: C.blue,
+              fontSize: 12,
+              fontWeight: '700',
+              marginTop: 4,
+            }}
+          >
             {expanded ? 'Voir moins' : 'Lire la suite'}
           </Text>
         </TouchableOpacity>
       )}
-
+  
       {/* ── Tags ──────────────────────────────────────────────────────── */}
       {item.tags && item.tags.length > 0 && (
         <ScrollView
@@ -552,18 +587,27 @@ const CritiqueCard = memo(function CritiqueCard({
           contentContainerStyle={cc.tags}
           style={{ marginTop: 10 }}
         >
-          {item.tags.map(tag => (
-            <TouchableOpacity key={tag} onPress={() => onTagPress(tag)} style={cc.tag}>
+          {item.tags.map((tag) => (
+            <TouchableOpacity
+              key={tag}
+              onPress={() => onTagPress(tag)}
+              style={cc.tag}
+              activeOpacity={0.8}
+            >
               <Text style={cc.tagTxt}>#{tag}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
       )}
-
+  
       {/* ── Actions ───────────────────────────────────────────────────── */}
       <View style={cc.actions}>
         {/* Like */}
-        <TouchableOpacity onPress={handleLike} style={cc.actionBtn} activeOpacity={0.80}>
+        <TouchableOpacity
+          onPress={handleLike}
+          style={cc.actionBtn}
+          activeOpacity={0.8}
+        >
           <Animated.View style={{ transform: [{ scale: likeAnim }] }}>
             <Ionicons
               name={item.is_liked ? 'heart' : 'heart-outline'}
@@ -575,69 +619,112 @@ const CritiqueCard = memo(function CritiqueCard({
             {fmtK(item.likes_count ?? 0)}
           </Text>
         </TouchableOpacity>
-
-        {/* Commentaires */}
-        <TouchableOpacity onPress={() => onToggleComments(item.id)} style={cc.actionBtn} activeOpacity={0.80}>
-          <Ionicons
-            name={item.show_comments ? 'chatbubble' : 'chatbubble-outline'}
-            size={16}
-            color={item.show_comments ? C.blue : C.muted}
-          />
-          <Text style={[cc.actionTxt, item.show_comments && { color: C.blue }]}>
-            {(item.comments?.length ?? 0) > 0 ? fmtK(item.comments!.length) : 'Commenter'}
-          </Text>
-        </TouchableOpacity>
-
+  
+   {/* Commentaires (toggle + fetch dynamique) */}
+<TouchableOpacity
+  onPress={() => {
+    // ✅ utilise TON handler existant
+    onToggleComments(item.id);
+  }}
+  style={cc.actionBtn}
+  activeOpacity={0.8}
+>
+  <Ionicons
+    name={item.show_comments ? 'chatbubble' : 'chatbubble-outline'}
+    size={16}
+    color={item.show_comments ? C.blue : C.muted}
+  />
+  <Text style={[cc.actionTxt, item.show_comments && { color: C.blue }]}>
+    {(item.comments?.length ?? 0) > 0
+      ? fmtK(item.comments!.length)
+      : 'Commenter'}
+  </Text>
+</TouchableOpacity>
+  
         {/* Partager */}
-        <TouchableOpacity style={cc.actionBtn} activeOpacity={0.80}>
+        <TouchableOpacity style={cc.actionBtn} activeOpacity={0.8}>
           <Ionicons name="share-outline" size={16} color={C.muted} />
           <Text style={cc.actionTxt}>Partager</Text>
         </TouchableOpacity>
-
+  
         {/* Signaler (si pas l'auteur) */}
         {item.user_id !== userId && (
-          <TouchableOpacity style={cc.actionBtn} activeOpacity={0.80}>
-            <Ionicons name="flag-outline" size={14} color="rgba(255,255,255,0.20)" />
+          <TouchableOpacity style={cc.actionBtn} activeOpacity={0.8}>
+            <Ionicons
+              name="flag-outline"
+              size={14}
+              color="rgba(255,255,255,0.20)"
+            />
           </TouchableOpacity>
         )}
       </View>
-
+  
       {/* ── Commentaires ──────────────────────────────────────────────── */}
       {item.show_comments && (
         <View style={cc.commentsSection}>
           {/* Liste */}
-          {(item.comments ?? []).map(cm => (
-            <View key={cm.id} style={cc.comment}>
+          {(item.comments ?? []).map((cm) => (
+            <TouchableOpacity
+              key={cm.id}
+              style={cc.comment}
+              activeOpacity={0.9}
+              onPress={() => {
+                // ✅ clique sur un commentaire -> profil correspondant (public.profiles via cm.user_id)
+                router.push(`/profile/${cm.user_id}` as any);
+              }}
+            >
               <Image
-                source={{ uri: avatarUrl(cm.user_id, cm.profile?.avatar_url) }}
+                source={{
+                  uri: avatarUrl(cm.user_id, cm.profile?.avatar_url),
+                }}
                 style={cc.cmAvatar}
               />
+  
               <View style={cc.cmBody}>
-                <View style={{ flexDirection:'row', alignItems:'center', gap:6 }}>
-                  <Text style={cc.cmAuthor}>{cm.profile?.display_name ?? 'Anonyme'}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={cc.cmAuthor}>
+                    {cm.profile?.display_name ?? 'Anonyme'}
+                  </Text>
                   <Text style={cc.cmDate}>{timeAgo(cm.created_at)}</Text>
                 </View>
                 <Text style={cc.cmContent}>{cm.content}</Text>
               </View>
-            </View>
+            </TouchableOpacity>
           ))}
-
+  
           {/* Input */}
-          {userId !== 'anonymous' && (
+          {userId !== 'anonymous' ? (
             <CommentInput
               critiqueId={item.id}
               userId={userId}
-              onSent={c => onCommentSent(item.id, c)}
+              onSent={(c) => onCommentSent(item.id, c)}
             />
-          )}
-          {userId === 'anonymous' && (
-            <Text style={{ color:C.muted, fontSize:12, textAlign:'center', padding:12 }}>
+          ) : (
+            <Text
+              style={{
+                color: C.muted,
+                fontSize: 12,
+                textAlign: 'center',
+                padding: 12,
+              }}
+            >
               Connectez-vous pour commenter
             </Text>
           )}
         </View>
       )}
     </View>
+
+  );
+}, (prev, next) => {
+  // Comparaison personnalisée pour éviter les rerenders inutiles
+  return (
+    prev.item.id === next.item.id &&
+    prev.item.likes_count === next.item.likes_count &&
+    prev.item.is_liked === next.item.is_liked &&
+    prev.item.show_comments === next.item.show_comments &&
+    ((prev.item.comments?.length ?? 0) === (next.item.comments?.length ?? 0)) &&
+    prev.userId === next.userId
   );
 });
 
@@ -1061,6 +1148,7 @@ export default function SocialScreen() {
       onTagPress={handleTagPress}
     />
   ), [userId, toggleLike, toggleComments, handleCommentSent, handleTagPress]);
+
 
   const keyExtractor = useCallback((item: Critique) => item.id, []);
 

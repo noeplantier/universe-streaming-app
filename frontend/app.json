@@ -30,10 +30,7 @@
         "NSPhotoLibraryUsageDescription": "Universe accède à votre galerie pour importer vos films, photos de profil et visuels de critiques.",
         "NSPhotoLibraryAddUsageDescription": "Universe enregistre vos créations dans votre galerie photo.",
         "NSLocationWhenInUseUsageDescription": "Universe peut utiliser votre position pour personnaliser les recommandations de festivals proches.",
-        "UIBackgroundModes": [
-          "audio",
-          "fetch"
-        ],
+        "UIBackgroundModes": ["audio", "fetch"],
         "NSAllowsArbitraryLoads": false,
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -83,10 +80,7 @@
               "pathPrefix": "/auth/v1/callback"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },
@@ -138,9 +132,7 @@
             "buildToolsVersion": "35.0.0",
             "usesCleartextTraffic": false,
             "packagingOptions": {
-              "pickFirst": [
-                "**/libc++_shared.so"
-              ]
+              "pickFirst": ["**/libc++_shared.so"]
             }
           },
           "ios": {
