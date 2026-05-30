@@ -208,9 +208,8 @@ const ns = StyleSheet.create({
     flexDirection:  'row',
     justifyContent: 'space-around',
     alignItems:     'center',
-    paddingHorizontal: 8,
     // Fond très légèrement teinté pour séparer la barre du contenu
-    backgroundColor: 'rgba(3,0,10,0.30)',
+    backgroundColor: 'rgba(3, 0, 10, 0.68)',
   },
   item: {
     alignItems:     'center',
