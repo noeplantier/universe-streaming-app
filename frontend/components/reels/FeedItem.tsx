@@ -56,6 +56,14 @@ export interface FeedItemProps {
   film:FeedFilm; isActive:boolean; isNear:boolean; screenFocused:boolean;
   itemW:number; itemH:number; insetBot:number;
   onLike?:(id:string)=>void; onInfoPress?:(f:FeedFilm)=>void;
+  /** Mute contrôlé par la SideBar (vient de index.tsx) */
+  muted?: boolean;
+  /** Reset timer auto-hide dans le contexte */
+  onResetTimer?:    () => void;
+  /** Pause auto-hide quand la vidéo est en pause */
+  onPauseAutoHide?: () => void;
+  /** Reprend auto-hide quand la vidéo reprend */
+  onResumeAutoHide?: () => void;
 }
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
@@ -117,7 +125,7 @@ const PlayPauseFlash=memo(function PlayPauseFlash({anim,isPaused}:{anim:Animated
 });
 
 // ── FeedItem ──────────────────────────────────────────────────────────────────
-const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,itemH,insetBot,onLike,onInfoPress}:FeedItemProps){
+const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,itemH,insetBot,onLike,onInfoPress,muted:mutedProp,onResetTimer,onPauseAutoHide,onResumeAutoHide}:FeedItemProps){
   const isWeb=Platform.OS==='web';
   const src=film.video_url?.trim()||null;
 
@@ -131,7 +139,9 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
   const {isPlaybackEnded}=_useEvent(player,'playToEnd',{isPlaybackEnded:false});
 
   const [liked,    setLiked]   =useState(film.is_liked??false);
-  const [muted,    setMuted]   =useState(false);
+  // muted : contrôlé par la SideBar (prop) ou localement
+  const [_mutedLocal, setMuted]   =useState(false);
+  const muted = mutedProp !== undefined ? mutedProp : _mutedLocal;
   const [saved,    setSaved]   =useState(film.is_saved??false);
   const [buffering,setBuffering]=useState(true);
   const [hasErr,   setHasErr]  =useState(false);
@@ -260,9 +270,14 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
     setIsPaused(next);
     flashIcon();
     if(!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{});
-    if(!next) resetHideTimer(); // Reprise → relancer le timer
-    else clearHideTimer();      // Pause → garder overlay
-  },[setIsPaused,flashIcon,isWeb,resetHideTimer,clearHideTimer]);
+    if(!next){
+      onResumeAutoHide?.();  // reprise → auto-hide reprend dans le contexte
+      resetHideTimer();
+    } else {
+      onPauseAutoHide?.();   // pause → overlay reste visible
+      clearHideTimer();
+    }
+  },[setIsPaused,flashIcon,isWeb,resetHideTimer,clearHideTimer,onPauseAutoHide,onResumeAutoHide]);
 
   // Skip ±10s
   const leftBadge =useRef(new Animated.Value(0)).current;
@@ -296,8 +311,9 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
       Animated.delay(500),
       Animated.timing(heartOp,{toValue:0,duration:250,useNativeDriver:true}),
     ]).start();
+    onResetTimer?.();
     resetHideTimer();
-  },[liked,heartOp,isWeb,film.id,onLike,resetHideTimer]);
+  },[liked,heartOp,isWeb,film.id,onLike,resetHideTimer,onResetTimer]);
 
   // Zones tap
   const tL=useRef(0),tC=useRef(0),tR=useRef(0);

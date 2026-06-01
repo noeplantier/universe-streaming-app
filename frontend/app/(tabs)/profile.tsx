@@ -92,7 +92,7 @@ interface UserReel { id:string; video_url:string; thumbnail_url:string|null; tit
 interface ProfileData { display_name:string; username:string; bio:string; role:string; location:string; avatar_url:string; website:string; is_pro:boolean; is_industry_contact:boolean; specialties:string[]; festivals:string[]; open_to:string[]; notable_works:any[]; equipment:string; social_instagram:string; social_vimeo:string; social_youtube:string; social_imdb:string }
 interface ReviewItem { id:string; content:string; rating:number; likes:number; film:{ id:string; title:string; genre:string } }
 type GridTab = 0|1|2;
-interface Badge { id:string; label:string; desc:string; icon:keyof typeof Ionicons.glyphMap; earned:boolean; pts:number }
+interface Badge { id:string; label:string;  icon:keyof typeof Ionicons.glyphMap; earned:boolean; pts:number }
 interface Mission { id:string; title:string; desc:string; reward:string; icon:keyof typeof Ionicons.glyphMap; target:number; progress:number; completed:boolean }
 interface GamiStats { watchCount:number; critiqueCount:number; favCount:number; watchedGenres:Record<string,number>; isNight:boolean; totalLikedLowPopularity:number; streak:number }
 
@@ -111,13 +111,13 @@ const momentum = (r:UserReel) => Math.round((r.views_count*0.3+r.likes_count*2)/
 
 // ─── GAMIFICATION ─────────────────────────────────────────────────────────────
 function buildBadges(s:GamiStats):Badge[]{return[
-  {id:'explorer', label:'Explorateur indé',   desc:'5 œuvres regardées',      icon:'compass-outline',  earned:s.watchCount>=5,                           pts:15},
-  {id:'nocturne', label:'Cinéphile nocturne',  desc:'Actif après 22h',         icon:'moon-outline',     earned:s.isNight,                                 pts:5},
-  {id:'pepiteur', label:'Pépites',             desc:'3 films rares aimés',     icon:'sparkles-outline', earned:s.totalLikedLowPopularity>=3,               pts:30},
-  {id:'critique', label:'Critique en herbe',   desc:'5 avis publiés',          icon:'create-outline',   earned:s.critiqueCount>=5,                        pts:40},
-  {id:'curateur', label:'Curateur',            desc:'10 favoris',              icon:'bookmark-outline', earned:s.favCount>=10,                            pts:20},
-  {id:'omnivore', label:'Omnivore',            desc:'5 genres explorés',       icon:'layers-outline',   earned:Object.keys(s.watchedGenres).length>=5,    pts:25},
-  {id:'streak',   label:'Habitué',             desc:'3 jours consécutifs',     icon:'flame-outline',    earned:s.streak>=3,                               pts:10},
+  {id:'explorer', label:'Explorateur indé',       icon:'compass-outline',  earned:s.watchCount>=5,                           pts:15},
+  {id:'nocturne', label:'Cinéphile nocturne',          icon:'moon-outline',     earned:s.isNight,                                 pts:5},
+  {id:'pepiteur', label:'Pépites',                  icon:'sparkles-outline', earned:s.totalLikedLowPopularity>=3,               pts:30},
+  {id:'critique', label:'Critique en herbe',           icon:'create-outline',   earned:s.critiqueCount>=5,                        pts:40},
+  {id:'curateur', label:'Curateur',                         icon:'bookmark-outline', earned:s.favCount>=10,                            pts:20},
+  {id:'omnivore', label:'Omnivore',                  icon:'layers-outline',   earned:Object.keys(s.watchedGenres).length>=5,    pts:25},
+  {id:'streak',   label:'Habitué',                  icon:'flame-outline',    earned:s.streak>=3,                               pts:10},
 ];}
 function buildMissions(s:GamiStats):Mission[]{return[
   {id:'watch5',  title:'Cinéphile actif',     desc:'5 œuvres visionnées',      reward:'+15 pts',         icon:'play-circle-outline', target:5,  progress:Math.min(5,s.watchCount),              completed:s.watchCount>=5},
@@ -889,7 +889,7 @@ export default function ProfileScreen() {
     </View>);
   };
 
-  const tabs=[{icon:'grid-outline' as const,label:'Films'},{icon:'clapperboard-outline' as const,label:'Cinéma'},{icon:'play-circle-outline' as const,label:'Créations'}];
+  const tabs=[{icon:'grid-outline' as const,label:'Films'},{icon:'play-circle-outline' as const,label:'Créations'},{icon:'star-outline' as const,label:'Cinéma'}];
 
   return (
     <View style={{flex:1,backgroundColor:C.bg}}>
