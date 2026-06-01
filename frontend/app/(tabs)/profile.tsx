@@ -706,86 +706,105 @@ export default function ProfileScreen() {
   // ★ État des modales "Tout voir"
   const [modal, setModal] = useState<ModalType|null>(null);
 
-  // Auth
-  useEffect(()=>{
-    let mounted = true;
-    const resolve = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (mounted && isUUID(session?.user?.id)) { setUid(session!.user.id); return; }
-      } catch (e) { console.error('[profile] L1:', e); }
-      const lsId = getLocalStorageUserId();
-      if (mounted && isUUID(lsId)) { setUid(lsId!); return; }
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (mounted && isUUID(user?.id)) { setUid(user!.id); return; }
-      } catch (e) { console.error('[profile] L3:', e); }
-      await new Promise(r => setTimeout(r, 800));
-      if (!mounted) return;
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (mounted && isUUID(session?.user?.id)) { setUid(session!.user.id); return; }
-        const lsId2 = getLocalStorageUserId();
-        if (mounted && isUUID(lsId2)) { setUid(lsId2!); return; }
-      } catch (e) { console.error('[profile] L4:', e); }
-      if (mounted) setLoading(false);
-    };
-    resolve();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
-      if (!mounted) return;
-      if (isUUID(s?.user?.id)) setUid(s!.user.id);
-      else if (!s) { setUid(null); setLoading(false); }
-    });
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, []);
-
   const loadAll = useCallback(async (userId: string) => {
     if (!isUUID(userId)) return;
     setLoading(true); setFErr(false);
+  
     try {
-      const [profR, reelsR, critR, favR, histR] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
-        supabase.from('reels').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-        supabase.from('critiques').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
-        supabase.from('user_favorites').select('work_id').eq('user_id', userId),
-        supabase.from('user_history').select('work_id').eq('user_id', userId),
+      const currentWeekNumber = undefined; // <-- mets un nombre si tu veux filtrer
+  
+      const [
+        profR,
+        reelsR,
+        critR,
+        favR,
+        histR,
+        weeklyR,
+        challengeProgressR,
+      ] = await Promise.all([
+        supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
+  
+        supabase.from("reels")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false }),
+  
+        supabase.from("critiques")
+          .select("*")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false }),
+  
+        supabase.from("user_favorites")
+          .select("work_id")
+          .eq("user_id", userId),
+  
+        supabase.from("user_history")
+          .select("work_id")
+          .eq("user_id", userId),
+  
+        currentWeekNumber == null
+          ? supabase.from("weekly_challenges").select("*")
+          : supabase.from("weekly_challenges").select("*").eq("week_number", currentWeekNumber),
+  
+        // pour ta table challenge_progress (si tu veux l’afficher)
+        supabase.from("challenge_progress")
+          .select("*")
+          .eq("user_id", userId),
       ]);
+  
       if (profR.data) setProfile(mapProfile(profR.data));
+  
       setReels((reelsR.data ?? []).map(mapReel));
       setReviews((critR.data ?? []).map(mapReview).sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0)));
+  
       const favIds  = (favR.data ?? []).map((r: any) => r.work_id).filter(Boolean);
       const histIds = (histR.data ?? []).map((r: any) => r.work_id).filter(Boolean);
+  
+      // weekly + challengeProgress (states à créer si besoin)
+      // setWeeklyChallenges(weeklyR.data ?? []);
+      // setChallengeProgress(challengeProgressR.data ?? []);
+  
       const [favD, histD] = await Promise.all([
-        favIds.length  ? supabase.from('works').select('*').in('id', favIds)  : null,
-        histIds.length ? supabase.from('works').select('*').in('id', histIds) : null,
+        favIds.length
+          ? supabase.from("works").select("*").in("id", favIds)
+          : Promise.resolve({ data: null } as any),
+  
+        histIds.length
+          ? supabase.from("works").select("*").in("id", histIds)
+          : Promise.resolve({ data: null } as any),
       ]);
+  
       setFavW((favD?.data ?? []).map(mapWork));
       setWatched((histD?.data ?? []).map(mapWork));
+  
       const seenIds = [...new Set([...favIds, ...histIds])];
-      const genres  = [...new Set([...(favD?.data ?? []), ...(histD?.data ?? [])].map((w: any) => w?.genre).filter(Boolean))];
+  
+      const genres = [...new Set(
+        [...(favD?.data ?? []), ...(histD?.data ?? [])]
+          .map((w: any) => w?.genre)
+          .filter(Boolean)
+      )];
+  
+      // recs via genre in (équivalent à tes URLs /works?genre=in)
       if (genres.length) {
-        const { data: recData } = await supabase.from('works').select('*').in('genre', genres).order('likes', { ascending: false }).limit(12);
-        if (recData) setRecs(recData.map(mapWork).filter(w => !seenIds.includes(w.id)));
+        const { data: recData } = await supabase
+          .from("works")
+          .select("*")
+          .in("genre", genres)
+          .order("likes", { ascending: false })
+          .limit(12);
+  
+        if (recData) setRecs(recData.map(mapWork).filter((w: any) => !seenIds.includes(w.id)));
       }
-    } catch (e) { console.error('[profile] fetch:', e); setFErr(true); }
-    finally { setLoading(false); setRef(false); }
+  
+    } catch (e) {
+      console.error("[profile] fetch:", e);
+      setFErr(true);
+    } finally {
+      setLoading(false);
+      setRef(false);
+    }
   }, []);
-
-  useEffect(() => { if (isUUID(uid)) loadAll(uid!); }, [uid]);
-
-  // Realtime
-  useEffect(() => {
-    if (!isUUID(uid)) return;
-    const ts = Date.now();
-    const ch1 = supabase.channel(`rt_r_${ts}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reels' }, ({ new: r }) => setReels(p => p.map(x => x.id === (r as any).id ? mapReel(r) : x)))
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reels' }, ({ new: r }) => { const reel = mapReel(r); if (reel.id) setReels(p => [reel, ...p.filter(x => x.id !== reel.id)]); })
-      .subscribe();
-    const ch2 = supabase.channel(`rt_p_${ts}`)
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, ({ new: r }) => { if ((r as any).id === uid) setProfile(mapProfile(r)); })
-      .subscribe();
-    return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2); };
-  }, [uid]);
 
   const { score, level, badges, missions, levelUpVisible } = useGamification(uid);
   const hotId = useMemo(() => reels.length < 2 ? null : [...reels].sort((a, b) => momentum(b) - momentum(a))[0]?.id ?? null, [reels]);
