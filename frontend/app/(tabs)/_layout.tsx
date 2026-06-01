@@ -1,179 +1,493 @@
 /**
- * app/_layout.tsx — UNIVERSE · ROOT LAYOUT
+ * app/_layout.tsx — UNIVERSE · ROOT LAYOUT · v11
  *
- * ★ Anti-screenshots : expo-screen-capture (iOS/Android)
- *   + Privacy overlay sur app switcher (background/inactive)
- *   + CSS user-select:none + warning overlay (web)
- * ★ Pas de restriction mobile-only → fonctionne sur web et mobile
- * ★ Auth redirect : non-connecté → /login
- * ★ Code minimal, aucune dépendance superflue
+ * OBJECTIFS :
+ * ★ Préserver toute la logique initiale
+ * ★ Protection anti-screenshot native + fallback overlay
+ * ★ Zéro accès window/document au module-level
+ * ★ Expo screen-capture activé globalement
+ * ★ Overlay GalaxyBackground en cas de capture / background
+ * ★ NavBarWrapper conservé
  */
-import React, { useEffect, useRef, useState } from 'react';
+
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
-  AppState, Platform, StyleSheet, Text, View,
-  type AppStateStatus,
+  Animated,
+  AppState,
+  AppStateStatus,
+  Dimensions,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar }        from 'expo-status-bar';
-import * as SplashScreen    from 'expo-splash-screen';
-import { Ionicons }         from '@expo/vector-icons';
-import { supabase }         from '@/lib/supabase';
+import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '@/lib/supabase';
 import CustomNavBar from '@/components/CustomNavBar';
+import { ReelsUIProvider, useReelsUI } from '@/contexts/ReelsUIContext';
 
-// expo-screen-capture — optionnel, ne plante pas si absent
-let ScreenCapture: { preventScreenCaptureAsync:()=>Promise<void>; allowScreenCaptureAsync:()=>Promise<void> } | null = null;
-try { ScreenCapture = require('expo-screen-capture'); } catch {}
-
-// Garde le splash jusqu'à la vérification d'auth
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-// ─── CSS WEB : anti-sélection + notice screenshot ─────────────────────────────
-if (Platform.OS === 'web' && typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    * { -webkit-user-select:none; -moz-user-select:none; user-select:none; }
-    input, textarea { -webkit-user-select:text; user-select:text; }
-    body { -webkit-tap-highlight-color:transparent; }
-  `;
-  document.head.appendChild(style);
+const { width: SW, height: SH } = Dimensions.get('window');
 
-  // Détecte PrintScreen / Cmd+Shift+4 (macOS) → overlay flash
-  document.addEventListener('keyup', (e: KeyboardEvent) => {
-    if (e.key === 'PrintScreen' || (e.metaKey && e.shiftKey && (e.key==='3'||e.key==='4'||e.key==='5'))) {
-      const el = document.createElement('div');
-      el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:99999;display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-family:system-ui;flex-direction:column;gap:12px;transition:opacity 0.5s';
-      el.innerHTML = '<div style="font-size:32px">⛔</div><div>Capture d\'écran non autorisée</div><div style="font-size:12px;opacity:0.5">UNIVERSE · Cinéma indépendant</div>';
-      document.body.appendChild(el);
-      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 2000);
-    }
-  });
-}
+const STARS = Array.from({ length: 80 }, (_, i) => ({
+  key: i,
+  x: ((Math.sin(i * 2.399) + 1) / 2) * SW,
+  y: ((Math.cos(i * 1.618) + 1) / 2) * SH,
+  r: i % 7 === 0 ? 1.6 : i % 3 === 0 ? 0.9 : 0.5,
+  op: 0.12 + (i % 8) * 0.06,
+}));
 
-// ─── HOOK ANTI-SCREENSHOT ─────────────────────────────────────────────────────
 function useAntiScreenshot() {
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const show = useCallback((ms = 0) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setVisible(true);
+    if (ms > 0) {
+      timerRef.current = setTimeout(() => setVisible(false), ms);
+    }
+  }, []);
+
+  const hide = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setVisible(false);
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    // 1. Bloque les captures d'écran (iOS + Android)
-    ScreenCapture?.preventScreenCaptureAsync().catch(() => {});
+    let ScreenCapture: any = null;
+    try {
+      ScreenCapture = require('expo-screen-capture');
+    } catch {}
 
-    // 2. Overlay de confidentialité sur app switcher (background/inactive)
-    const onStateChange = (next: AppStateStatus) => {
-      setIsPrivate(next === 'background' || next === 'inactive');
+    ScreenCapture?.preventScreenCaptureAsync?.().catch(() => {});
+
+    const screenshotSub =
+      ScreenCapture?.addScreenshotListener?.(() => show(3000)) ?? null;
+
+    const appSub = AppState.addEventListener('change', (s: AppStateStatus) => {
+      if (s === 'background' || s === 'inactive') show(0);
+      if (s === 'active') hide();
+    });
+
+    const activateAndroidSecureFlag = async () => {
+      if (Platform.OS !== 'android') return;
+      try {
+        const mod = require('react-native-flag-secure-android');
+        mod?.default?.activate?.() ?? mod?.activate?.();
+      } catch {}
     };
-    const sub = AppState.addEventListener('change', onStateChange);
+
+    activateAndroidSecureFlag();
 
     return () => {
-      sub.remove();
-      ScreenCapture?.allowScreenCaptureAsync().catch(() => {});
-    };
-  }, []);
+      screenshotSub?.remove?.();
+      appSub.remove();
+      ScreenCapture?.allowScreenCaptureAsync?.().catch(() => {});
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
 
-  return isPrivate;
+      if (Platform.OS === 'android') {
+        try {
+          const mod = require('react-native-flag-secure-android');
+          mod?.default?.deactivate?.() ?? mod?.deactivate?.();
+        } catch {}
+      }
+    };
+  }, [show, hide]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const doc = document;
+    const win = window;
+
+    const style = doc.createElement('style');
+    style.setAttribute('data-universe', 'shield');
+    style.textContent = [
+      '* { -webkit-user-select:none!important; user-select:none!important; }',
+      'input,textarea,[contenteditable]{ -webkit-user-select:text!important; user-select:text!important; }',
+      'img,video,canvas{ -webkit-user-drag:none!important; pointer-events:none; }',
+      'input,textarea,button,a,select{ pointer-events:auto!important; }',
+    ].join('');
+    doc.head.appendChild(style);
+
+    const onContext = (e: MouseEvent) => e.preventDefault();
+    const onKeyDown = (e: KeyboardEvent) => {
+      const k = e.key.toUpperCase();
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && 'IJCK'.includes(k)) ||
+        (e.metaKey && e.altKey && 'IJCK'.includes(k))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'PrintScreen') show(2500);
+    };
+    const onVisibility = () => {
+      if (doc.hidden) show(0);
+      else hide();
+    };
+
+    win.addEventListener('blur', () => show(1800));
+    win.addEventListener('focus', hide);
+    doc.addEventListener('contextmenu', onContext);
+    doc.addEventListener('keydown', onKeyDown);
+    doc.addEventListener('keyup', onKeyUp);
+    doc.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      doc.removeEventListener('contextmenu', onContext);
+      doc.removeEventListener('keydown', onKeyDown);
+      doc.removeEventListener('keyup', onKeyUp);
+      doc.removeEventListener('visibilitychange', onVisibility);
+      try {
+        doc.head.removeChild(style);
+      } catch {}
+    };
+  }, [show, hide]);
+
+  return Platform.OS !== 'web' && visible;
 }
 
-// ─── PRIVACY OVERLAY (mobile app switcher) ────────────────────────────────────
-function PrivacyOverlay() {
+const ScreenshotOverlay = React.memo(function ScreenshotOverlay({
+  visible,
+}: {
+  visible: boolean;
+}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: 240,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setMounted(false);
+      });
+    }
+  }, [visible, anim]);
+
+  if (!mounted) return null;
+
   return (
-    <View style={ov.wrap} pointerEvents="none">
-      <View style={ov.inner}>
-        <View style={ov.logo}>
-          <Ionicons name="film-outline" size={34} color="rgba(255,255,255,0.70)" />
+    <Animated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFillObject, { zIndex: 99999, opacity: anim }]}
+    >
+      <LinearGradient
+        colors={['#020810', '#070C17', '#0A1830', '#070C17']}
+        locations={[0, 0.35, 0.7, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {STARS.map((s) => (
+        <View
+          key={s.key}
+          style={{
+            position: 'absolute',
+            left: s.x - s.r,
+            top: s.y - s.r,
+            width: s.r * 2,
+            height: s.r * 2,
+            borderRadius: s.r,
+            backgroundColor: '#fff',
+            opacity: s.op,
+          }}
+        />
+      ))}
+      <View style={ov.center}>
+        <View style={ov.iconBox}>
+          <Ionicons name="film-outline" size={36} color="rgba(255,255,255,0.68)" />
         </View>
         <Text style={ov.title}>UNIVERSE</Text>
-        <Text style={ov.sub}>Cinéma indépendant</Text>
+        <Text style={ov.eyebrow}>Cinéma indépendant</Text>
+        <View style={ov.divider} />
+        <Text style={ov.msg}>Capture d'écran non autorisée</Text>
+        <Text style={ov.sub}>
+          Ce contenu est protégé.{'\n'}
+          Toute reproduction est strictement interdite.
+        </Text>
+        <View style={ov.badge}>
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={11}
+            color="rgba(255,255,255,0.32)"
+          />
+          <Text style={ov.badgeTxt}>CONTENU PROTÉGÉ</Text>
+        </View>
       </View>
-    </View>
+    </Animated.View>
   );
-}
-const ov = StyleSheet.create({
-  wrap:  { ...StyleSheet.absoluteFillObject, backgroundColor: '#020810', zIndex: 9999, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  inner: { alignItems: 'center', gap: 14 },
-  logo:  { width: 72, height: 72, borderRadius: 20, backgroundColor: 'rgba(13,32,64,0.80)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', alignItems: 'center', justifyContent: 'center' },
-  title: { color: '#FFFFFF', fontSize: 22, fontWeight: '900', letterSpacing: 3, textTransform: 'uppercase' },
-  sub:   { color: 'rgba(255,255,255,0.36)', fontSize: 12, letterSpacing: 1.2 },
 });
 
-// ─── HOOK AUTH REDIRECT ───────────────────────────────────────────────────────
 function useAuthGuard(ready: boolean) {
-  const router   = useRouter();
+  const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
     if (!ready) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       const inAuth = segments[0] === '(auth)' || segments[0] === 'login';
       if (!session && !inAuth) {
-        // Non connecté → login (si la route existe)
-        // router.replace('/login');  // décommenter quand la route /login est créée
+        // router.replace('/login');
       }
     });
-  }, [ready, segments]);
+  }, [ready, segments, router]);
 }
 
-// ─── ROOT LAYOUT ──────────────────────────────────────────────────────────────
+function NavBarWrapper() {
+  const { navBarOpacity, uiVisible, restoreNavBar } = useReelsUI();
+  const pathname = usePathname();
+  const wasOnReels = useRef(false);
+
+  const isReels = useMemo(() => {
+    return (
+      pathname === '/reels' ||
+      pathname === '/(tabs)/reels' ||
+      pathname.endsWith('/reels')
+    );
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isReels && wasOnReels.current) restoreNavBar();
+    wasOnReels.current = isReels;
+  }, [isReels, restoreNavBar]);
+
+  if (!isReels) {
+    return (
+      <View style={lay.nav}>
+        <CustomNavBar />
+      </View>
+    );
+  }
+
+  return (
+    <Animated.View
+      style={[lay.nav, { opacity: navBarOpacity }]}
+      pointerEvents={uiVisible ? 'box-none' : 'none'}
+    >
+      <CustomNavBar />
+    </Animated.View>
+  );
+}
+
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
-  const isPrivate         = useAntiScreenshot();
+  const screenshotVisible = useAntiScreenshot();
+
   useAuthGuard(ready);
 
   useEffect(() => {
-    // Vérifie la session + cache le splash
-    supabase.auth.getSession().then(() => {
-      setReady(true);
-      SplashScreen.hideAsync().catch(() => {});
-    }).catch(() => {
-      setReady(true);
-      SplashScreen.hideAsync().catch(() => {});
-    });
+    let alive = true;
 
-    // Sync session sur changement (ex. refresh token)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {});
-    return () => subscription.unsubscribe();
+    supabase.auth
+      .getSession()
+      .then(() => {
+        if (!alive) return;
+        setReady(true);
+        SplashScreen.hideAsync().catch(() => {});
+      })
+      .catch(() => {
+        if (!alive) return;
+        setReady(true);
+        SplashScreen.hideAsync().catch(() => {});
+      });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {});
+
+    return () => {
+      alive = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (!ready) return null;
 
   return (
-    <SafeAreaProvider>
-      <StatusBar style="light" />
-      <Stack
-        screenOptions={{
-          headerShown:       false,
-          contentStyle:      { backgroundColor: '#070C17' },
-          animation:         Platform.OS === 'ios' ? 'default' : 'fade',
-          gestureEnabled:    true,
-          gestureDirection:  'horizontal',
-        }}
-      >
-        {/* Tabs group — écrans principaux */}
-        <Stack.Screen name="(tabs)"   options={{ headerShown: false }} />
+    <ReelsUIProvider>
+      <SafeAreaProvider>
+        <StatusBar style="light" />
 
-        {/* Modales et écrans détail */}
-        <Stack.Screen name="film/[id]"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
-        <Stack.Screen name="reel/[id]"  options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
-        <Stack.Screen name="edit"       options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
-        <Stack.Screen name="review/[id]" options={{ animation: Platform.OS==='ios'?'default':'fade_from_bottom' }} />
-        <Stack.Screen name="notifications" options={{ animation: Platform.OS==='ios'?'default':'fade_from_bottom' }} />
-        <Stack.Screen name="settings"   options={{ animation: Platform.OS==='ios'?'default':'fade_from_bottom' }} />
-        <Stack.Screen name="user/[id]"  options={{ animation: Platform.OS==='ios'?'default':'fade_from_bottom' }} />
-        <Stack.Screen name="backoffice/universe-admin" options={{ animation: 'fade_from_bottom' }} />
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: '#070C17' },
+            animation: Platform.OS === 'ios' ? 'default' : 'fade',
+            gestureEnabled: true,
+            gestureDirection: 'horizontal',
+          }}
+        >
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="film/[id]"
+            options={{
+              animation: 'slide_from_bottom',
+              gestureDirection: 'vertical',
+            }}
+          />
+          <Stack.Screen
+            name="reel/[id]"
+            options={{
+              animation: 'slide_from_bottom',
+              gestureDirection: 'vertical',
+            }}
+          />
+          <Stack.Screen
+            name="edit"
+            options={{
+              animation: 'slide_from_bottom',
+              gestureDirection: 'vertical',
+            }}
+          />
+          <Stack.Screen
+            name="review/[id]"
+            options={{
+              animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="notifications"
+            options={{
+              animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="settings"
+            options={{
+              animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="user/[id]"
+            options={{
+              animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom',
+            }}
+          />
+          <Stack.Screen
+            name="backoffice/universe-admin"
+            options={{ animation: 'fade_from_bottom' }}
+          />
+          <Stack.Screen name="+not-found" options={{ title: 'Page introuvable' }} />
+        </Stack>
 
-        {/* Auth (décommenter quand routes créées) */}
-        {/* <Stack.Screen name="login" options={{ animation:'fade', gestureEnabled:false }} /> */}
-        {/* <Stack.Screen name="(auth)" options={{ headerShown:false }} /> */}
-
-        {/* 404 */}
-        <Stack.Screen name="+not-found" options={{ title: 'Page introuvable' }} />
-      </Stack>
-
-      {/* ★ Privacy overlay — masque le contenu dans l'app switcher */}
-      {Platform.OS !== 'web' && isPrivate && <PrivacyOverlay />}
-      <CustomNavBar/>
-
-    </SafeAreaProvider>
+        <NavBarWrapper />
+        <ScreenshotOverlay visible={screenshotVisible} />
+      </SafeAreaProvider>
+    </ReelsUIProvider>
   );
 }
+
+const ov = StyleSheet.create({
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 14,
+    paddingHorizontal: 44,
+  },
+  iconBox: {
+    width: 84,
+    height: 84,
+    borderRadius: 22,
+    backgroundColor: 'rgba(13,32,64,0.90)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.09)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: 5,
+    textTransform: 'uppercase',
+  },
+  eyebrow: {
+    color: 'rgba(255,255,255,0.27)',
+    fontSize: 10,
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    marginTop: -6,
+  },
+  divider: {
+    width: 44,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 1,
+    marginVertical: 2,
+  },
+  msg: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 15,
+    fontWeight: '700',
+    textAlign: 'center',
+    letterSpacing: -0.2,
+  },
+  sub: {
+    color: 'rgba(255,255,255,0.26)',
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 17,
+    marginTop: -2,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 13,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.07)',
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    marginTop: 6,
+  },
+  badgeTxt: {
+    color: 'rgba(255,255,255,0.28)',
+    fontSize: 8.5,
+    fontWeight: '800',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
+  },
+});
+
+const lay = StyleSheet.create({
+  nav: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 100,
+  },
+});

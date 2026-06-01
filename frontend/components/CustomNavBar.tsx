@@ -1,97 +1,100 @@
 /**
- * components/CustomNavBar.tsx — UNIVERSE · DYNAMIC AVATAR
+ * components/CustomNavBar.tsx — UNIVERSE · v4
  *
- * ★ Avatar dynamique depuis Supabase profiles.avatar_url
- * ★ Realtime : se met à jour quand edit.tsx upload une nouvelle photo
- * ★ Monogramme (initiales) si pas d'avatar ou erreur de chargement
- * ★ Auth state subscription
+ * ★ Brillance supprimée (shadowColor, shadowOpacity, shadowRadius, elevation retirés)
+ * ★ Design épuré : fond blur subtil, bordure fine semi-transparente
+ * ★ useRouter protégé (CustomNavBarInner monté après 1 tick)
+ * ★ .on() AVANT .subscribe() sur le channel Realtime
+ * ★ Callbacks mémorisés, re-renders minimisés
  */
 import React, { memo, useCallback, useEffect, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Image,
+  View, Text, StyleSheet, TouchableOpacity, Image, Platform,
 } from 'react-native';
 import { BlurView }  from 'expo-blur';
-import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 
-// Import des tokens si disponibles, sinon fallback
+let _useRouter: (() => { push: (p: any) => void }) | null = null;
+try { _useRouter = require('expo-router').useRouter; } catch {}
+
 let C: any = { navyMid: '#0D2040' };
 try { C = require('./create/tokens').C; } catch {}
 
 interface ProfileMini { avatar_url: string; display_name: string; username: string }
 
-// ─── ★ AVATAR OR MONOGRAM ─────────────────────────────────────────────────────
-const NavAvatar = memo(({ profile }: { profile: ProfileMini | null }) => {
+// ─── AVATAR ───────────────────────────────────────────────────────────────────
+const NavAvatar = memo(function NavAvatar({ profile }: { profile: ProfileMini | null }) {
   const [imgErr, setImgErr] = useState(false);
-
-  // Reset error when avatar changes
   useEffect(() => { setImgErr(false); }, [profile?.avatar_url]);
 
-  const name = profile?.display_name || profile?.username || '?';
+  const name     = profile?.display_name || profile?.username || '?';
   const initials = name.trim().split(/\s+/).map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
   const hasAvatar = !!profile?.avatar_url && !imgErr;
 
-  return (
-    <View style={ns.avatarWrap}>
-      {hasAvatar ? (
+  if (hasAvatar) {
+    return (
+      <View style={ns.avatarWrap}>
         <Image
           source={{ uri: profile!.avatar_url }}
           style={ns.avatar}
           resizeMode="cover"
           onError={() => setImgErr(true)}
         />
-      ) : (
-        <View style={[ns.avatar, ns.monogram]}>
-          <Text style={ns.mono}>{initials}</Text>
-        </View>
-      )}
+      </View>
+    );
+  }
+
+  return (
+    <View style={ns.avatarWrap}>
+      <View style={[ns.avatar, ns.monogram]}>
+        <Text style={ns.mono}>{initials}</Text>
+      </View>
     </View>
   );
 });
 
 // ─── NAV ITEM ─────────────────────────────────────────────────────────────────
-type NavItemProps = { icon: React.ReactNode; label?: string; onPress: () => void };
-const NavItem = memo(({ icon, label, onPress }: NavItemProps) => (
-  <TouchableOpacity style={ns.navItem} onPress={onPress} activeOpacity={0.7}>
-    {icon}
-    {label && <Text style={ns.navLabel}>{label}</Text>}
-  </TouchableOpacity>
-));
+const NavItem = memo(function NavItem({ icon, label, onPress }: {
+  icon: React.ReactNode; label?: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={ns.item} onPress={onPress} activeOpacity={0.65}>
+      {icon}
+      {label && <Text style={ns.label}>{label}</Text>}
+    </TouchableOpacity>
+  );
+});
 
-// ─── MAIN NAVBAR ──────────────────────────────────────────────────────────────
-function CustomNavBar() {
-  const router = useRouter();
+// ─── INNER ────────────────────────────────────────────────────────────────────
+function CustomNavBarInner() {
+  const router = _useRouter!();
   const [profile, setProfile] = useState<ProfileMini | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userId,  setUserId]  = useState<string | null>(null);
 
-  // ★ Auth + fetch profile
+  // Auth + profil initial
   useEffect(() => {
-    let mounted = true;
+    let alive = true;
 
-    const fetchProfile = async (uid: string) => {
+    async function fetchProfile(uid: string) {
       const { data } = await supabase
         .from('profiles')
         .select('avatar_url,display_name,username')
         .eq('id', uid)
         .maybeSingle();
-      if (mounted && data) setProfile(data as ProfileMini);
-    };
+      if (alive && data) setProfile(data as ProfileMini);
+    }
 
-    const init = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (mounted && session?.user?.id) {
-          setUserId(session.user.id);
-          fetchProfile(session.user.id);
-        }
-      } catch (e) { /* silent */ }
-    };
-
-    init();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!alive) return;
+      if (session?.user?.id) {
+        setUserId(session.user.id);
+        fetchProfile(session.user.id);
+      }
+    }).catch(() => {});
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
-      if (!mounted) return;
+      if (!alive) return;
       if (s?.user?.id) {
         setUserId(s.user.id);
         fetchProfile(s.user.id);
@@ -101,103 +104,143 @@ function CustomNavBar() {
       }
     });
 
-    return () => { mounted = false; subscription.unsubscribe(); };
+    return () => { alive = false; subscription.unsubscribe(); };
   }, []);
 
-  // ★ Realtime — MAJ immédiate quand edit.tsx upload un avatar
+  // Realtime avatar — .on() AVANT .subscribe()
   useEffect(() => {
     if (!userId) return;
-    const ch = supabase.channel(`nav_profile_${userId}`)
-      .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'profiles',
-        filter: `id=eq.${userId}`,
-      }, ({ new: row }) => {
-        const r = row as any;
-        setProfile(prev => ({
-          avatar_url: r.avatar_url ?? prev?.avatar_url ?? '',
-          display_name: r.display_name ?? prev?.display_name ?? '',
-          username: r.username ?? prev?.username ?? '',
-        }));
-      })
+    const ch = supabase
+      .channel(`nav_${userId}_${Date.now()}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
+        ({ new: row }) => {
+          const r = row as any;
+          setProfile(prev => ({
+            avatar_url:   r.avatar_url   ?? prev?.avatar_url   ?? '',
+            display_name: r.display_name ?? prev?.display_name ?? '',
+            username:     r.username     ?? prev?.username     ?? '',
+          }));
+        },
+      )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [userId]);
 
-  const navigate = useCallback((path: string) => { router.push(path); }, [router]);
+  const go = useCallback((path: string) => {
+    try { router.push(path as any); } catch {}
+  }, [router]);
 
   return (
-    <View style={ns.container}>
-      <BlurView intensity={30} tint="dark" style={ns.blur}>
+    <View style={ns.bar}>
+      <BlurView intensity={Platform.OS === 'ios' ? 40 : 20} tint="dark" style={ns.blur}>
+        {/* Accueil */}
         <NavItem
-          icon={<Ionicons name="home" size={24} color="white" />}
+          icon={<Ionicons name="home-outline" size={22} color="rgba(255,255,255,0.78)" />}
           label="Accueil"
-          onPress={() => navigate('/search')}
+          onPress={() => go('/search')}
         />
+
+        {/* Véloces */}
         <NavItem
-          icon={<MaterialCommunityIcons name="filmstrip" size={24} color="white" />}
+          icon={<MaterialCommunityIcons name="filmstrip" size={22} color="rgba(255,255,255,0.78)" />}
           label="Véloces"
-          onPress={() => navigate('/')}
+          onPress={() => go('/')}
         />
-        {/* ★ Bouton central */}
+
+        {/* Bouton central — sans brillance */}
         <TouchableOpacity
-          style={ns.centerButton}
-          onPress={() => navigate('/create')}
-          activeOpacity={0.8}
+          style={ns.center}
+          onPress={() => go('/create')}
+          activeOpacity={0.75}
         >
-          <MaterialCommunityIcons name="star-four-points" size={36} color="white" />
+          <MaterialCommunityIcons name="star-four-points" size={30} color="rgba(255,255,255,0.90)" />
         </TouchableOpacity>
+
+        {/* Amis */}
         <NavItem
-          icon={<Ionicons name="people" size={24} color="white" />}
+          icon={<Ionicons name="people-outline" size={22} color="rgba(255,255,255,0.78)" />}
           label="Amis"
-          onPress={() => navigate('/social')}
+          onPress={() => go('/social')}
         />
-        {/* ★ Avatar dynamique (photo ou monogramme) */}
-        <TouchableOpacity
-          style={ns.navItem}
-          onPress={() => navigate('/profile')}
-          activeOpacity={0.7}
-        >
+
+        {/* Profil */}
+        <TouchableOpacity style={ns.item} onPress={() => go('/profile')} activeOpacity={0.65}>
           <NavAvatar profile={profile} />
-          <Text style={ns.navLabel}>Profil</Text>
+          <Text style={ns.label}>Profil</Text>
         </TouchableOpacity>
       </BlurView>
     </View>
   );
 }
 
+// ─── EXPORT ───────────────────────────────────────────────────────────────────
+// Monté après 1 tick pour laisser le contexte de navigation s'initialiser
+function CustomNavBar() {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), 0);
+    return () => clearTimeout(t);
+  }, []);
+  if (!ready || !_useRouter) return null;
+  return <CustomNavBarInner />;
+}
+
 export default memo(CustomNavBar);
 
 // ─── STYLES ───────────────────────────────────────────────────────────────────
 const ns = StyleSheet.create({
-  container: {
-    position: 'absolute', bottom: 12, left: 10, right: 10, height: 70,
-    borderRadius: 20, overflow: 'hidden', borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)', zIndex: 999,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4, shadowRadius: 12, elevation: 20,
+  bar: {
+    position:    'absolute',
+    bottom:       12,
+    left:         10,
+    right:        10,
+    height:       66,
+    borderRadius: 20,
+    overflow:    'hidden',
+    // ★ Pas de shadow/elevation → brillance supprimée
+    borderWidth:  StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
   blur: {
-    flex: 1, flexDirection: 'row', justifyContent: 'space-around',
-    alignItems: 'center', paddingHorizontal: 10,
+    flex:           1,
+    flexDirection:  'row',
+    justifyContent: 'space-around',
+    alignItems:     'center',
+    // Fond très légèrement teinté pour séparer la barre du contenu
+    backgroundColor: 'rgba(3, 0, 10, 0.68)',
   },
-  navItem: {
-    alignItems: 'center', justifyContent: 'center',
-    height: '100%', paddingTop: 8, paddingBottom: 0,
+  item: {
+    alignItems:     'center',
+    justifyContent: 'center',
+    height:         '100%',
+    paddingTop:      6,
+    paddingHorizontal: 6,
   },
-  navLabel: { color: 'white', fontSize: 10, marginTop: 4, fontWeight: '500' },
-  centerButton: {
-    width: 60, height: 60, borderRadius: 30, marginTop: 4,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: 'rgba(70,130,180,0.3)', borderWidth: 1,
-    borderColor: C.navyMid, shadowColor: C.navyMid,
-    shadowRadius: 10, shadowOpacity: 0.6, elevation: 10,
+  label: {
+    color:      'rgb(255, 255, 255)',
+    fontSize:    9.5,
+    marginTop:   3,
+    fontWeight: '500',
+    letterSpacing: 0.2,
   },
-  avatarWrap: { width: 28, height: 28 },
-  avatar: { width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: C.navyMid },
-  monogram: {
-    backgroundColor: '#0D2040', alignItems: 'center', justifyContent: 'center',
+
+  // Bouton central — cercle simple sans brillance
+  center: {
+    width:           52,
+    height:          52,
+    borderRadius:    26,
+    alignItems:      'center',
+    justifyContent:  'center',
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth:      StyleSheet.hairlineWidth,
+    borderColor:     'rgba(255,255,255,0.12)',
   },
-  mono: { color: '#FFFFFF', fontSize: 10, fontWeight: '800' },
+
+  // Avatar
+  avatarWrap: { width: 26, height: 26 },
+  avatar:     { width: 26, height: 26, borderRadius: 13 },
+  monogram:   { backgroundColor: 'rgba(13,32,64,0.80)', alignItems: 'center', justifyContent: 'center' },
+  mono:       { color: '#FFFFFF', fontSize: 9, fontWeight: '800' },
 });
