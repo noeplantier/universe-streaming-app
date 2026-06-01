@@ -236,27 +236,8 @@ export default function SearchScreen() {
           />
         </View>
 
-        {/* ★ XP Bar — depuis GamificationSystem */}
-        {userId !== 'anonymous' && !gLoading && (
-          <View style={{ marginHorizontal:EDGE, marginBottom:20 }}>
-            <XPBar profile={profile}/>
-          </View>
-        )}
-
-        {/* ★ Badges — depuis GamificationSystem */}
-        {userId !== 'anonymous' && earnedBadges.length > 0 && !gLoading && (
-          <View style={{ marginBottom:28 }}>
-            <View style={{ flexDirection:'row', alignItems:'center', gap:7, paddingHorizontal:EDGE, marginBottom:12 }}>
-              <Ionicons name="ribbon-outline" size={13} color={C.mid}/>
-              <Text style={{ color:C.white, fontSize:17, fontWeight:'800' }}>Mes badges</Text>
-              <View style={{ paddingHorizontal:7, paddingVertical:2, borderRadius:7, backgroundColor:C.faint, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border, marginLeft:'auto' as any }}>
-                <Text style={{ color:C.muted, fontSize:9, fontWeight:'700' }}>{earnedBadges.length} obtenus</Text>
-              </View>
-            </View>
-            <BadgesRow badges={badges}/>
-          </View>
-        )}
-
+  
+       
         {/* Séparateur */}
         <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginHorizontal:EDGE,marginBottom:28}}/>
 

@@ -85,13 +85,6 @@ function timeAgo(d:string){
 }
 const av=(uid:string,url?:string|null)=>url??`https://i.pravatar.cc/80?u=${uid}`;
 
-// ─── GAMIFICATION ─────────────────────────────────────────────────────────────
-function cinephileLevel(score:number){
-  const L=[{at:0,n:1,l:'Spectateur curieux'},{at:50,n:2,l:'Explorateur indé'},{at:150,n:3,l:'Critique amateur'},{at:400,n:4,l:'Curateur underground'},{at:900,n:5,l:'Ambassadeur cinéma'}];
-  const c=[...L].reverse().find(x=>score>=x.at)??L[0];
-  const ni=L.findIndex(x=>x.n===c.n)+1;const nx=L[ni]??L[L.length-1];
-  return{n:c.n,label:c.l,pct:c.n===5?1:Math.min(1,(score-c.at)/(nx.at-c.at))};
-}
 function useGamification(userId:string){
   const[s,setS]=useState({wc:0,cc:0,fc:0,isNight:false});
   useEffect(()=>{
@@ -103,7 +96,6 @@ function useGamification(userId:string){
     ]).then(([h,c,f])=>setS({wc:h.count??0,cc:c.count??0,fc:f.count??0,isNight:new Date().getHours()>=22||new Date().getHours()<4})).catch(()=>{});
   },[userId]);
   const score=s.wc*3+s.cc*8+s.fc*2+(s.isNight?5:0);
-  return{score,level:cinephileLevel(score)};
 }
 
 // ─── HOOK CRITIQUES ───────────────────────────────────────────────────────────
@@ -181,7 +173,7 @@ function useCritiques(tab:FeedTab,userId:string){
       const open=!c.show_comments;
       if(open&&(!c.comments||c.comments.length===0)){
         supabase.from('critique_comments')
-          .select('id,critique_id,user_id,content,created_at,likes_count')
+          .select('id,critique_id,user_id,content,created_at')
           .eq('critique_id',id).order('created_at',{ascending:true}).limit(30)
           .then(async({data})=>{
             if(!data) return;
@@ -228,7 +220,7 @@ function useCritiques(tab:FeedTab,userId:string){
     if(!text.trim()||userId==='anonymous') return null;
     const{data,error}=await supabase.from('critique_comments')
       .insert({critique_id:critiqueId,user_id:userId,content:text.trim()})
-      .select('id,critique_id,user_id,content,created_at,likes_count').single();
+      .select('id,critique_id,user_id,content,created_at').single();
     if(error||!data) return null;
     const{data:p}=await supabase.from('profiles').select('id,display_name,avatar_url').eq('id',userId).maybeSingle();
     const newCm:Comment={...(data as Comment),profile:p??undefined,expanded:false};
@@ -508,29 +500,6 @@ const NetworkRow=memo(({pros,loading,onIndustry}:{pros:NetworkPro[];loading:bool
 });
 const nr=StyleSheet.create({card:{width:122,height:152,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},img:{width:'100%',height:'100%',position:'absolute'},vBadge:{position:'absolute',top:7,right:7,width:16,height:16,borderRadius:8,backgroundColor:'rgba(7,12,23,0.75)',borderWidth:1,borderColor:C.blueBorder,alignItems:'center',justifyContent:'center'},info:{position:'absolute',bottom:0,left:0,right:0,padding:9,gap:1},name:{color:C.white,fontSize:10,fontWeight:'800'},role:{color:C.muted,fontSize:8.5}});
 
-// ─── GAMI MINI ────────────────────────────────────────────────────────────────
-const GamiMini=memo(({level,score,onPress}:{level:ReturnType<typeof cinephileLevel>;score:number;onPress:()=>void})=>{
-  const prog=useRef(new Animated.Value(0)).current;
-  useEffect(()=>{Animated.timing(prog,{toValue:level.pct,duration:900,useNativeDriver:false}).start();},[level.pct]);
-  return(
-    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={gm.wrap}>
-      <BlurView intensity={Platform.OS==='ios'?12:8} tint="dark" style={StyleSheet.absoluteFillObject}/>
-      <View style={{flexDirection:'row',alignItems:'center',gap:11}}>
-        <View style={gm.circle}><Text style={gm.lvl}>{level.n}</Text></View>
-        <View style={{flex:1,gap:4}}>
-          <View style={{flexDirection:'row',alignItems:'center',gap:7}}>
-            <Text style={{color:C.white,fontSize:11,fontWeight:'700',flex:1}}>{level.label}</Text>
-            <View style={{flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:6,paddingVertical:1.5,borderRadius:6,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}><Ionicons name="star" size={7} color={C.muted}/><Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{score} pts</Text></View>
-          </View>
-          <View style={{height:2.5,borderRadius:2,backgroundColor:C.faint,overflow:'hidden'}}>
-            <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:C.white,width:prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/>
-          </View>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-});
-const gm=StyleSheet.create({wrap:{marginHorizontal:EDGE,marginBottom:13,borderRadius:12,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,padding:11},circle:{width:32,height:32,borderRadius:16,borderWidth:1.5,borderColor:C.border,backgroundColor:C.navyMid,alignItems:'center',justifyContent:'center'},lvl:{color:C.white,fontSize:12,fontWeight:'900'}});
 
 // ─════════════════════════════════════════════════════════════════════════════
 // ★★★ SCREEN
@@ -553,7 +522,6 @@ export default function SocialScreen(){
 
   const{items,loading,refresh,toggleLike,toggleComments,shareCritique,shareComment,addComment}=useCritiques(tab,userId);
   const{pros,loading:prosLoading}=useNetworkActivity();
-  const{score,level}=useGamification(userId);
 
   const displayed=useMemo(()=>!filterTag?items:items.filter(c=>c.tags?.includes(filterTag)),[items,filterTag]);
   const top=displayed[0]??null;
@@ -590,7 +558,6 @@ export default function SocialScreen(){
         <View style={{flexDirection:'row',gap:7,alignItems:'center'}}>
           <TouchableOpacity onPress={()=>router.push('/(tabs)/search' as any)} style={sc.lvlBtn} activeOpacity={0.80}>
             <Text style={{color:C.blue,fontSize:9,fontWeight:'900'}}>NIV</Text>
-            <Text style={{color:C.white,fontSize:11,fontWeight:'900',marginLeft:1}}>{level.n}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[sc.iconBtn,{borderColor:'rgba(90,150,230,0.35)',backgroundColor:'rgba(90,150,230,0.10)'}]} onPress={()=>setShowIndustry(true)} activeOpacity={0.85}>
             <Ionicons name="briefcase-outline" size={16} color={C.blue}/>
@@ -619,7 +586,6 @@ export default function SocialScreen(){
           <Ionicons name="close-circle" size={12} color={C.blue}/>
         </TouchableOpacity>
       )}
-      <GamiMini level={level} score={score} onPress={()=>router.push('/(tabs)/search' as any)}/>
       {tab==='Pour vous'&&<NetworkRow pros={pros} loading={prosLoading} onIndustry={()=>setShowIndustry(true)}/>}
       <TopBanner critique={top}/>
       <View style={{flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:EDGE,marginBottom:11}}>
