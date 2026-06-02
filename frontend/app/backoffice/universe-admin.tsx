@@ -559,41 +559,7 @@ import React, {
     ddItemOn:   {backgroundColor:'rgba(255,255,255,0.07)'},
     ddTxt:      {color:C.muted,fontSize:13,fontWeight:'600'},
   });
-  
-  // ─────────────────────────────────────────────────────────────────────────────
-  // BULK ACTION BAR
-  // ─────────────────────────────────────────────────────────────────────────────
-  const BulkBar = memo(function BulkBar({
-    count,onApproveAll,onRejectAll,onClear,
-  }:{count:number;onApproveAll:()=>void;onRejectAll:()=>void;onClear:()=>void}) {
-    const slide=useRef(new Animated.Value(-60)).current;
-    useEffect(()=>{Animated.spring(slide,{toValue:0,tension:80,friction:10,useNativeDriver:true}).start();},[]);
-    return(
-      <Animated.View style={[blk.wrap,{transform:[{translateY:slide}]}]}>
-        <BlurView intensity={30} tint="dark" style={StyleSheet.absoluteFillObject}/>
-        <TouchableOpacity style={blk.close} onPress={onClear} hitSlop={8}><Ionicons name="close" size={14} color={C.muted}/></TouchableOpacity>
-        <Text style={blk.count}>{count} sélectionnée{count>1?'s':''}</Text>
-        <View style={{flex:1}}/>
-        <TouchableOpacity style={[blk.btn,{backgroundColor:`${C.red}22`,borderColor:`${C.red}50`}]} onPress={onRejectAll} activeOpacity={0.82}>
-          <Ionicons name="close-circle" size={14} color={C.red}/>
-          <Text style={[blk.btnTxt,{color:C.red}]}>Rejeter</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[blk.btn,{backgroundColor:`${C.green}22`,borderColor:`${C.green}50`}]} onPress={onApproveAll} activeOpacity={0.82}>
-          <Ionicons name="checkmark-circle" size={14} color={C.green}/>
-          <Text style={[blk.btnTxt,{color:C.green}]}>Approuver</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  });
-  const blk = StyleSheet.create({
-    wrap:   {position:'absolute',bottom:0,left:0,right:0,flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:16,paddingVertical:14,paddingBottom:Platform.OS==='ios'?30:14,borderTopWidth:1,borderTopColor:C.border,overflow:'hidden'},
-    close:  {width:24,height:24,alignItems:'center',justifyContent:'center'},
-    count:  {color:C.white,fontSize:13,fontWeight:'700'},
-    btn:    {flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:14,paddingVertical:9,borderRadius:12,borderWidth:1},
-    btnTxt: {fontSize:12,fontWeight:'800'},
-    bg:     {backgroundColor:C.bg},
-  });
-  
+ 
   // ─────────────────────────────────────────────────────────────────────────────
   // REEL CARD
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1567,15 +1533,7 @@ import React, {
             removeClippedSubviews={false}
           />
   
-          {/* Bulk bar */}
-          {selected.size>0&&(
-            <BulkBar
-              count={selected.size}
-              onApproveAll={handleBulkApprove}
-              onRejectAll={handleBulkReject}
-              onClear={()=>setSelected(new Set())}
-            />
-          )}
+          
         </SafeAreaView>
   
         {/* Modals */}
