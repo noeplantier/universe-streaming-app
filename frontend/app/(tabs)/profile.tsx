@@ -344,19 +344,16 @@ const ProfileHeader = memo(function ProfileHeader({
           <TouchableOpacity style={ph.navIconBtn} onPress={onAdmin} activeOpacity={0.75}>
             <Ionicons name="eye-outline" size={17} color={C.offWhite} />
           </TouchableOpacity>
-          {/* Notifs */}
-          <TouchableOpacity style={ph.navIconBtn} onPress={onNotifs} activeOpacity={0.75}>
-            <Ionicons name="notifications-outline" size={18} color={C.offWhite} />
-            {unreadNotifs > 0 && (
-              <View style={ph.notifBadge}>
-                <Text style={ph.notifBadgeTxt}>{unreadNotifs > 9 ? '9+' : unreadNotifs}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+        
           {/* Settings */}
           <TouchableOpacity style={ph.navIconBtn} onPress={onSettings} activeOpacity={0.75}>
             <Ionicons name="settings-outline" size={17} color={C.offWhite} />
           </TouchableOpacity>
+          {/*Edit profile (only for own profile) */}
+            <TouchableOpacity style={ph.navIconBtn} onPress={onEdit} activeOpacity={0.75}>
+              <Ionicons name="create-outline" size={17} color={C.offWhite} />
+            </TouchableOpacity>
+          
         </View>
       </View>
 
@@ -371,12 +368,13 @@ const ProfileHeader = memo(function ProfileHeader({
             ) : (
               <View style={[ph.avatar, ph.avatarFallback]}>
                 <Text style={ph.avatarInitials}>{init}</Text>
-              </View>
-            )}
-            {/* Level badge */}
+                  {/* Level badge */}
             <View style={ph.levelBadge}>
               <Text style={ph.levelBadgeTxt}>{level.n}</Text>
             </View>
+              </View>
+            )}
+          
             {/* PRO badge */}
             {profile.is_pro && (
               <View style={ph.proBadge}>
@@ -491,7 +489,7 @@ const ph = StyleSheet.create({
   avatar:        { width:80, height:80, borderRadius:40, backgroundColor:C.navyMid },
   avatarFallback:{ alignItems:'center', justifyContent:'center' },
   avatarInitials:{ color:C.white, fontSize:24, fontWeight:'900', letterSpacing:-0.5 },
-  levelBadge:    { position:'absolute', top:-5, right:-5, width:22, height:22, borderRadius:11, backgroundColor:C.navyDark, borderWidth:1.5, borderColor:C.borderHi, alignItems:'center', justifyContent:'center' },
+  levelBadge:    { position:'absolute', top:-5, right:-5, width:12, height:12, borderRadius:11, backgroundColor:C.navyDark, borderWidth:0.5, borderColor:C.borderHi, alignItems:'center', justifyContent:'center' },
   levelBadgeTxt: { color:C.white, fontSize:9, fontWeight:'900' },
   proBadge:      { position:'absolute', bottom:0, right:-2, paddingHorizontal:5, paddingVertical:1.5, borderRadius:5, backgroundColor:C.navyDark, borderWidth:1, borderColor:C.borderHi },
   proBadgeTxt:   { color:C.offWhite, fontSize:7, fontWeight:'900', letterSpacing:0.8 },
@@ -1298,8 +1296,9 @@ export default function ProfileScreen() {
           {/* Header complet */}
           <ProfileHeader
             profile={profile} uid={uid}
-            filmCount={watched.length} critiqueCount={reviews.length} reelCount={reels.length}
             level={level} score={score}
+
+            filmCount={watched.length} critiqueCount={reviews.length} reelCount={reels.length}
             unreadNotifs={unreadNotifs} streak={streak}
             onEdit={nav.edit} onAdmin={nav.admin} onNotifs={nav.notifs} onSettings={nav.settings}
           />
@@ -1308,12 +1307,7 @@ export default function ProfileScreen() {
         {/* Gamification */}
         <View style={{ marginTop:16, gap:12, marginBottom:4 }}>
           <View>
-            <View style={{ flexDirection:'row', alignItems:'center', gap:7, paddingHorizontal:H_PAD, marginBottom:10 }}>
-              <Ionicons name="ribbon-outline" size={12} color={C.mid} />
-              
-              <Text style={{ color:C.white, fontSize:15, fontWeight:'800' }}>Badges</Text>
-              <Text style={{ color:C.muted, fontSize:11, marginLeft:'auto' as any }}>{badges.filter(b=>b.earned).length}/{badges.length}</Text>
-            </View>
+           
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:H_PAD, gap:8 }}>
               {[...badges.filter(b=>b.earned), ...badges.filter(b=>!b.earned)].map(b => <IBadge key={b.id} b={b} />)}
             </ScrollView>
