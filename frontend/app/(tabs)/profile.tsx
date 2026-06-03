@@ -322,19 +322,6 @@ const ProfileHeader = memo(function ProfileHeader({
         </View>
       </View>
 
-      {/* ── 3 chips stats — horizontaux compacts ── */}
-      <View style={{flexDirection:'row',gap:8,paddingHorizontal:H_PAD,marginBottom:12}}>
-        {[
-          {v:fmt(filmCount),     l:'films vus'},
-          {v:fmt(critiqueCount), l:'critiques'},
-          {v:fmt(reelCount),     l:'créations'},
-        ].map(c=>(
-          <View key={c.l} style={ph.chip}>
-            <Text style={ph.chipVal}>{c.v}</Text>
-            <Text style={ph.chipLbl}>{c.l}</Text>
-          </View>
-        ))}
-      </View>
 
       {/* ── Bio ── */}
       {!!profile.bio&&(
@@ -357,7 +344,6 @@ const ProfileHeader = memo(function ProfileHeader({
         </ScrollView>
       )}
 
-      <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint}}/>
     </View>
   );
 });
@@ -990,22 +976,6 @@ export default function ProfileScreen() {
           />
         </SafeAreaView>
 
-        {/* ★ Gamification : ScoreStrip + badges — sans missions */}
-        <View style={{marginTop:14,gap:10,marginBottom:4}}>
-          <ScoreStrip score={score} level={level} badges={badges}/>
-          <View>
-            <View style={{flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:H_PAD,marginBottom:8}}>
-              <Ionicons name="ribbon-outline" size={12} color={C.mid}/>
-              <Text style={{color:C.white,fontSize:13,fontWeight:'800'}}>Badges</Text>
-              <Text style={{color:C.muted,fontSize:10,marginLeft:'auto' as any}}>
-                {badges.filter(b=>b.earned).length}/{badges.length} débloqués
-              </Text>
-            </View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,gap:7}}>
-              {[...badges.filter(b=>b.earned),...badges.filter(b=>!b.earned)].map(b=><IBadge key={b.id} b={b}/>)}
-            </ScrollView>
-          </View>
-        </View>
 
         {/* Tabs */}
         <View style={{flexDirection:'row',borderTopWidth:StyleSheet.hairlineWidth,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginTop:14}}>
