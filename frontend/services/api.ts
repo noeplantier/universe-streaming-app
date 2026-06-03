@@ -1,17 +1,18 @@
-// services/api.ts
+// services/api.ts — UNIVERSE
 // ─────────────────────────────────────────────────────────────────────────────
-//  Point d'entrée unique pour tous les appels API de l'app Universe
-//  Auth anonyme Supabase — une session persistée par device
+// ZÉRO appel Supabase Auth → zéro 402, zéro signup, zéro paiement.
+//
+// Identité utilisateur = UUID v4 généré une fois, persisté en SecureStore.
+// Toutes les requêtes Supabase utilisent la clé `anon` (gratuite, toujours
+// disponible). Les RLS sont USING (true) → accessible sans JWT.
 // ─────────────────────────────────────────────────────────────────────────────
 import { supabase } from '@/lib/supabase';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TYPES PUBLICS
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── TYPES ───────────────────────────────────────────────────────────────────
 export interface User {
-  id:                  string;
+  id:                  string;  // device UUID — stable par appareil
   username:            string;
   email:               string;
   avatar_url:          string;
@@ -30,275 +31,224 @@ export interface User {
 }
 
 export interface SeenFilm {
-  id:         string;
-  title:      string;
-  poster_url: string;
-  year:       number;
-  genre:      string;
-  rating:     number;
-  seen_at:    string;
+  work_id:    number;
+  watched_at: string;
 }
 
 const PROFILE_COLS = [
-  'id', 'username', 'display_name', 'avatar_url', 'bio',
-  'role', 'location', 'website',
-  'is_verified', 'is_pro', 'is_industry_contact',
-  'followers_count', 'following_count', 'films_seen_count',
-].join(', ');
+  'id','username','display_name','avatar_url','bio','role',
+  'location','website','is_verified','is_pro','is_industry_contact',
+  'followers_count','following_count','films_seen_count',
+].join(',');
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TOKEN API — abstraction SecureStore / fallback web
-// ─────────────────────────────────────────────────────────────────────────────
-const TOKEN_KEY = 'universe_session_token';
+// ─── STORAGE — SecureStore / localStorage selon la plateforme ────────────────
+const DEVICE_KEY = 'universe_device_uuid';
 
-export const tokenAPI = {
-  /** Lit le token persisté sur le device */
-  async get(): Promise<string | null> {
-    if (Platform.OS === 'web') {
-      return typeof localStorage !== 'undefined'
-        ? localStorage.getItem(TOKEN_KEY)
-        : null;
-    }
-    try { return await SecureStore.getItemAsync(TOKEN_KEY); }
-    catch { return null; }
-  },
+async function _get(key: string): Promise<string | null> {
+  if (Platform.OS === 'web') return typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+  try { return await SecureStore.getItemAsync(key); } catch { return null; }
+}
+async function _set(key: string, v: string): Promise<void> {
+  if (Platform.OS === 'web') { if (typeof localStorage !== 'undefined') localStorage.setItem(key, v); return; }
+  try { await SecureStore.setItemAsync(key, v); } catch {}
+}
 
-  /** Sauvegarde le token (appelé après login/register) */
-  async save(token: string): Promise<void> {
-    if (Platform.OS === 'web') {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(TOKEN_KEY, token);
-      return;
-    }
-    try { await SecureStore.setItemAsync(TOKEN_KEY, token); }
-    catch { /* silently ignore */ }
-  },
+/** UUID v4 sans dépendance externe */
+function uuidv4(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
 
-  /** Supprime le token (appelé au logout) */
-  async remove(): Promise<void> {
-    if (Platform.OS === 'web') {
-      if (typeof localStorage !== 'undefined') localStorage.removeItem(TOKEN_KEY);
-      return;
-    }
-    try { await SecureStore.deleteItemAsync(TOKEN_KEY); }
-    catch { /* silently ignore */ }
-  },
-};
+/**
+ * Retourne l'UUID du device.
+ * Généré une seule fois, stocké en SecureStore → permanent par appareil.
+ * C'est l'identité unique de l'utilisateur, sans aucun compte.
+ */
+export async function getDeviceId(): Promise<string> {
+  const existing = await _get(DEVICE_KEY);
+  if (existing) return existing;
+  const id = uuidv4();
+  await _set(DEVICE_KEY, id);
+  return id;
+}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HELPERS INTERNES
-// ─────────────────────────────────────────────────────────────────────────────
-
-/** Construit un User à partir d'une row profiles + email optionnel */
-function rowToUser(row: Record<string, any>, email = ''): User {
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function rowToUser(row: Record<string, any>): User {
   return {
-    id:                  String(row.id ?? ''),
-    username:            String(row.username ?? ''),
+    id:                  String(row.id          ?? ''),
+    username:            String(row.username     ?? ''),
     display_name:        String(row.display_name ?? row.username ?? ''),
-    email:               email,
-    avatar_url:          String(row.avatar_url ?? ''),
-    bio:                 String(row.bio ?? ''),
-    role:                String(row.role ?? 'creator'),
-    location:            String(row.location ?? ''),
-    website:             String(row.website ?? ''),
+    email:               '',
+    avatar_url:          String(row.avatar_url   ?? ''),
+    bio:                 String(row.bio           ?? ''),
+    role:                String(row.role          ?? 'creator'),
+    location:            String(row.location      ?? ''),
+    website:             String(row.website       ?? ''),
     is_verified:         Boolean(row.is_verified),
     is_pro:              Boolean(row.is_pro),
     is_industry_contact: Boolean(row.is_industry_contact),
-    followers_count:     Number(row.followers_count ?? 0),
-    following_count:     Number(row.following_count ?? 0),
+    followers_count:     Number(row.followers_count  ?? 0),
+    following_count:     Number(row.following_count  ?? 0),
     films_seen_count:    Number(row.films_seen_count ?? 0),
-    reviews_count:       Number(row.reviews_count ?? 0),
+    reviews_count:       Number(row.reviews_count    ?? 0),
   };
 }
 
-/** Fetch le profil Supabase d'un uid, crée-le s'il n'existe pas */
-async function fetchOrCreateProfile(uid: string, email = ''): Promise<User | null> {
-  // 1. Tentative de lecture
-  const { data, error } = await supabase
-    .from('profiles')
-    .select(PROFILE_COLS)
-    .eq('id', uid)
-    .single();
-
-  if (data) return rowToUser(data, email);
-
-  // 2. Pas trouvé (PGRST116) → insertion manuelle (fallback trigger)
-  if (error?.code === 'PGRST116') {
-    const username = 'user_' + uid.replace(/-/g, '').slice(0, 8);
-    await supabase.from('profiles').insert({
-      id:           uid,
-      username,
-      display_name: 'Cinéphile',
-      role:         'creator',
-      films_seen_count: 0,
-      followers_count:  0,
-      following_count:  0,
-    });
-
-    const { data: created } = await supabase
-      .from('profiles').select(PROFILE_COLS).eq('id', uid).single();
-    return created ? rowToUser(created, email) : null;
-  }
-
-  console.warn('[api] fetchOrCreateProfile:', error?.message);
-  return null;
+/** User minimal basé sur l'UUID device (avant fetch/création du profil) */
+function localUser(deviceId: string): User {
+  return {
+    id: deviceId, username: '', display_name: 'Cinéphile', email: '',
+    avatar_url: '', bio: '', role: 'creator', location: '', website: '',
+    is_verified: false, is_pro: false, is_industry_contact: false,
+    followers_count: 0, following_count: 0, films_seen_count: 0, reviews_count: 0,
+  };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// AUTH API
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── TOKEN API (stub vide — conservé pour compatibilité AuthContext) ──────────
+export const tokenAPI = {
+  get:    async () => await _get('universe_token'),
+  save:   async (t: string) => _set('universe_token', t),
+  remove: async () => { if (Platform.OS === 'web') localStorage?.removeItem('universe_token'); else try { await SecureStore.deleteItemAsync('universe_token'); } catch {} },
+};
+
+// ─── AUTH API ─────────────────────────────────────────────────────────────────
 export const authAPI = {
-
   /**
-   * Sign-in anonyme — crée une session persistée par device.
-   * Appelé automatiquement si aucune session n'existe.
+   * Point d'entrée principal — appelé par AuthContext au démarrage.
+   * NE fait AUCUN appel à supabase.auth.*
+   * 1. Récupère ou génère l'UUID device
+   * 2. Tente de lire le profil Supabase correspondant
+   * 3. Si absent → crée le profil (clé anon, RLS ouverte)
    */
-  async signInAnonymously(): Promise<{ user: User; token: string } | null> {
-    const { data, error } = await supabase.auth.signInAnonymously();
-    if (error || !data.session) {
-      console.error('[api] signInAnonymously:', error?.message);
-      return null;
-    }
-    const { session } = data;
-    await tokenAPI.save(session.access_token);
-    const user = await fetchOrCreateProfile(session.user.id, session.user.email ?? '');
-    return user ? { user, token: session.access_token } : null;
+  async initSession(): Promise<{ user: User; token: null }> {
+    const deviceId = await getDeviceId();
+
+    // Lecture profil (RLS publique, clé anon)
+    try {
+      const { data, error } = await supabase
+        .from('profiles').select(PROFILE_COLS).eq('id', deviceId).single();
+
+      if (data) return { user: rowToUser(data), token: null };
+
+      // Profil absent → insertion avec la clé anon (RLS WITH CHECK true)
+      if (error?.code === 'PGRST116') {
+        const username = `user_${deviceId.replace(/-/g, '').slice(0, 8)}`;
+        await supabase.from('profiles').insert({
+          id: deviceId, username, display_name: 'Cinéphile', role: 'creator',
+          films_seen_count: 0, followers_count: 0, following_count: 0,
+        });
+        const { data: created } = await supabase
+          .from('profiles').select(PROFILE_COLS).eq('id', deviceId).single();
+        if (created) return { user: rowToUser(created), token: null };
+      }
+    } catch { /* ignore réseau */ }
+
+    // Fallback local si Supabase injoignable
+    return { user: localUser(deviceId), token: null };
   },
 
-  /**
-   * Charge le profil de l'utilisateur actuellement connecté (session active).
-   */
+  /** Recharge le profil depuis Supabase (pour useFocusEffect) */
   async me(): Promise<User | null> {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return null;
-    return fetchOrCreateProfile(session.user.id, session.user.email ?? '');
+    const deviceId = await getDeviceId();
+    try {
+      const { data } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', deviceId).single();
+      return data ? rowToUser(data) : null;
+    } catch { return null; }
   },
 
-  /**
-   * Connexion email/password (utilisateurs enregistrés).
-   */
-  async login(params: { email: string; password: string }): Promise<{ user: User; token: string }> {
-    const { data, error } = await supabase.auth.signInWithPassword(params);
-    if (error || !data.session) throw new Error(error?.message ?? 'Login failed');
-    const { session } = data;
-    await tokenAPI.save(session.access_token);
-    const user = await fetchOrCreateProfile(session.user.id, session.user.email ?? '');
-    if (!user) throw new Error('Profile introuvable');
-    return { user, token: session.access_token };
+  /** Logout = réinitialiser en conservant le même UUID device */
+  async logout(): Promise<User> {
+    const deviceId = await getDeviceId();
+    return localUser(deviceId);
   },
 
-  /**
-   * Inscription email/password.
-   */
-  async register(params: { username: string; email: string; password: string }): Promise<{ user: User; token: string }> {
-    const { data, error } = await supabase.auth.signUp({
-      email:    params.email,
-      password: params.password,
-      options:  { data: { username: params.username } },
-    });
-    if (error || !data.session) throw new Error(error?.message ?? 'Register failed');
-    const { session } = data;
-    // Mettre à jour le username dans profiles
-    await supabase.from('profiles').update({ username: params.username }).eq('id', session.user.id);
-    await tokenAPI.save(session.access_token);
-    const user = await fetchOrCreateProfile(session.user.id, session.user.email ?? '');
-    if (!user) throw new Error('Profile introuvable');
-    return { user, token: session.access_token };
-  },
-
-  /**
-   * Déconnexion — revient en mode anonyme.
-   */
-  async logout(): Promise<void> {
-    await tokenAPI.remove();
-    await supabase.auth.signOut();
-  },
-
-  /**
-   * Met à jour le profil dans public.profiles.
-   */
-  async updateProfile(uid: string, patch: Partial<User>): Promise<User | null> {
-    // Exclure les champs readonly
-    const { id: _id, email: _email, reviews_count: _rc, ...safe } = patch as any;
-    const { error } = await supabase.from('profiles').update(safe).eq('id', uid);
+  /** Mise à jour profil (sans auth JWT — RLS ouverte) */
+  async updateProfile(
+    uid: string,
+    patch: Partial<Omit<User, 'id'|'email'|'reviews_count'>>,
+  ): Promise<User | null> {
+    const { error } = await supabase.from('profiles').update(patch).eq('id', uid);
     if (error) { console.warn('[api] updateProfile:', error.message); return null; }
-    return fetchOrCreateProfile(uid);
-  },
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SEEN API
-// ─────────────────────────────────────────────────────────────────────────────
-export const seenAPI = {
-  /** Films marqués comme vus pour un utilisateur */
-  async getByUser(uid: string): Promise<SeenFilm[]> {
-    const { data, error } = await supabase
-      .from('seen_films')
-      .select('id, title, poster_url, year, genre, rating, seen_at')
-      .eq('user_id', uid)
-      .order('seen_at', { ascending: false });
-
-    if (error) { console.warn('[api] seenAPI.getByUser:', error.message); return []; }
-    return (data ?? []) as SeenFilm[];
-  },
-
-  /** Marquer un film comme vu */
-  async markSeen(uid: string, filmId: string, rating = 0): Promise<void> {
-    await supabase.from('seen_films').upsert(
-      { user_id: uid, film_id: filmId, rating, seen_at: new Date().toISOString() },
-      { onConflict: 'user_id,film_id' },
-    );
-  },
-
-  /** Retirer un film de la liste */
-  async removeSeen(uid: string, filmId: string): Promise<void> {
-    await supabase.from('seen_films').delete().match({ user_id: uid, film_id: filmId });
-  },
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// PROFILE API
-// ─────────────────────────────────────────────────────────────────────────────
-export const profileAPI = {
-  /** Fetch un profil par id */
-  async getById(uid: string): Promise<User | null> {
-    return fetchOrCreateProfile(uid);
-  },
-
-  /** Fetch un profil par username */
-  async getByUsername(username: string): Promise<User | null> {
-    const { data } = await supabase
-      .from('profiles')
-      .select(PROFILE_COLS)
-      .eq('username', username)
-      .single();
+    const { data } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', uid).single();
     return data ? rowToUser(data) : null;
   },
 
-  /** Mise à jour partielle */
-  async update(uid: string, patch: Partial<User>): Promise<User | null> {
-    return authAPI.updateProfile(uid, patch);
+  // Stubs conservés pour compatibilité — ne lèvent plus d'exception
+  async login(_: { email: string; password: string }): Promise<{ user: User; token: null }> {
+    return authAPI.initSession();
+  },
+  async register(_: { username: string; email: string; password: string }): Promise<{ user: User; token: null }> {
+    return authAPI.initSession();
+  },
+  async signInAnonymously(): Promise<{ user: User; token: null }> {
+    return authAPI.initSession();
   },
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NOTIFICATIONS API
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── SEEN API — user_history ──────────────────────────────────────────────────
+export const seenAPI = {
+  async getByUser(uid: string): Promise<SeenFilm[]> {
+    const { data, error } = await supabase
+      .from('user_history').select('work_id,watched_at')
+      .eq('user_id', uid).order('watched_at', { ascending: false });
+    if (error) { console.warn('[api] seenAPI.getByUser:', error.message); return []; }
+    return (data ?? []) as SeenFilm[];
+  },
+  async markSeen(uid: string, workId: number): Promise<void> {
+    await supabase.from('user_history')
+      .upsert({ user_id: uid, work_id: workId, watched_at: new Date().toISOString() },
+               { onConflict: 'user_id,work_id' })
+      .catch(() => {});
+  },
+  async removeSeen(uid: string, workId: number): Promise<void> {
+    await supabase.from('user_history')
+      .delete().match({ user_id: uid, work_id: workId }).catch(() => {});
+  },
+};
+
+// ─── PROFILE API ─────────────────────────────────────────────────────────────
+export const profileAPI = {
+  async getById(uid: string): Promise<User | null> {
+    try {
+      const { data } = await supabase.from('profiles').select(PROFILE_COLS).eq('id', uid).single();
+      return data ? rowToUser(data) : null;
+    } catch { return null; }
+  },
+  async getByUsername(username: string): Promise<User | null> {
+    try {
+      const { data } = await supabase.from('profiles').select(PROFILE_COLS).eq('username', username).single();
+      return data ? rowToUser(data) : null;
+    } catch { return null; }
+  },
+  async update(uid: string, patch: Partial<User>): Promise<User | null> {
+    return authAPI.updateProfile(uid, patch as any);
+  },
+};
+
+// ─── NOTIFICATIONS API ────────────────────────────────────────────────────────
 export const notifAPI = {
   async getByUser(uid: string) {
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', uid)
-      .order('created_at', { ascending: false })
-      .limit(50);
-    return data ?? [];
+    try {
+      const { data } = await supabase
+        .from('notifications').select('*').eq('user_id', uid)
+        .order('created_at', { ascending: false }).limit(50);
+      return data ?? [];
+    } catch { return []; }
   },
-
   async markRead(notifId: string): Promise<void> {
-    await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+    await supabase.from('notifications').update({ read: true }).eq('id', notifId).catch(() => {});
   },
-
   async markAllRead(uid: string): Promise<void> {
-    await supabase.from('notifications').update({ read: true }).eq('user_id', uid);
+    await supabase.from('notifications').update({ read: true }).eq('user_id', uid).catch(() => {});
+  },
+  async getUnreadCount(uid: string): Promise<number> {
+    try {
+      const { count } = await supabase
+        .from('notifications').select('id', { count: 'exact', head: true })
+        .eq('user_id', uid).eq('read', false);
+      return count ?? 0;
+    } catch { return 0; }
   },
 };
