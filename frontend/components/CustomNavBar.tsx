@@ -202,10 +202,17 @@ function CustomNavBarInner() {
         />
 
         {/* ★ Profil — avatar live mis à jour */}
-        <TouchableOpacity style={ns.item} onPress={() => go('/profile')} activeOpacity={0.65}>
-          <NavAvatar profile={profile}/>
-          <Text style={ns.label}>Profil</Text>
-        </TouchableOpacity>
+        <NavItem
+          icon={
+            profile?.avatar_url && !profile.avatar_url.trim() ? (
+              <Ionicons name="person-circle-outline" size={26} color="rgba(255,255,255,0.78)"/>
+            ) : (
+              <NavAvatar profile={profile}/>
+            )
+          }
+          label="Profil"
+          onPress={() => go('/profile')}
+        />
 
       </BlurView>
     </View>
