@@ -1,53 +1,64 @@
+/**
+ * components/SideBar.tsx — UNIVERSE
+ *
+ * ★ Genres dynamiques depuis public.reels + public.works (merged)
+ * ★ Nouveaux filtres cinéma indépendant :
+ *   Format (Court/Moyen/Long-métrage), Ambiance, Découverte, Tri
+ * ★ Sections collapsibles + badges de count
+ * ★ Compteurs par genre depuis Supabase
+ * ★ Backward-compatible (props existantes inchangées)
+ */
 import React, {
-    memo, useCallback, useEffect, useState,
+    memo, useCallback, useEffect, useRef, useState,
   } from 'react';
   import {
-    View, Text, StyleSheet, TouchableOpacity,
-    ScrollView, ActivityIndicator, Platform,
+    Animated, ActivityIndicator, Platform, ScrollView,
+    StyleSheet, Text, TouchableOpacity, View,
   } from 'react-native';
-  import { BlurView }  from 'expo-blur';
-  import { Ionicons }  from '@expo/vector-icons';
-  import { supabase }  from '@/lib/supabase';
+  import { Ionicons } from '@expo/vector-icons';
+  import { supabase } from '@/lib/supabase';
   
   // ─── TYPES ────────────────────────────────────────────────────────────────────
   export interface SideBarProps {
-    /** Afficher/masquer (fullscreen auto-hide) */
-    visible:       boolean;
-    /** Like actif sur le film courant */
-    liked:         boolean;
-    /** Muted */
-    muted:         boolean;
-    /** Sauvegardé */
-    saved:         boolean;
-    /** Callback like */
-    onLike:        () => void;
-    /** Callback mute */
-    onMute:        () => void;
-    /** Callback save */
-    onSave:        () => void;
-    /** Callback info (ouvre InfoSheet) */
-    onInfo?:       () => void;
-    /** Genre actif (null = tous) */
-    activeGenre:   string | null;
-    /** Notifie le parent du genre sélectionné */
-    onGenreSelect: (genre: string | null) => void;
-    /** Reset timer auto-hide à chaque interaction */
-    onInteract:    () => void;
+    visible:         boolean;
+    liked:           boolean;
+    muted:           boolean;
+    saved:           boolean;
+    onLike:          () => void;
+    onMute:          () => void;
+    onSave:          () => void;
+    onInfo?:         () => void;
+    onShare?:        () => void;
+    activeGenre:     string | null;
+    onGenreSelect:   (genre: string | null) => void;
+    /** Format : 'court' | 'moyen' | 'long' | null */
+    activeFormat?:   string | null;
+    onFormatSelect?: (f: string | null) => void;
+    /** Ambiance : string | null */
+    activeAmbiance?: string | null;
+    onAmbianceSelect?:(a: string | null) => void;
+    /** Tri : 'tendances' | 'recent' | 'primé' | null */
+    activeSort?:     string | null;
+    onSortSelect?:   (s: string | null) => void;
+    onInteract:      () => void;
   }
   
   // ─── PALETTE ──────────────────────────────────────────────────────────────────
   const P = {
-    red:     '#FF3B5C',
-    gold:    '#F5C842',
-    blue:    '#5A96E6',
-    primary: '#1E40AF',
-    iconBg:  'rgba(0,0,0,0.40)',
-    iconOn:  'rgba(255,255,255,0.15)',
-    border:  'rgba(255,255,255,0.12)',
+    red:    '#FF3B5C',
+    gold:   '#F5C842',
+    blue:   '#5A96E6',
+    green:  '#2ECC8A',
+    purple: '#A78BFA',
+    iconBg: 'rgba(0,0,0,0.42)',
+    iconOn: 'rgba(255,255,255,0.16)',
+    border: 'rgba(255,255,255,0.12)',
+    muted:  'rgba(255,255,255,0.40)',
+    labelColor:'rgba(255,255,255,0.26)',
   } as const;
   
-  // Icônes par genre (fallback = film-outline)
-  const GENRE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  // ─── CINÉMA INDÉPENDANT — référentiels statiques ──────────────────────────────
+  const GENRE_ICONS: Record<string,keyof typeof Ionicons.glyphMap> = {
     'Drame':          'sad-outline',
     'Thriller':       'eye-outline',
     'Science-Fiction':'planet-outline',
@@ -66,69 +77,98 @@ import React, {
     'Aventure':       'compass-outline',
     'Guerre':         'flag-outline',
     'Western':        'trail-sign-outline',
-    'Érotique':       'flame-outline',
+    'Essai':          'bulb-outline',
+    'Réel':           'aperture-outline',
+  };
+  const GENRE_COLORS: Record<string,string> = {
+    'Drame':'#A78BFA','Thriller':'#F87171','Science-Fiction':'#38BDF8',
+    'Documentaire':'#34D399','Horreur':'#FB7185','Comédie':'#FDE68A',
+    'Romance':'#F472B6','Action':'#FB923C','Fantastique':'#C084FC',
+    'Expérimental':'#67E8F9','Essai':'#86EFAC','Musical':'#FCA5A5',
   };
   
-  function getGenreIcon(genre: string): keyof typeof Ionicons.glyphMap {
-    return GENRE_ICONS[genre] ?? 'film-outline';
-  }
+  const FORMATS: { key:string; label:string; icon:keyof typeof Ionicons.glyphMap; sub:string }[] = [
+    { key:'court',  label:'Court',  icon:'film-outline',   sub:'≤ 30 min'   },
+    { key:'moyen',  label:'Moyen',  icon:'tv-outline',     sub:'30–70 min'  },
+    { key:'long',   label:'Long',   icon:'videocam-outline',sub:'> 70 min'  },
+    { key:'serie',  label:'Série',  icon:'layers-outline', sub:'Épisodes'   },
+  ];
   
-  // Couleur accent par genre (optionnel — subtil)
-  const GENRE_COLORS: Record<string, string> = {
-    'Drame':          '#A78BFA',
-    'Thriller':       '#F87171',
-    'Science-Fiction':'#38BDF8',
-    'Documentaire':   '#34D399',
-    'Horreur':        '#FB7185',
-    'Comédie':        '#FDE68A',
-    'Romance':        '#F472B6',
-    'Action':         '#FB923C',
-    'Fantastique':    '#C084FC',
-    'Expérimental':   '#67E8F9',
-  };
+  const AMBIANCES: { key:string; label:string; icon:keyof typeof Ionicons.glyphMap; color:string }[] = [
+    { key:'poetique',     label:'Poétique',     icon:'leaf-outline',             color:'#86EFAC' },
+    { key:'sombre',       label:'Sombre',       icon:'moon-outline',             color:'#818CF8' },
+    { key:'intense',      label:'Intense',      icon:'flash-outline',            color:'#FB923C' },
+    { key:'contemplatif', label:'Contemplatif', icon:'time-outline',             color:'#67E8F9' },
+    { key:'leger',        label:'Léger',        icon:'happy-outline',            color:'#FDE68A' },
+    { key:'surrealiste',  label:'Surréaliste',  icon:'color-palette-outline',    color:'#F472B6' },
+    { key:'lyrique',      label:'Lyrique',      icon:'musical-notes-outline',    color:'#A78BFA' },
+    { key:'social',       label:'Social',       icon:'people-outline',           color:'#34D399' },
+  ];
   
-  function getGenreColor(genre: string): string {
-    return GENRE_COLORS[genre] ?? 'rgba(255,255,255,0.55)';
-  }
+  const SORT_OPTIONS: { key:string; label:string; icon:keyof typeof Ionicons.glyphMap }[] = [
+    { key:'tendances', label:'Tendances', icon:'trending-up-outline' },
+    { key:'recent',    label:'Récents',   icon:'time-outline'        },
+    { key:'popular',   label:'Populaires',icon:'heart-outline'       },
+    { key:'prime',     label:'Primés',    icon:'trophy-outline'      },
+  ];
   
-  // ─── HOOK — genres dynamiques depuis public.reels ────────────────────────────
-  function useReelGenres() {
-    const [genres,  setGenres]  = useState<string[]>([]);
+  const DISCOVERY: { key:string; label:string; icon:keyof typeof Ionicons.glyphMap; color:string }[] = [
+    { key:'surprise',   label:'Surprise',      icon:'shuffle-outline',       color:'#38BDF8' },
+    { key:'coup',       label:'Coup de ♡',     icon:'heart-circle-outline',  color:'#F472B6' },
+    { key:'universeOG', label:'Universe OG',   icon:'star-outline',          color:'#F5C842' },
+    { key:'palmares',   label:'Palmarès',      icon:'ribbon-outline',        color:'#A78BFA' },
+  ];
+  
+  // ─── HOOKS ────────────────────────────────────────────────────────────────────
+  interface GenreWithCount { name:string; count:number }
+  
+  function useReelGenres(): { genres:GenreWithCount[]; loading:boolean } {
+    const [genres,  setGenres]  = useState<GenreWithCount[]>([]);
     const [loading, setLoading] = useState(true);
   
     useEffect(() => {
       let dead = false;
-      supabase
-        .from('reels')
-        .select('genre')
-        .eq('status', 'approved')
-        .not('genre', 'is', null)
-        .then(({ data }) => {
-          if (dead) return;
-          // Déduplique + trie alphabétiquement
-          const set = new Set<string>();
-          (data ?? []).forEach((r: any) => {
-            if (r.genre?.trim()) set.add(r.genre.trim());
-          });
-          setGenres([...set].sort((a, b) => a.localeCompare(b, 'fr')));
-          setLoading(false);
-        })
-        .catch(() => { if (!dead) setLoading(false); });
   
-      // Realtime : nouveau reel approuvé avec un genre inédit
-      const ch = supabase
-        .channel(`sidebar_genres_${Date.now()}`)
-        .on('postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'reels' },
-          ({ new: row }) => {
-            const g = (row as any)?.genre?.trim();
-            if (g && (row as any)?.status === 'approved') {
-              setGenres(prev =>
-                prev.includes(g) ? prev : [...prev, g].sort((a, b) => a.localeCompare(b, 'fr'))
-              );
-            }
-          },
-        )
+      const load = async () => {
+        try {
+          // Fetch genres depuis reels (feed) + works (catalogue), merged
+          const [reelsR, worksR] = await Promise.all([
+            supabase.from('reels').select('genre').eq('status','approved').not('genre','is',null),
+            supabase.from('works').select('genre').not('genre','is',null),
+          ]);
+          if (dead) return;
+  
+          // Compter les occurrences (reels = poids 2, works = poids 1)
+          const counts: Record<string,number> = {};
+          (reelsR.data ?? []).forEach((r:any) => {
+            const g = r.genre?.trim(); if (g) counts[g] = (counts[g]??0) + 2;
+          });
+          (worksR.data ?? []).forEach((r:any) => {
+            const g = r.genre?.trim(); if (g) counts[g] = (counts[g]??0) + 1;
+          });
+  
+          const sorted = Object.entries(counts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a,b) => b.count - a.count);
+  
+          setGenres(sorted);
+        } catch { /* ignore */ }
+        finally { if (!dead) setLoading(false); }
+      };
+      load();
+  
+      // Realtime : nouveau reel approuvé
+      const ch = supabase.channel(`sb_genres_${Date.now()}`)
+        .on('postgres_changes',{ event:'INSERT', schema:'public', table:'reels' },({ new:row }) => {
+          const g = (row as any)?.genre?.trim();
+          if (g && (row as any)?.status === 'approved') {
+            setGenres(prev => {
+              const existing = prev.find(x => x.name === g);
+              if (existing) return prev.map(x => x.name===g ? {...x,count:x.count+2} : x).sort((a,b)=>b.count-a.count);
+              return [...prev, { name:g, count:2 }].sort((a,b)=>b.count-a.count);
+            });
+          }
+        })
         .subscribe();
   
       return () => { dead = true; supabase.removeChannel(ch); };
@@ -137,204 +177,280 @@ import React, {
     return { genres, loading };
   }
   
-  // ─── GENRE PILL (chip vertical dans la liste) ─────────────────────────────────
-  const GenrePill = memo(function GenrePill({
-    genre, active, onPress,
-  }: { genre: string; active: boolean; onPress: () => void }) {
-    const icon  = getGenreIcon(genre);
-    const color = getGenreColor(genre);
+  // ─── MICRO UI ─────────────────────────────────────────────────────────────────
+  /** Libellé de section mini */
+  const SectionLabel = memo(({ label, collapsed, onToggle }:{ label:string; collapsed:boolean; onToggle:()=>void }) => (
+    <TouchableOpacity onPress={onToggle} activeOpacity={0.75} style={sl.wrap}>
+      <Text style={sl.text}>{label}</Text>
+      <Ionicons name={collapsed?'chevron-down':'chevron-up'} size={9} color={P.labelColor}/>
+    </TouchableOpacity>
+  ));
+  const sl = StyleSheet.create({ wrap:{ flexDirection:'row', alignItems:'center', gap:4, paddingVertical:4, paddingHorizontal:2 }, text:{ color:P.labelColor, fontSize:7.5, fontWeight:'800', letterSpacing:1.2, textTransform:'uppercase' } });
   
+  /** Bouton action (like / mute / save / info / share) */
+  const ActionBtn = memo(function ActionBtn({ icon, iconOn, active, color, onPress, badge }:{ icon:keyof typeof Ionicons.glyphMap; iconOn:keyof typeof Ionicons.glyphMap; active:boolean; color:string; onPress:()=>void; badge?:number }) {
+    const sc = useRef(new Animated.Value(1)).current;
+    const handlePress = () => {
+      Animated.sequence([
+        Animated.spring(sc,{toValue:1.3,tension:350,friction:7,useNativeDriver:true}),
+        Animated.spring(sc,{toValue:1,  tension:200,friction:8,useNativeDriver:true}),
+      ]).start();
+      onPress();
+    };
     return (
-      <TouchableOpacity
-        style={[gp.wrap, active && { borderColor: color + '60', backgroundColor: color + '18' }]}
-        onPress={onPress}
-        activeOpacity={0.75}
-      >
-        {/* Icône genre */}
-        <View style={[gp.iconBox, active && { backgroundColor: color + '22' }]}>
-          <Ionicons name={icon} size={14} color={active ? color : 'rgba(255,255,255,0.50)'} />
-        </View>
-        {/* Label tronqué */}
-        <Text
-          style={[gp.label, active && { color }]}
-          numberOfLines={2}
-        >
-          {genre}
-        </Text>
-        {/* Dot actif */}
-        {active && <View style={[gp.dot, { backgroundColor: color }]} />}
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.72} style={{ position:'relative' }}>
+        <Animated.View style={[ab.btn, active&&{ backgroundColor:P.iconOn, borderColor:`${color}30` }, { transform:[{scale:sc}] }]}>
+          <Ionicons name={active?iconOn:icon} size={22} color={active?color:'rgba(255,255,255,0.85)'}/>
+        </Animated.View>
+        {badge!=null && badge>0 && (
+          <View style={ab.badge}>
+            <Text style={ab.badgeTxt}>{badge>99?'99+':badge}</Text>
+          </View>
+        )}
       </TouchableOpacity>
     );
   });
+  const ab = StyleSheet.create({ btn:{ width:46, height:46, borderRadius:23, backgroundColor:P.iconBg, alignItems:'center', justifyContent:'center', borderWidth:StyleSheet.hairlineWidth, borderColor:P.border }, badge:{ position:'absolute', top:-2, right:-2, minWidth:16, height:16, borderRadius:8, backgroundColor:'rgba(255,255,255,0.90)', alignItems:'center', justifyContent:'center', paddingHorizontal:3 }, badgeTxt:{ color:'#000', fontSize:8, fontWeight:'900' } });
   
+  /** Pill genre vertical */
+  const GenrePill = memo(function GenrePill({ genre, count, active, onPress }:{ genre:string; count:number; active:boolean; onPress:()=>void }) {
+    const icon  = GENRE_ICONS[genre]  ?? 'film-outline';
+    const color = GENRE_COLORS[genre] ?? 'rgba(255,255,255,0.55)';
+    const sc    = useRef(new Animated.Value(1)).current;
+    const handlePress = () => {
+      Animated.sequence([Animated.spring(sc,{toValue:0.88,tension:350,friction:7,useNativeDriver:true}),Animated.spring(sc,{toValue:1,tension:200,friction:8,useNativeDriver:true})]).start();
+      onPress();
+    };
+    return (
+      <TouchableOpacity onPress={handlePress} activeOpacity={0.80}>
+        <Animated.View style={[gp.wrap, active && { borderColor:`${color}55`, backgroundColor:`${color}18` }, { transform:[{scale:sc}] }]}>
+          <View style={[gp.iconBox, active && { backgroundColor:`${color}28` }]}>
+            <Ionicons name={icon} size={13} color={active?color:P.muted}/>
+          </View>
+          <Text style={[gp.label, active && { color }]} numberOfLines={2}>{genre}</Text>
+          {count > 0 && (
+            <View style={[gp.cnt, active && { backgroundColor:`${color}28` }]}>
+              <Text style={[gp.cntTxt, active && { color }]}>{count>99?'99+':count}</Text>
+            </View>
+          )}
+          {active && <View style={[gp.dot, { backgroundColor:color }]}/>}
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  });
   const gp = StyleSheet.create({
-    wrap: {
-      width:           52,
-      alignItems:      'center',
-      gap:              4,
-      paddingVertical:  8,
-      paddingHorizontal: 4,
-      borderRadius:    12,
-      borderWidth:     StyleSheet.hairlineWidth,
-      borderColor:    'rgba(255,255,255,0.08)',
-      backgroundColor:'rgba(0,0,0,0.30)',
-    },
-    iconBox: {
-      width:           32,
-      height:          32,
-      borderRadius:    10,
-      backgroundColor:'rgba(255,255,255,0.06)',
-      alignItems:      'center',
-      justifyContent:  'center',
-    },
-    label: {
-      color:     'rgba(255,255,255,0.42)',
-      fontSize:   8,
-      fontWeight:'600',
-      textAlign: 'center',
-      lineHeight: 11,
-    },
-    dot: {
-      position:    'absolute',
-      top:          6,
-      right:        6,
-      width:        5,
-      height:       5,
-      borderRadius: 2.5,
-    },
+    wrap:   { width:52, alignItems:'center', gap:3, paddingVertical:7, paddingHorizontal:3, borderRadius:12, borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(255,255,255,0.08)', backgroundColor:'rgba(0,0,0,0.30)' },
+    iconBox:{ width:30, height:30, borderRadius:9, backgroundColor:'rgba(255,255,255,0.06)', alignItems:'center', justifyContent:'center' },
+    label:  { color:P.muted, fontSize:7.5, fontWeight:'600', textAlign:'center', lineHeight:10 },
+    cnt:    { paddingHorizontal:4, paddingVertical:1, borderRadius:5, backgroundColor:'rgba(255,255,255,0.08)' },
+    cntTxt: { color:P.muted, fontSize:7, fontWeight:'700' },
+    dot:    { position:'absolute', top:5, right:5, width:4, height:4, borderRadius:2 },
   });
   
-  // ─── ACTION BUTTON (like / mute / save / info) ────────────────────────────────
-  const ActionBtn = memo(function ActionBtn({
-    icon, iconOn, active, color, onPress,
-  }: {
-    icon:   keyof typeof Ionicons.glyphMap;
-    iconOn: keyof typeof Ionicons.glyphMap;
-    active: boolean;
-    color:  string;
-    onPress: () => void;
-  }) {
+  /** Pill format (Court / Moyen / Long / Série) */
+  const FormatPill = memo(function FormatPill({ item, active, onPress }:{ item:typeof FORMATS[0]; active:boolean; onPress:()=>void }) {
     return (
-      <TouchableOpacity
-        style={[ab.btn, active && { backgroundColor: P.iconOn }]}
-        onPress={onPress}
-        activeOpacity={0.72}
-      >
-        <Ionicons name={active ? iconOn : icon} size={24} color={active ? color : 'rgba(255,255,255,0.82)'} />
+      <TouchableOpacity style={[fp.wrap, active && fp.wrapOn]} onPress={onPress} activeOpacity={0.80}>
+        <Ionicons name={item.icon} size={11} color={active?'#fff':P.muted}/>
+        <Text style={[fp.label, active && { color:'#fff' }]}>{item.label}</Text>
+        <Text style={[fp.sub, active && { color:'rgba(255,255,255,0.60)' }]}>{item.sub}</Text>
       </TouchableOpacity>
     );
   });
+  const fp = StyleSheet.create({ wrap:{ width:50, alignItems:'center', gap:2, paddingVertical:7, borderRadius:11, borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(255,255,255,0.08)', backgroundColor:'rgba(0,0,0,0.28)' }, wrapOn:{ backgroundColor:'rgba(255,255,255,0.14)', borderColor:'rgba(255,255,255,0.28)' }, label:{ color:P.muted, fontSize:7.5, fontWeight:'700' }, sub:{ color:'rgba(255,255,255,0.22)', fontSize:6, textAlign:'center' } });
   
-  const ab = StyleSheet.create({
-    btn: {
-      width:           48,
-      height:          48,
-      borderRadius:    24,
-      backgroundColor: P.iconBg,
-      alignItems:      'center',
-      justifyContent:  'center',
-      borderWidth:      StyleSheet.hairlineWidth,
-      borderColor:      P.border,
-    },
+  /** Pill ambiance */
+  const AmbiancePill = memo(function AmbiancePill({ item, active, onPress }:{ item:typeof AMBIANCES[0]; active:boolean; onPress:()=>void }) {
+    return (
+      <TouchableOpacity style={[amp.wrap, active && { borderColor:`${item.color}44`, backgroundColor:`${item.color}14` }]} onPress={onPress} activeOpacity={0.80}>
+        <Ionicons name={item.icon} size={12} color={active?item.color:P.muted}/>
+        <Text style={[amp.label, active && { color:item.color }]} numberOfLines={2}>{item.label}</Text>
+      </TouchableOpacity>
+    );
   });
+  const amp = StyleSheet.create({ wrap:{ width:50, alignItems:'center', gap:3, paddingVertical:6, borderRadius:11, borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(255,255,255,0.07)', backgroundColor:'rgba(0,0,0,0.26)' }, label:{ color:P.muted, fontSize:7, fontWeight:'600', textAlign:'center', lineHeight:9 } });
   
-  // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
+  /** Pill découverte */
+  const DiscovPill = memo(function DiscovPill({ item, active, onPress }:{ item:typeof DISCOVERY[0]; active:boolean; onPress:()=>void }) {
+    return (
+      <TouchableOpacity style={[dp2.wrap, active && { borderColor:`${item.color}44`, backgroundColor:`${item.color}16` }]} onPress={onPress} activeOpacity={0.80}>
+        <Ionicons name={item.icon} size={13} color={active?item.color:P.muted}/>
+        <Text style={[dp2.label, active && { color:item.color }]} numberOfLines={2}>{item.label}</Text>
+      </TouchableOpacity>
+    );
+  });
+  const dp2 = StyleSheet.create({ wrap:{ width:50, alignItems:'center', gap:3, paddingVertical:7, borderRadius:11, borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(255,255,255,0.07)', backgroundColor:'rgba(0,0,0,0.26)' }, label:{ color:P.muted, fontSize:7, fontWeight:'600', textAlign:'center', lineHeight:9 } });
+  
+  /** Pill tri */
+  const SortPill = memo(function SortPill({ item, active, onPress }:{ item:typeof SORT_OPTIONS[0]; active:boolean; onPress:()=>void }) {
+    return (
+      <TouchableOpacity style={[sp.wrap, active && { backgroundColor:'rgba(255,255,255,0.14)', borderColor:'rgba(255,255,255,0.28)' }]} onPress={onPress} activeOpacity={0.80}>
+        <Ionicons name={item.icon} size={11} color={active?'#fff':P.muted}/>
+        <Text style={[sp.label, active && { color:'#fff' }]}>{item.label}</Text>
+      </TouchableOpacity>
+    );
+  });
+  const sp = StyleSheet.create({ wrap:{ width:50, alignItems:'center', gap:2, paddingVertical:7, borderRadius:11, borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(255,255,255,0.08)', backgroundColor:'rgba(0,0,0,0.28)' }, label:{ color:P.muted, fontSize:7.5, fontWeight:'600', textAlign:'center' } });
+  
+  // ─── ★ SIDEBAR ────────────────────────────────────────────────────────────────
   export const SideBar = memo(function SideBar({
     visible, liked, muted, saved,
-    onLike, onMute, onSave, onInfo,
-    activeGenre, onGenreSelect, onInteract,
+    onLike, onMute, onSave, onInfo, onShare,
+    activeGenre, onGenreSelect,
+    activeFormat=null,   onFormatSelect,
+    activeAmbiance=null, onAmbianceSelect,
+    activeSort=null,     onSortSelect,
+    onInteract,
   }: SideBarProps) {
     const { genres, loading } = useReelGenres();
   
-    // Wrappeur interaction : toute action reset le timer auto-hide
-    const wrap = useCallback(<T extends (...args: any[]) => any>(fn: T) =>
-      (...args: Parameters<T>) => { onInteract(); fn(...args); },
+    // Sections collapsibles
+    const [showGenres,    setShowGenres]    = useState(true);
+    const [showFormat,    setShowFormat]    = useState(false);
+    const [showAmbiance,  setShowAmbiance]  = useState(false);
+    const [showSort,      setShowSort]      = useState(false);
+    const [showDiscovery, setShowDiscovery] = useState(false);
+  
+    const wrap = useCallback(<T extends (...a:any[])=>any>(fn:T) =>
+      (...args:Parameters<T>) => { onInteract(); fn(...args); },
     [onInteract]);
   
     if (!visible) return null;
   
+    // Comptage des filtres actifs (pour badge sur sections)
+    const hasFormat    = !!activeFormat;
+    const hasAmbiance  = !!activeAmbiance;
+    const hasSort      = !!activeSort;
+  
     return (
       <View style={sb.root} pointerEvents="box-none">
+        <ScrollView
+          style={sb.scroll}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={sb.scrollContent}
+        >
   
-        {/* ── Actions (like / mute / save / info) ── */}
-        <View style={sb.actions}>
-          <ActionBtn
-            icon="heart-outline" iconOn="heart"
-            active={liked} color={P.red}
-            onPress={wrap(onLike)}
-          />
-          <ActionBtn
-            icon="volume-high-outline" iconOn="volume-mute"
-            active={muted} color="rgba(255,255,255,0.90)"
-            onPress={wrap(onMute)}
-          />
-          <ActionBtn
-            icon="star-outline" iconOn="star"
-            active={saved} color={P.gold}
-            onPress={wrap(onSave)}
-          />
-          {onInfo && (
-            <ActionBtn
-              icon="list-outline" iconOn="list"
-              active={false} color="rgba(255,255,255,0.75)"
-              onPress={wrap(onInfo)}
-            />
+          {/* ── ACTIONS ─────────────────────────────────────────────────── */}
+          <View style={sb.actions}>
+            <ActionBtn icon="heart-outline"        iconOn="heart"          active={liked} color={P.red}   onPress={wrap(onLike)}/>
+            <ActionBtn icon="star-outline"          iconOn="star"           active={saved} color={P.gold}  onPress={wrap(onSave)}/>
+            <ActionBtn icon="volume-high-outline"   iconOn="volume-mute"    active={muted} color="rgba(255,255,255,0.90)" onPress={wrap(onMute)}/>
+            {onShare && <ActionBtn icon="share-outline" iconOn="share" active={false} color={P.blue} onPress={wrap(onShare)}/>}
+            {onInfo  && <ActionBtn icon="list-outline"  iconOn="list"  active={false} color={P.muted} onPress={wrap(onInfo)}/>}
+          </View>
+  
+          <View style={sb.divider}/>
+  
+          {/* ── GENRES ──────────────────────────────────────────────────── */}
+          <SectionLabel label="Genres" collapsed={!showGenres} onToggle={()=>setShowGenres(v=>!v)}/>
+          {showGenres && (
+            <View style={sb.pillGroup}>
+              {/* Tous */}
+              <TouchableOpacity
+                style={[gp.wrap, !activeGenre && { borderColor:`${P.blue}55`, backgroundColor:`${P.blue}18` }]}
+                onPress={()=>{ onInteract(); onGenreSelect(null); }}
+                activeOpacity={0.80}
+              >
+                <View style={[gp.iconBox, !activeGenre && { backgroundColor:`${P.blue}28` }]}>
+                  <Ionicons name="grid-outline" size={13} color={!activeGenre?P.blue:P.muted}/>
+                </View>
+                <Text style={[gp.label, !activeGenre && { color:P.blue }]}>Tous</Text>
+                {!activeGenre && <View style={[gp.dot, { backgroundColor:P.blue }]}/>}
+              </TouchableOpacity>
+  
+              {loading
+                ? <View style={{ paddingVertical:10, alignItems:'center' }}><ActivityIndicator size="small" color={P.muted}/></View>
+                : genres.map(g => (
+                    <GenrePill
+                      key={g.name} genre={g.name} count={g.count}
+                      active={activeGenre===g.name}
+                      onPress={() => { onInteract(); onGenreSelect(activeGenre===g.name?null:g.name); }}
+                    />
+                  ))
+              }
+            </View>
           )}
-        </View>
   
-        {/* ── Séparateur ── */}
-        <View style={sb.separator} />
+          <View style={sb.dividerThin}/>
   
-        {/* ── Sélecteur de genres dynamique ── */}
-        <View style={sb.genreSection}>
-          {/* Label */}
-          <Text style={sb.genreLabel}>Genres</Text>
-  
-          <ScrollView
-            style={sb.scroll}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={sb.scrollContent}
-          >
-            {/* Pill "Tous" */}
-            <TouchableOpacity
-              style={[gp.wrap, !activeGenre && {
-                borderColor: P.blue + '60',
-                backgroundColor: P.blue + '18',
-              }]}
-              onPress={() => { onInteract(); onGenreSelect(null); }}
-              activeOpacity={0.75}
-            >
-              <View style={[gp.iconBox, !activeGenre && { backgroundColor: P.blue + '22' }]}>
-                <Ionicons
-                  name="grid-outline"
-                  size={14}
-                  color={!activeGenre ? P.blue : 'rgba(255,255,255,0.50)'}
+          {/* ── FORMAT ──────────────────────────────────────────────────── */}
+          <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
+            <SectionLabel label="Format" collapsed={!showFormat} onToggle={()=>setShowFormat(v=>!v)}/>
+            {hasFormat && <View style={sb.activeDot}/>}
+          </View>
+          {showFormat && onFormatSelect && (
+            <View style={sb.pillGroup}>
+              {/* Tous formats */}
+              <TouchableOpacity
+                style={[fp.wrap, !activeFormat && { backgroundColor:'rgba(255,255,255,0.14)', borderColor:'rgba(255,255,255,0.28)' }]}
+                onPress={()=>{ onInteract(); onFormatSelect(null); }}
+                activeOpacity={0.80}
+              >
+                <Ionicons name="albums-outline" size={11} color={!activeFormat?'#fff':P.muted}/>
+                <Text style={[fp.label, !activeFormat && { color:'#fff' }]}>Tous</Text>
+              </TouchableOpacity>
+              {FORMATS.map(f => (
+                <FormatPill key={f.key} item={f}
+                  active={activeFormat===f.key}
+                  onPress={()=>{ onInteract(); onFormatSelect(activeFormat===f.key?null:f.key); }}
                 />
-              </View>
-              <Text style={[gp.label, !activeGenre && { color: P.blue }]}>Tous</Text>
-              {!activeGenre && <View style={[gp.dot, { backgroundColor: P.blue }]} />}
-            </TouchableOpacity>
+              ))}
+            </View>
+          )}
   
-            {/* Genres dynamiques */}
-            {loading ? (
-              <View style={{ paddingVertical: 12, alignItems: 'center' }}>
-                <ActivityIndicator size="small" color="rgba(255,255,255,0.30)" />
-              </View>
-            ) : (
-              genres.map(genre => (
-                <GenrePill
-                  key={genre}
-                  genre={genre}
-                  active={activeGenre === genre}
-                  onPress={() => {
-                    onInteract();
-                    onGenreSelect(activeGenre === genre ? null : genre);
-                  }}
+          <View style={sb.dividerThin}/>
+  
+          {/* ── AMBIANCE ────────────────────────────────────────────────── */}
+          <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
+            <SectionLabel label="Ambiance" collapsed={!showAmbiance} onToggle={()=>setShowAmbiance(v=>!v)}/>
+            {hasAmbiance && <View style={sb.activeDot}/>}
+          </View>
+          {showAmbiance && onAmbianceSelect && (
+            <View style={sb.pillGroup}>
+              {AMBIANCES.map(a => (
+                <AmbiancePill key={a.key} item={a}
+                  active={activeAmbiance===a.key}
+                  onPress={()=>{ onInteract(); onAmbianceSelect(activeAmbiance===a.key?null:a.key); }}
                 />
-              ))
-            )}
-          </ScrollView>
-        </View>
+              ))}
+            </View>
+          )}
+  
+          <View style={sb.dividerThin}/>
+  
+          {/* ── DÉCOUVERTE ──────────────────────────────────────────────── */}
+          <SectionLabel label="Découverte" collapsed={!showDiscovery} onToggle={()=>setShowDiscovery(v=>!v)}/>
+          {showDiscovery && (
+            <View style={sb.pillGroup}>
+              {DISCOVERY.map(d => (
+                <DiscovPill key={d.key} item={d}
+                  active={false}
+                  onPress={()=>{ onInteract(); /* parent handles */ }}
+                />
+              ))}
+            </View>
+          )}
+  
+          <View style={sb.dividerThin}/>
+  
+          {/* ── TRI ─────────────────────────────────────────────────────── */}
+          <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
+            <SectionLabel label="Tri" collapsed={!showSort} onToggle={()=>setShowSort(v=>!v)}/>
+            {hasSort && <View style={sb.activeDot}/>}
+          </View>
+          {showSort && onSortSelect && (
+            <View style={sb.pillGroup}>
+              {SORT_OPTIONS.map(s => (
+                <SortPill key={s.key} item={s}
+                  active={activeSort===s.key}
+                  onPress={()=>{ onInteract(); onSortSelect(activeSort===s.key?null:s.key); }}
+                />
+              ))}
+            </View>
+          )}
+  
+          <View style={{ height:60 }}/>
+        </ScrollView>
       </View>
     );
   });
@@ -344,45 +460,32 @@ import React, {
   // ─── STYLES ───────────────────────────────────────────────────────────────────
   const sb = StyleSheet.create({
     root: {
-      position:  'absolute',
-      right:      12,
-      top:        0,
-      bottom:     0,
-      zIndex:     15,
-      justifyContent: 'center',
-      alignItems: 'center',
-      gap:         0,
+      position:'absolute', right:10, top:0, bottom:0, zIndex:15,
+      justifyContent:'center', alignItems:'center',
+    },
+    scroll: { width:64, maxHeight:'90%' },
+    scrollContent: {
+      alignItems:'center', gap:6, paddingTop:16, paddingBottom:24, paddingHorizontal:6,
     },
     actions: {
-      alignItems: 'center',
-      gap:         16,
-      marginBottom: 16,
+      alignItems:'center', gap:13, marginBottom:6,
     },
-    separator: {
-      width:           32,
-      height:           StyleSheet.hairlineWidth,
-      backgroundColor: 'rgba(255,255,255,0.12)',
-      marginBottom:     12,
+    pillGroup: {
+      alignItems:'center', gap:6, width:56,
     },
-    genreSection: {
-      alignItems: 'center',
-      gap:         6,
-      maxHeight:  '55%',
+    divider: {
+      width:36, height:StyleSheet.hairlineWidth,
+      backgroundColor:'rgba(255,255,255,0.14)',
+      marginVertical:8,
     },
-    genreLabel: {
-      color:         'rgba(255,255,255,0.28)',
-      fontSize:       8,
-      fontWeight:    '700',
-      letterSpacing:  1.2,
-      textTransform: 'uppercase',
-      marginBottom:   2,
+    dividerThin: {
+      width:28, height:StyleSheet.hairlineWidth,
+      backgroundColor:'rgba(255,255,255,0.07)',
+      marginVertical:4,
     },
-    scroll: {
-      width: 60,
-    },
-    scrollContent: {
-      alignItems: 'center',
-      gap:         6,
-      paddingBottom: 8,
+    activeDot: {
+      width:5, height:5, borderRadius:2.5,
+      backgroundColor:'rgba(255,255,255,0.60)',
+      marginRight:4,
     },
   });

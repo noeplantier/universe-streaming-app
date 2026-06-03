@@ -60,32 +60,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function autoLogin() {
     try {
-      // 1. Token existant sur le device ?
-      const saved = await tokenAPI.get();
-
-      if (saved) {
-        // Session persistée → charger le profil directement
-        const me = await authAPI.me();
-        if (me) { setUser(me); setToken(saved); return; }
-        // Token expiré → le refresh Supabase gère ça automatiquement,
-        // mais si me() échoue quand même, on retombe sur l'anon.
-      }
-
-      // 2. Pas de session → créer une session anonyme (1 par device)
-      const res = await authAPI.signInAnonymously();
-      if (res) {
-        setUser(res.user);
-        setToken(res.token);
-        return;
-      }
-
-      // 3. Pas de réseau → guest offline
-      setUser(GUEST_USER);
-      setToken('guest-token');
-
+      // initSession gère les 3 niveaux : session existante → anon Supabase → UUID device
+      const { user, token } = await authAPI.initSession();
+      setUser(user);
+      setToken(token ?? 'device-session');
     } catch {
+      // Fallback absolu (pas de réseau au 1er lancement)
       setUser(GUEST_USER);
-      setToken('guest-token');
+      setToken('device-session');
     } finally {
       setLoading(false);
     }
@@ -111,13 +93,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(res.user);
   }
 
-  // ── logout — revient en mode anonyme, ne supprime pas les données ────────
+  // ── logout — revient en mode UUID device ─────────────────────────────────
   async function logout() {
-    await authAPI.logout();
-    // Recréer immédiatement une session anonyme propre
-    const res = await authAPI.signInAnonymously();
-    if (res) { setUser(res.user); setToken(res.token); }
-    else     { setUser(GUEST_USER); setToken('guest-token'); }
+    const fallbackUser = await authAPI.logout();
+    setUser(fallbackUser);
+    setToken('device-session');
   }
 
   // ── updateUser — mise à jour optimiste locale ─────────────────────────────
