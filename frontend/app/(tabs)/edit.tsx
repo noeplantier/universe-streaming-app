@@ -140,24 +140,58 @@ async function persistProfile(uid:string, form:ProfileForm): Promise<void> {
 }
 
 // ─── Avatar upload ────────────────────────────────────────────────────────────
-async function uploadAvatar(uri:string, userId:string): Promise<string|null> {
+/**
+ * ★ FIX CSP — data:URI parsé sans fetch() (bloqué par connect-src CSP sur web).
+ *
+ * Cas par cas :
+ *  data:…   → atob() direct          (web + natif, jamais de fetch)
+ *  blob:…   → fetch() OK             (blob: autorisé par CSP)
+ *  http(s): → fetch() OK             (HTTPS autorisé par CSP)
+ *  fichier natif → expo-file-system  (iOS/Android)
+ */
+function dataUriToBlob(dataUri: string): Blob {
+  // data:[mime][;base64],[données]
+  const comma   = dataUri.indexOf(',');
+  const header  = dataUri.slice(0, comma);       // "data:image/jpeg;base64"
+  const b64     = dataUri.slice(comma + 1);       // données base64
+  const mime    = header.split(':')[1]?.split(';')[0] ?? 'image/jpeg';
+  const byteStr = atob(b64);
+  const bytes   = new Uint8Array(byteStr.length);
+  for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function uploadAvatar(uri: string, userId: string): Promise<string|null> {
   try {
     const path = `${userId}/avatar.jpg`;
     let blob: Blob;
-    if (Platform.OS==='web'||uri.startsWith('data:')||uri.startsWith('blob:')||uri.startsWith('http')) {
+
+    if (uri.startsWith('data:')) {
+      // ★ Pas de fetch() → parse manuel pour respecter la CSP connect-src
+      blob = dataUriToBlob(uri);
+    } else if (uri.startsWith('blob:') || uri.startsWith('http')) {
+      // blob: et https: sont autorisés par la CSP
       blob = await fetch(uri).then(r => r.blob());
     } else if (FileSystem) {
-      const b64 = await FileSystem.readAsStringAsync(uri,{encoding:'base64'});
-      const bytes = new Uint8Array(atob(b64).split('').map(c=>c.charCodeAt(0)));
-      blob = new Blob([bytes],{type:'image/jpeg'});
+      // Natif iOS / Android — lecture base64 via expo-file-system
+      const b64   = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
+      const bytes = new Uint8Array(atob(b64).split('').map(c => c.charCodeAt(0)));
+      blob = new Blob([bytes], { type: 'image/jpeg' });
     } else {
       blob = await fetch(uri).then(r => r.blob());
     }
-    const { data, error } = await supabase.storage.from('avatars').upload(path, blob, {contentType:'image/jpeg',upsert:true});
+
+    const { data, error } = await supabase.storage
+      .from('avatars')
+      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
     if (error) throw error;
-    const { data:{ publicUrl } } = supabase.storage.from('avatars').getPublicUrl(data.path);
+
+    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(data.path);
     return `${publicUrl}?t=${Date.now()}`;
-  } catch (e) { console.error('[edit] avatar:', e); return null; }
+  } catch (e) {
+    console.error('[edit] avatar:', e);
+    return null;
+  }
 }
 
 // ─── MICRO UI ─────────────────────────────────────────────────────────────────
