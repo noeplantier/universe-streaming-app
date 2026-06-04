@@ -218,7 +218,7 @@ export default function SearchScreen() {
         <HeroBanner works={heroItems} loading={loading}/>
         <View style={{ height:24 }}/>
 
-        {/* ★ DÉFI DE LA SEMAINE — WeeklyChallengeCard depuis GamificationSystem */}
+        {/* ★ DÉFI DE LA SEMAINE — WeeklyChallengeCard depuis GamificationSystem
         <View style={{ marginBottom:20 }}>
           <View style={{ flexDirection:'row', alignItems:'center', gap:7, paddingHorizontal:EDGE, marginBottom:12 }}>
             <Ionicons name="flame-outline" size={13} color={C.mid}/>
@@ -234,12 +234,11 @@ export default function SearchScreen() {
             progress={progress}
             onOpen={() => setChallengeOpen(true)}
           />
-        </View>
+        </View> */}
 
-  
        
-        {/* Séparateur */}
-        <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginHorizontal:EDGE,marginBottom:28}}/>
+        {/* Séparateur
+        <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginHorizontal:EDGE,marginBottom:28}}/> */}
 
         {/* Sections catalogue (inchangé) */}
         <RowSection title="Les plus populaires" count={loading?undefined:works.length} items={popular} loading={loading} variant="portrait" showRank/>
