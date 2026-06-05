@@ -131,9 +131,9 @@ const INTERACTIONS = [
   { icon:'heart-outline'         as const, label:'Liker une œuvre',            xp:10,  cta:'Liker',      nav:'social-scroll' },
   { icon:'create-outline'        as const, label:'Écrire une critique',        xp:50,  cta:'Rédiger',    nav:'critique' },
   { icon:'chatbubble-outline'    as const, label:'Commenter une critique',     xp:15,  cta:'Commenter',  nav:'comment'  },
-  { icon:'briefcase-outline'     as const, label:'Contacter un professionnel', xp:40,  cta:'Ouvrir',     nav:'pro'      },
+  { icon:'briefcase-outline'     as const, label:'Contacter un pro', xp:40,  cta:'Ouvrir',     nav:'pro'      },
   { icon:'videocam-outline'      as const, label:'Créer une vidéo',            xp:80,  cta:'Créer',      nav:'create'   },
-  { icon:'person-outline'        as const, label:'Compléter votre profil',     xp:100, cta:'Profil',     nav:'profile'  },
+  { icon:'person-outline'        as const, label:'Compléter votre profil',     xp:90, cta:'Profil',     nav:'profile'  },
   { icon:'share-outline'         as const, label:'Partager un film',           xp:25,  cta:'Partager',   nav:'share'    },
 ] as const;
 type NavKey = typeof INTERACTIONS[number]['nav'];
@@ -356,32 +356,56 @@ const DailyRow=memo(({ch,progress:rawProg,claimed,onClaim,onAction}:{
 
 const GameCard=memo(({gm,onPlay}:{gm:typeof GAMES_META[number];onPlay:()=>void})=>{
   const sc=useRef(new Animated.Value(1)).current;
-  const press=()=>{Animated.sequence([Animated.timing(sc,{toValue:0.94,duration:80,useNativeDriver:true}),Animated.spring(sc,{toValue:1,tension:300,friction:8,useNativeDriver:true})]).start(()=>{hM();onPlay();});};
+  const glowOp=useRef(new Animated.Value(0.28)).current;
+  
+  useEffect(()=>{
+    const l=Animated.loop(Animated.sequence([Animated.timing(glowOp,{toValue:0.92,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(glowOp,{toValue:0.28,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));
+    l.start();
+    return()=>l.stop();
+  },[]);
+  
+  const press=()=>{
+    hM();
+    Animated.sequence([Animated.timing(sc,{toValue:0.94,duration:80,useNativeDriver:true}),Animated.spring(sc,{toValue:1,tension:300,friction:8,useNativeDriver:true})]).start(onPlay);
+  };
+  
   const isBot=gm.id==='cosbot';
-  return(
-    <TouchableOpacity onPress={press} activeOpacity={1} style={{width:isBot?SW-E*2:(SW-E*2-12)/2,marginBottom:isBot?30:8}}>
-      <Animated.View style={{transform:[{scale:sc}],height:isBot?72:130,borderRadius:18,overflow:'hidden',borderWidth:1,borderColor:isBot?C.goldBd:C.border}}>
-        <LinearGradient colors={isBot?[C.goldFaint,C.card]:[C.card,'rgba(4,8,15,0.96)']} style={{flex:1,padding:isBot?16:16,flexDirection:isBot?'row':'column',alignItems:'center',gap:isBot?14:8}}>
-          {isBot?<>
-            <View style={{width:44,height:44,borderRadius:22,backgroundColor:C.goldFaint,borderWidth:1.5,borderColor:C.goldBd,alignItems:'center',justifyContent:'center',flexShrink:0}}>
-              <Ionicons name={gm.icon} size={22} color={C.gold}/>
+  
+  const glowStyle:any={position:'absolute',top:-3,bottom:-3,left:-3,right:-3,borderRadius:21,...(Platform.OS==='web'?{boxShadow:`0 0 22px 7px rgba(245,200,66,0.40), 0 0 8px 2px rgba(245,200,66,0.18)`}:{shadowColor:C.gold,shadowOffset:{width:0,height:0},shadowOpacity:0.72,shadowRadius:14,elevation:7})};
+
+  if(!isBot)return(
+    <TouchableOpacity onPress={press} activeOpacity={1} style={{width:(SW-E*2-12)/2,marginBottom:8}}>
+      <Animated.View style={{transform:[{scale:sc}],height:130,borderRadius:18,overflow:'hidden',borderWidth:1,borderColor:C.border}}>
+        <LinearGradient colors={[C.card,'rgba(4,8,15,0.96)']} style={{flex:1,padding:16,flexDirection:'column',alignItems:'center',gap:8}}>
+          <View style={{width:50,height:50,borderRadius:25,backgroundColor:C.goldFaint,borderWidth:1.5,borderColor:C.goldBd,alignItems:'center',justifyContent:'center'}}>
+            <Ionicons name={gm.icon} size={22} color={C.gold}/>
+          </View>
+          <Text style={{color:C.white,fontSize:12,fontWeight:'800',textAlign:'center'}} numberOfLines={1}>{gm.title}</Text>
+          <View style={{flexDirection:'row',gap:6}}>
+            <View style={{backgroundColor:C.faint,borderRadius:7,paddingHorizontal:7,paddingVertical:3}}><Text style={{color:C.muted,fontSize:9}}>{gm.dur}</Text></View>
+            <View style={{flexDirection:'row',alignItems:'center',gap:2,backgroundColor:C.goldFaint,borderRadius:7,paddingHorizontal:7,paddingVertical:3}}>
+              <Ionicons name="flash" size={8} color={C.gold}/><Text style={{color:C.gold,fontSize:9,fontWeight:'700'}}>≤{gm.maxXP}</Text>
             </View>
-            <View style={{flex:1}}><Text style={{color:C.white,fontSize:14,fontWeight:'900'}}>⚡ DÉFIE COSBOT</Text><Text style={{color:C.muted,fontSize:11,marginTop:1}}>Affronte l'IA · Bonus ×1.5 si victoire</Text></View>
-            <Ionicons name="chevron-forward" size={18} color={C.gold}/>
-          </>:<>
-            <View style={{width:50,height:50,borderRadius:25,backgroundColor:C.goldFaint,borderWidth:1.5,borderColor:C.goldBd,alignItems:'center',justifyContent:'center'}}>
-              <Ionicons name={gm.icon} size={22} color={C.gold}/>
-            </View>
-            <Text style={{color:C.white,fontSize:12,fontWeight:'800',textAlign:'center'}} numberOfLines={1}>{gm.title}</Text>
-            <View style={{flexDirection:'row',gap:6}}>
-              <View style={{backgroundColor:C.faint,borderRadius:7,paddingHorizontal:7,paddingVertical:3}}><Text style={{color:C.muted,fontSize:9}}>{gm.dur}</Text></View>
-              <View style={{flexDirection:'row',alignItems:'center',gap:2,backgroundColor:C.goldFaint,borderRadius:7,paddingHorizontal:7,paddingVertical:3}}>
-                <Ionicons name="flash" size={8} color={C.gold}/><Text style={{color:C.gold,fontSize:9,fontWeight:'700'}}>≤{gm.maxXP}</Text>
-              </View>
-            </View>
-          </>}
+          </View>
         </LinearGradient>
       </Animated.View>
+    </TouchableOpacity>
+  );
+
+  return(
+    <TouchableOpacity onPress={press} activeOpacity={0.9} style={{marginHorizontal:E,marginBottom:30}}>
+      <Animated.View style={[glowStyle,{opacity:glowOp}]} pointerEvents="none"/>
+      <LinearGradient colors={['rgba(245,200,66,0.11)','rgba(13,32,64,0.88)','rgba(4,8,15,0.97)']} start={{x:0,y:0}} end={{x:1,y:1}} style={{height:88,borderRadius:18,paddingHorizontal:17,borderWidth:1,borderColor:C.goldBd,flexDirection:'row',alignItems:'center',gap:14}}>
+        <View style={{width:46,height:46,borderRadius:14,flexShrink:0,backgroundColor:C.goldFaint,borderWidth:1.5,borderColor:C.goldBd,alignItems:'center',justifyContent:'center'}}>
+          <Ionicons name={gm.icon} size={21} color={C.gold}/>
+        </View>
+        <View style={{flex:1,gap:4}}>
+          <Text style={{color:C.white,fontSize:13,fontWeight:'800'}}>⚡ DÉFIE COSBOT</Text>
+          <Text style={{color:C.muted,fontSize:11,fontStyle:'italic'}} numberOfLines={1}>Affronte l'IA · Bonus ×1.5 victoire</Text>
+          <View style={{flexDirection:'row',gap:3}}>{[0,1,2,3,4,5,6].map((_,i)=><View key={i} style={{width:i===0?14:4,height:3,borderRadius:1.5,backgroundColor:i===0?C.gold:'rgba(245,200,66,0.22)'}}/>)}</View>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={C.gold}/>
+      </LinearGradient>
     </TouchableOpacity>
   );
 });
@@ -595,7 +619,13 @@ const CosBotGame=memo(({works,onXP,onClose}:{works:Work[];onXP:(n:number)=>void;
 
   const botPulse=useRef(new Animated.Value(1)).current;
   useEffect(()=>{
-    const l=Animated.loop(Animated.sequence([Animated.timing(botPulse,{toValue:1.06,duration:700,useNativeDriver:true}),Animated.timing(botPulse,{toValue:1,duration:700,useNativeDriver:true})]));
+    const l=Animated.loop(Animated.sequence([Animated.timing(botPulse,{toValue:1.2,duration:100,useNativeDriver:true}),Animated.timing(botPulse,{toValue:1,duration:700,useNativeDriver:true})]));
+    l.start();return()=>l.stop();
+  },[]);
+
+  const botGlowOp=useRef(new Animated.Value(0.3)).current;
+  useEffect(()=>{
+    const l=Animated.loop(Animated.sequence([Animated.timing(botGlowOp,{toValue:0.92,duration:2200,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(botGlowOp,{toValue:0.3,duration:2200,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));
     l.start();return()=>l.stop();
   },[]);
 
@@ -714,7 +744,7 @@ const InteractionBadge=memo(({onModalClose}:{onModalClose?:()=>void})=>{
   const router=useRouter();
   const[idx,setIdx]=useState(0);const opacity=useRef(new Animated.Value(1)).current;const glowOp=useRef(new Animated.Value(0.28)).current;
   useEffect(()=>{const l=Animated.loop(Animated.sequence([Animated.timing(glowOp,{toValue:0.92,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(glowOp,{toValue:0.28,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));l.start();return()=>l.stop();},[]);
-  useEffect(()=>{const t=setInterval(()=>{Animated.timing(opacity,{toValue:0,duration:220,useNativeDriver:true}).start(()=>{setIdx(i=>(i+1)%INTERACTIONS.length);Animated.timing(opacity,{toValue:1,duration:280,useNativeDriver:true}).start();});},4200);return()=>clearInterval(t);},[]);
+  useEffect(()=>{const t=setInterval(()=>{Animated.timing(opacity,{toValue:0,duration:220,useNativeDriver:true}).start(()=>{setIdx(i=>(i+1)%INTERACTIONS.length);Animated.timing(opacity,{toValue:1,duration:280,useNativeDriver:true}).start();});},4000);return()=>clearInterval(t);},[]);
 
   const doNav=(nav:NavKey)=>{
     switch(nav){
@@ -762,7 +792,7 @@ const InteractionBadge=memo(({onModalClose}:{onModalClose?:()=>void})=>{
           <View style={{flex:1,gap:3}}>
             <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between'}}>
               <Text style={{color:C.white,fontSize:13,fontWeight:'800'}} numberOfLines={1}>{item.label}</Text>
-              <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="flash" size={10} color={C.gold}/><Text style={{color:C.gold,fontSize:12,fontWeight:'900'}}>+{item.xp} XP</Text></View>
+              <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Text style={{color:C.gold,fontSize:12,fontWeight:'900'}}>+{item.xp} XP</Text></View>
             </View>
             <Text style={{color:C.muted,fontSize:11,fontStyle:'italic'}} numberOfLines={1}>{item.phrase}</Text>
             <View style={{flexDirection:'row',gap:3}}>{INTERACTIONS.map((_,i)=><View key={i} style={{width:i===idx?14:4,height:3,borderRadius:1.5,backgroundColor:i===idx?C.gold:'rgba(245,200,66,0.22)'}}/>)}</View>
@@ -849,7 +879,7 @@ const GalaxyModal=memo(({
             onAction={()=>{daily.bump(ch.id as DailyId,ch.total);dailyActions[ch.id as DailyId]?.();}}/>
         ))}
         {/* Activité récente */}
-        {log.length>0&&<><Text style={{color:C.white,fontSize:15,fontWeight:'800',marginTop:18,marginBottom:10}}>Récent</Text>{log.map((a,i)=>(<View key={i} style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:8,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border}}><Ionicons name="flash" size={13} color={C.gold}/><Text style={{color:C.muted,fontSize:12,flex:1}}>{a.label}</Text><Text style={{color:C.gold,fontSize:11,fontWeight:'800'}}>+{a.xp} XP</Text></View>))}</>}
+        {log.length>0&&<><Text style={{color:C.white,fontSize:15,fontWeight:'800',marginTop:18,marginBottom:10}}>Récent</Text>{log.map((a,i)=>(<View key={i} style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:8,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border}}><Text style={{color:C.muted,fontSize:12,flex:1}}>{a.label}</Text><Text style={{color:C.gold,fontSize:11,fontWeight:'800'}}>+{a.xp} XP</Text></View>))}</>}
         {/* CTA jeux */}
         <TouchableOpacity onPress={()=>setTab('games')} activeOpacity={0.88} style={{marginTop:18}}>
           <LinearGradient colors={[C.goldFaint,C.card]} start={{x:0,y:0}} end={{x:1,y:1}} style={{borderRadius:18,padding:18,flexDirection:'row',alignItems:'center',gap:14,borderWidth:1,borderColor:C.goldBd}}>
@@ -857,8 +887,7 @@ const GalaxyModal=memo(({
               <Ionicons name="game-controller-outline" size={24} color={C.gold}/>
             </View>
             <View style={{flex:1}}>
-              <Text style={{color:C.white,fontSize:14,fontWeight:'800'}}>7 jeux Galaxy — joue maintenant</Text>
-              <Text style={{color:C.muted,fontSize:12,marginTop:2}}>XP uniquement à la fin · Défie CosBot</Text>
+              
             </View>
             <Ionicons name="chevron-forward" size={18} color={C.gold}/>
           </LinearGradient>
@@ -870,8 +899,7 @@ const GalaxyModal=memo(({
 
     if(tab==='games')return(
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:E,paddingBottom:52}}>
-        <Text style={{color:C.white,fontSize:15,fontWeight:'800',marginBottom:4}}>7 Jeux Galaxy</Text>
-        <Text style={{color:C.muted,fontSize:12,marginBottom:18}}>XP uniquement à la fin du jeu</Text>
+       
         {/* CosBot en premier — full width */}
         <GameCard gm={GAMES_META.find(g=>g.id==='cosbot')!} onPlay={()=>setGame('cosbot')}/>
         <View style={{flexDirection:'row',flexWrap:'wrap',gap:12}}>
