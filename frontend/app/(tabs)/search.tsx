@@ -16,12 +16,12 @@
  */
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState,
-  type ListRenderItemInfo,
 } from 'react';
 import {
   Animated, Dimensions, Easing, FlatList, Image, Modal,
   PanResponder, Platform, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
+  type ListRenderItemInfo,
 } from 'react-native';
 import { LinearGradient }    from 'expo-linear-gradient';
 import { BlurView }          from 'expo-blur';
@@ -105,7 +105,7 @@ const DAILY_DEF = [
     id:'d1', icon:'play-circle-outline' as const,
     title:'Sniper du Soir',
     desc:'Regarder un court métrage sur les Reels',
-    xp:40, total:1, cta:'Ouvrir Reels',
+    xp:40, total:1, cta:'Regarder',
     route:'/(tabs)' as const,                              // → reels (index tab)
   },
   {
@@ -127,14 +127,14 @@ type DailyId = typeof DAILY_DEF[number]['id'];
 
 // ─── INTERACTIONS GLISSANTES — 8 actions avec navigations précises ────────────
 const INTERACTIONS = [
-  { icon:'play-circle-outline'   as const, label:'Visionner un film',          phrase:'Chaque film = +20 XP. Les Reels t\'attendent.',                    xp:20,  cta:'Reels',      nav:'reels'    },
-  { icon:'heart-outline'         as const, label:'Liker une œuvre',            phrase:'Un like = +10 XP. Défile et fais ton choix maintenant.',           xp:10,  cta:'Liker',      nav:'social-scroll' },
-  { icon:'create-outline'        as const, label:'Écrire une critique',        phrase:'Ta voix manque au cosmos. 50 XP t\'attendent.',                    xp:50,  cta:'Rédiger',    nav:'critique' },
-  { icon:'chatbubble-outline'    as const, label:'Commenter une critique',     phrase:'Engage la communauté. Le premier commentaire = +15 XP directs.',   xp:15,  cta:'Commenter',  nav:'comment'  },
-  { icon:'briefcase-outline'     as const, label:'Contacter un professionnel', phrase:'Étends ton réseau cinéma. +40 XP et une porte s\'ouvre.',          xp:40,  cta:'Ouvrir',     nav:'pro'      },
-  { icon:'videocam-outline'      as const, label:'Créer une vidéo',            phrase:'Deviens créateur. +80 XP d\'un seul upload.',                      xp:80,  cta:'Créer',      nav:'create'   },
-  { icon:'person-outline'        as const, label:'Compléter votre profil',     phrase:'Profil 100% = +100 XP. Le plus rentable en ce moment.',            xp:100, cta:'Profil',     nav:'profile'  },
-  { icon:'share-outline'         as const, label:'Partager un film',           phrase:'Fais découvrir une pépite. +25 XP et un badge en approche.',       xp:25,  cta:'Partager',   nav:'share'    },
+  { icon:'play-circle-outline'   as const, label:'Visionner un film',          xp:20,  cta:'Reels',      nav:'reels'    },
+  { icon:'heart-outline'         as const, label:'Liker une œuvre',            xp:10,  cta:'Liker',      nav:'social-scroll' },
+  { icon:'create-outline'        as const, label:'Écrire une critique',        xp:50,  cta:'Rédiger',    nav:'critique' },
+  { icon:'chatbubble-outline'    as const, label:'Commenter une critique',     xp:15,  cta:'Commenter',  nav:'comment'  },
+  { icon:'briefcase-outline'     as const, label:'Contacter un professionnel', xp:40,  cta:'Ouvrir',     nav:'pro'      },
+  { icon:'videocam-outline'      as const, label:'Créer une vidéo',            xp:80,  cta:'Créer',      nav:'create'   },
+  { icon:'person-outline'        as const, label:'Compléter votre profil',     xp:100, cta:'Profil',     nav:'profile'  },
+  { icon:'share-outline'         as const, label:'Partager un film',           xp:25,  cta:'Partager',   nav:'share'    },
 ] as const;
 type NavKey = typeof INTERACTIONS[number]['nav'];
 
@@ -359,7 +359,7 @@ const GameCard=memo(({gm,onPlay}:{gm:typeof GAMES_META[number];onPlay:()=>void})
   const press=()=>{Animated.sequence([Animated.timing(sc,{toValue:0.94,duration:80,useNativeDriver:true}),Animated.spring(sc,{toValue:1,tension:300,friction:8,useNativeDriver:true})]).start(()=>{hM();onPlay();});};
   const isBot=gm.id==='cosbot';
   return(
-    <TouchableOpacity onPress={press} activeOpacity={1} style={{width:isBot?SW-E*2:(SW-E*2-12)/2,marginBottom:12}}>
+    <TouchableOpacity onPress={press} activeOpacity={1} style={{width:isBot?SW-E*2:(SW-E*2-12)/2,marginBottom:isBot?30:8}}>
       <Animated.View style={{transform:[{scale:sc}],height:isBot?72:130,borderRadius:18,overflow:'hidden',borderWidth:1,borderColor:isBot?C.goldBd:C.border}}>
         <LinearGradient colors={isBot?[C.goldFaint,C.card]:[C.card,'rgba(4,8,15,0.96)']} style={{flex:1,padding:isBot?16:16,flexDirection:isBot?'row':'column',alignItems:'center',gap:isBot?14:8}}>
           {isBot?<>
@@ -389,7 +389,7 @@ const GameCard=memo(({gm,onPlay}:{gm:typeof GAMES_META[number];onPlay:()=>void})
 const BadgeCard=memo(({badge,unlocked}:{badge:typeof BADGES[number];unlocked:boolean})=>{
   const thr=BADGE_XP[badge.id]??999;
   return(
-    <View style={{width:(SW-E*2-12)/2,height:82,marginBottom:10,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:unlocked?C.goldBd:C.border}}>
+    <View style={{width:(SW-E*2-12)/2,height:82,marginBottom:0,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:unlocked?C.goldBd:C.border}}>
       <LinearGradient colors={unlocked?['rgba(245,200,66,0.12)','rgba(13,32,64,0.96)']:[C.card,'rgba(4,8,15,0.95)']} style={{flex:1,padding:13,flexDirection:'row',alignItems:'center',gap:10}}>
         <View style={{width:40,height:40,borderRadius:20,backgroundColor:unlocked?C.goldFaint:C.faint,borderWidth:1,borderColor:unlocked?C.goldBd:C.border,alignItems:'center',justifyContent:'center',flexShrink:0}}>
           <Ionicons name={badge.icon} size={18} color={unlocked?C.gold:C.muted}/>
@@ -629,8 +629,9 @@ const CosBotGame=memo(({works,onXP,onClose}:{works:Work[];onXP:(n:number)=>void;
         <View style={{alignItems:'center',gap:2}}><Text style={{color:C.gold,fontSize:18,fontWeight:'900'}}>×1.5</Text><Text style={{color:C.muted,fontSize:10}}>Bonus win</Text></View>
       </View>
       <View style={{backgroundColor:'rgba(255,92,114,0.08)',borderRadius:14,padding:14,borderWidth:1,borderColor:`${C.red}28`,maxWidth:280}}>
-        <Text style={{color:C.red,fontSize:13,fontStyle:'italic',textAlign:'center'}}>"{botLine}"</Text>
-      </View>
+      <Text style={{color:"#fff",fontSize:11,fontWeight:'900',letterSpacing:1.5}}>{botLine}</Text>
+      </View>     
+
       <TouchableOpacity onPress={()=>setPhase('pick')} style={{backgroundColor:C.red,borderRadius:16,paddingHorizontal:40,paddingVertical:15,marginTop:4}}>
         <Text style={{color:C.white,fontSize:16,fontWeight:'900'}}>ACCEPTER LE DÉFI</Text>
       </TouchableOpacity>
@@ -766,9 +767,7 @@ const InteractionBadge=memo(({onModalClose}:{onModalClose?:()=>void})=>{
             <Text style={{color:C.muted,fontSize:11,fontStyle:'italic'}} numberOfLines={1}>{item.phrase}</Text>
             <View style={{flexDirection:'row',gap:3}}>{INTERACTIONS.map((_,i)=><View key={i} style={{width:i===idx?14:4,height:3,borderRadius:1.5,backgroundColor:i===idx?C.gold:'rgba(245,200,66,0.22)'}}/>)}</View>
           </View>
-          <View style={{backgroundColor:C.gold,borderRadius:11,paddingHorizontal:13,paddingVertical:9,alignItems:'center',flexShrink:0}}>
-            <Text style={{color:C.bg,fontSize:10,fontWeight:'900'}}>{item.cta}</Text>
-          </View>
+      
         </Animated.View>
       </LinearGradient>
     </TouchableOpacity>
@@ -815,8 +814,8 @@ const GalaxyModal=memo(({
 
   const TABS=[
     {id:'home',  icon:'planet-outline'         as const,label:'Cosmos'},
-    {id:'badges',icon:'ribbon-outline'          as const,label:'Badges'},
     {id:'games', icon:'game-controller-outline' as const,label:'Jeux'  },
+    {id:'badges',icon:'ribbon-outline'          as const,label:'Badges'},
     {id:'rank',  icon:'podium-outline'          as const,label:'Rang'  },
   ] as const;
 
@@ -837,25 +836,9 @@ const GalaxyModal=memo(({
           <Text style={{color:C.muted,fontSize:12,marginTop:2}}>Niveau {lv.level}</Text>
         </View>
         <XPBar lv={lv} nextLv={nextLv} prog={prog} xp={xp}/>
-        <View style={{flexDirection:'row',gap:10,marginBottom:20}}>
-          <StreakBubble streak={streak}/>
-          <View style={{flex:1,gap:8}}>
-            <View style={{height:56,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:C.goldBd}}>
-              <LinearGradient colors={[C.goldFaint,'rgba(13,32,64,0.9)']} style={{flex:1,paddingHorizontal:14,paddingVertical:10}}>
-                <Text style={{color:C.muted,fontSize:10,fontWeight:'700'}}>AUJOURD'HUI</Text>
-                <View style={{flexDirection:'row',alignItems:'center',gap:4,marginTop:1}}><Ionicons name="flash" size={13} color={C.gold}/><Text style={{color:C.gold,fontSize:20,fontWeight:'900'}}>+{todayXP}</Text><Text style={{color:C.muted,fontSize:10}}>XP</Text></View>
-              </LinearGradient>
-            </View>
-            <View style={{height:56,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:C.border}}>
-              <LinearGradient colors={[C.card,'rgba(4,8,15,0.96)']} style={{flex:1,paddingHorizontal:14,paddingVertical:10}}>
-                <Text style={{color:C.muted,fontSize:10,fontWeight:'700'}}>CETTE SEMAINE</Text>
-                <View style={{flexDirection:'row',alignItems:'center',gap:4,marginTop:1}}><Ionicons name="flash" size={13} color={C.white}/><Text style={{color:C.white,fontSize:20,fontWeight:'900'}}>+{weekXP}</Text><Text style={{color:C.muted,fontSize:10}}>XP</Text></View>
-              </LinearGradient>
-            </View>
-          </View>
-        </View>
+      
+     
         {/* ★ BADGE INTERACTIONS GLISSANT */}
-        <Text style={{color:C.white,fontSize:15,fontWeight:'800',marginBottom:8}}>Agis maintenant</Text>
         <InteractionBadge onModalClose={onClose}/>
         {/* ★ DÉFIS QUOTIDIENS DYNAMIQUES */}
         <Text style={{color:C.white,fontSize:15,fontWeight:'800',marginTop:20,marginBottom:4}}>Défis du jour</Text>
@@ -883,19 +866,7 @@ const GalaxyModal=memo(({
       </ScrollView>
     );
 
-    if(tab==='badges')return(
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:E,paddingBottom:52}}>
-        <Text style={{color:C.white,fontSize:15,fontWeight:'800',marginBottom:4}}>Collection</Text>
-        <Text style={{color:C.muted,fontSize:12,marginBottom:4}}>{unlocked.length}/{BADGES.length} débloqués</Text>
-        <View style={{backgroundColor:C.goldFaint,borderRadius:14,padding:13,borderWidth:1,borderColor:C.goldBd,marginBottom:18,flexDirection:'row',alignItems:'center',gap:10}}>
-          <Ionicons name="flash" size={14} color={C.gold}/>
-          <Text style={{color:C.gold,fontSize:11,flex:1}}>Déblocage automatique au seuil XP — jamais au clic</Text>
-        </View>
-        <View style={{flexDirection:'row',flexWrap:'wrap',gap:12}}>
-          {BADGES.map(b=><BadgeCard key={b.id} badge={b} unlocked={unlocked.includes(b.id)}/>)}
-        </View>
-      </ScrollView>
-    );
+
 
     if(tab==='games')return(
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:E,paddingBottom:52}}>
@@ -905,6 +876,19 @@ const GalaxyModal=memo(({
         <GameCard gm={GAMES_META.find(g=>g.id==='cosbot')!} onPlay={()=>setGame('cosbot')}/>
         <View style={{flexDirection:'row',flexWrap:'wrap',gap:12}}>
           {GAMES_META.filter(g=>g.id!=='cosbot').map(g=><GameCard key={g.id} gm={g} onPlay={()=>setGame(g.id)}/>)}
+        </View>
+      </ScrollView>
+    );
+
+    if(tab==='badges')return(
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:E,paddingBottom:52}}>
+      
+        <View style={{backgroundColor:C.goldFaint,borderRadius:14,padding:13,borderWidth:1,borderColor:C.goldBd,marginBottom:18,flexDirection:'row',alignItems:'center',gap:10}}>
+          <Ionicons name="flash" size={14} color={C.gold}/>
+          <Text style={{color:C.gold,fontSize:11,flex:1}}>Déblocage automatique au seuil XP — jamais au clic</Text>
+        </View>
+        <View style={{flexDirection:'row',flexWrap:'wrap',gap:12}}>
+          {BADGES.map(b=><BadgeCard key={b.id} badge={b} unlocked={unlocked.includes(b.id)}/>)}
         </View>
       </ScrollView>
     );
@@ -1143,11 +1127,11 @@ export default function SearchScreen(){
         <View style={{marginBottom:24,gap:12}}>
           <View style={{flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:E,marginBottom:6}}>
             <Text style={{color:C.gold,fontSize:13}}>★</Text>
-            <Text style={{color:C.white,fontSize:17,fontWeight:'800'}}>Ton cosmos</Text>
+            <Text style={{color:C.white,fontSize:17,fontWeight:'800'}}>Découvre ton cosmos...</Text>
             {unlocked.length>0&&<View style={{marginLeft:'auto' as any,paddingHorizontal:9,paddingVertical:3,borderRadius:9,backgroundColor:C.goldFaint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.goldBd}}><Text style={{color:C.gold,fontSize:9,fontWeight:'800'}}>{unlocked.length} badge{unlocked.length>1?'s':''}</Text></View>}
           </View>
           <GamificationBadge xp={xp} lv={lv} prog={prog} streak={streak} unlocked={unlocked.length} onPress={()=>setGalaxy(true)}/>
-          <InteractionBadge/>
+    
         </View>
         <RowSection title="Les plus populaires" count={loading?undefined:works.length} items={popular} loading={loading} portrait rank onItemPress={item=>onFilmPress(item,'popular')}/>
         {DIV}
