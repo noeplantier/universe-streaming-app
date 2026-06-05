@@ -73,7 +73,7 @@ export function useProfile(userId: string) {
       prevLevel.current = p.level;
       setProfile(p);
     } else {
-      await supabase.from('cinephile_profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).catch(() => {});
+      await supabase.from('cinephile_profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).match(() => {});
       setProfile({ xp: 0, level: 1, title: TITLES[0], streak_days: 0, longest_streak: 0, pct: 0, xpToNext: 100, xpInLevel: 0, contribution_score: 0, gems: 0, total_days_active: 0 });
     }
     setLoading(false);
@@ -83,7 +83,7 @@ export function useProfile(userId: string) {
 
   const awardXP = useCallback(async (amount: number, reason: string) => {
     if (!isValidUUID(userId)) return;
-    await supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason }).catch(() => {});
+    await supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason }).match(() => {});
     setProfile(prev => {
       if (!prev) return prev;
       const newXp = prev.xp + amount;
@@ -96,7 +96,7 @@ export function useProfile(userId: string) {
   const addGems = useCallback(async (n: number) => {
     if (!isValidUUID(userId)) return;
     await supabase.from('cinephile_profiles')
-      .upsert({ user_id: userId, gems: (profile?.gems ?? 0) + n }, { onConflict: 'user_id' }).catch(() => {});
+      .upsert({ user_id: userId, gems: (profile?.gems ?? 0) + n }, { onConflict: 'user_id' }).match(() => {});
     setProfile(prev => prev ? { ...prev, gems: (prev.gems ?? 0) + n } : prev);
   }, [userId, profile?.gems]);
 
@@ -173,7 +173,7 @@ export function useQuests(userId: string) {
     await supabase.from('user_quests').upsert(
       { user_id: userId, quest_id: questId, progress: np, completed: done, completed_at: done ? new Date().toISOString() : null, updated_at: new Date().toISOString() },
       { onConflict: 'user_id,quest_id' },
-    ).catch(() => {});
+    ).match(() => {});
   }, [userId, progressMap]);
 
   const quests: QuestWithProgress[] = useMemo(() =>
@@ -215,12 +215,12 @@ export function useDailyCheckin(userId: string) {
       await supabase.from('daily_checkins').upsert(
         { user_id: userId, date: today, streak_day: newStreak, xp_earned: reward.xp, claimed: true, reward_type: 'streak', badge_id: reward.badge ?? null },
         { onConflict: 'user_id,date' },
-      ).catch(() => {});
+      ).match(() => {});
       await supabase.from('cinephile_profiles').upsert(
         { user_id: userId, streak_days: newStreak, last_active_date: today, updated_at: new Date().toISOString() },
         { onConflict: 'user_id' },
-      ).catch(() => {});
-      if (reward.badge) await supabase.from('user_badges').upsert({ user_id: userId, badge_id: reward.badge }, { onConflict: 'user_id,badge_id' }).catch(() => {});
+      ).match(() => {});
+      if (reward.badge) await supabase.from('user_badges').upsert({ user_id: userId, badge_id: reward.badge }, { onConflict: 'user_id,badge_id' }).match(() => {});
       setCheckin({ streak_day: newStreak, claimed: true, xp_earned: reward.xp, gems_earned: reward.gems, badge_id: reward.badge });
       onSuccess(reward.xp, reward.gems, reward.badge);
     } finally { setClaiming(false); }
@@ -251,8 +251,8 @@ export function useDailyChallenges(userId: string) {
     await supabase.from('user_quests').upsert(
       { user_id: userId, quest_id: qid, progress: 1, completed: true, completed_at: new Date().toISOString(), updated_at: new Date().toISOString() },
       { onConflict: 'user_id,quest_id' },
-    ).catch(() => {});
-    await supabase.rpc('add_xp', { p_user_id: userId, p_xp: xp, p_reason: `daily_${id}` }).catch(() => {});
+    ).match(() => {});
+    await supabase.rpc('add_xp', { p_user_id: userId, p_xp: xp, p_reason: `daily_${id}` }).match(() => {});
     setCompleted(s => { const ns = new Set(s); ns.add(qid); return ns; });
   }, [userId]);
 
@@ -305,12 +305,12 @@ export function useWeeklyChallenge(userId: string) {
     await supabase.from('challenge_progress').upsert(
       { user_id: userId, week_number: weekNum, step_index: stepIndex, steps_done, completed: isDone, points_earned: points, xp_earned: xp, completed_at: isDone ? new Date().toISOString() : null, updated_at: new Date().toISOString() },
       { onConflict: 'user_id,week_number' },
-    ).catch(() => {});
+    ).match(() => {});
   }, [userId, weekNum, challenge, progress]);
 
   const claimReward = useCallback(async () => {
     if (!isValidUUID(userId) || !progress?.completed || progress?.reward_claimed) return;
-    await supabase.from('challenge_progress').update({ reward_claimed: true }).eq('user_id', userId).eq('week_number', weekNum).catch(() => {});
+    await supabase.from('challenge_progress').update({ reward_claimed: true }).eq('user_id', userId).eq('week_number', weekNum).match(() => {});
     setProgress(p => p ? { ...p, reward_claimed: true } : p);
   }, [userId, weekNum, progress]);
 
