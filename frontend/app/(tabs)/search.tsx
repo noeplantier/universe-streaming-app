@@ -107,14 +107,14 @@ const DAILY = [
 
 // ─── INTERACTIONS GLISSANTES (badge aura or) ─────────────────────────────────
 const INTERACTIONS = [
-  { icon:'heart-outline'        as const, label:'Liker une œuvre',          phrase:'Un like = +10 XP. Simple. Rapide. Maintenant.',                              xp:10,  cta:'Liker',      route:'/(tabs)/social'        },
-  { icon:'create-outline'       as const, label:'Écrire une critique',       phrase:'50 XP t\'attendent. Ta voix compte dans l\'univers.',                        xp:50,  cta:'Rédiger',    route:'/(tabs)/social'        },
-  { icon:'chatbubble-outline'   as const, label:'Commenter une critique',    phrase:'Engage la communauté. +15 XP chaque commentaire.',                           xp:15,  cta:'Commenter',  route:'/(tabs)/social'        },
-  { icon:'videocam-outline'     as const, label:'Créer une vidéo',           phrase:'Deviens créateur. +80 XP d\'un seul coup.',                                  xp:80,  cta:'Créer',      route:'/(tabs)/create'        },
-  { icon:'share-outline'        as const, label:'Partager un film',          phrase:'Fais découvrir une pépite. +25 XP et un badge en approche.',                 xp:25,  cta:'Partager',   route:null                    },
-  { icon:'briefcase-outline'    as const, label:'Contacter un professionnel',phrase:'Étends ton réseau cinéma. +40 XP et une porte s\'ouvre.',                    xp:40,  cta:'Contacter',  route:'/(tabs)/professionals' },
-  { icon:'person-outline'       as const, label:'Compléter votre profil',    phrase:'Profil 100% = +100 XP. Le plus rentable en ce moment.',                      xp:100, cta:'Profil',     route:'/profile'              },
-  { icon:'play-circle-outline'  as const, label:'Visionner un film',         phrase:'Chaque film = +20 XP et un pas vers le badge Cinéphile.',                    xp:20,  cta:'Regarder',   route:null                    },
+  { icon:'heart-outline'        as const, label:'Liker une œuvre',              route:'/(tabs)/search', xp:10,     },  
+  { icon:'create-outline'       as const, label:'Écrire une critique',      route:'/(tabs)/create'   ,  xp:50,     },
+  { icon:'chatbubble-outline'   as const, label:'Ecrire un commentaire',    route:'/(tabs)/create'   ,  xp:30,     },
+  { icon:'videocam-outline'     as const, label:'Créer une vidéo',          route:'/(tabs)/create'       ,xp:70,     },
+  { icon:'share-outline'        as const, label:'Partager un film',         route:'/search'            , xp:20,       },
+  { icon:'briefcase-outline'    as const, label:'Contacter un pro',                    xp:40,    route:'/social' },
+  { icon:'person-outline'       as const, label:'Compléter son profil',                        xp:100,     route:'/profile'              },
+  { icon:'play-circle-outline'  as const, label:'Visionner un film',                          xp:20,    route:'/'                    },
 ] as const;
 
 // ─── 6 JEUX ──────────────────────────────────────────────────────────────────
@@ -565,25 +565,15 @@ const InteractionBadge = memo(({ onNavigate }: { onNavigate:(route:string|null)=
           <View style={{ flex:1, gap:3 }}>
             <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
               <Text style={{ color:C.white, fontSize:13, fontWeight:'800' }} numberOfLines={1}>{item.label}</Text>
-              <View style={{ flexDirection:'row', alignItems:'center', gap:3 }}>
+                <View style={{ flexDirection:'row', alignItems:'center', gap:3 }}>
                 <Ionicons name="flash" size={10} color={C.gold}/>
-                <Text style={{ color:C.gold, fontSize:12, fontWeight:'900' }}>+{item.xp} XP</Text>
-              </View>
+                <Text style={{ color:C.gold, fontSize:10, fontWeight:'700' }}>+{item.xp} XP</Text>
+                </View>
             </View>
             <Text style={{ color:C.muted, fontSize:11, fontStyle:'italic' }} numberOfLines={1}>{item.phrase}</Text>
-            {/* Dots indicateurs */}
-            <View style={{ flexDirection:'row', gap:3 }}>
-              {INTERACTIONS.map((_, i) => (
-                <View key={i} style={{ width:i===idx?14:4, height:3, borderRadius:1.5,
-                  backgroundColor:i===idx ? C.gold : 'rgba(245,200,66,0.22)' }}/>
-              ))}
-            </View>
+          
           </View>
-          {/* CTA */}
-          <View style={{ backgroundColor:C.gold, borderRadius:11,
-            paddingHorizontal:13, paddingVertical:9, alignItems:'center', gap:1, flexShrink:0 }}>
-            <Text style={{ color:C.bg, fontSize:10, fontWeight:'900' }}>{item.cta}</Text>
-          </View>
+         
         </Animated.View>
       </LinearGradient>
     </TouchableOpacity>
@@ -1211,41 +1201,11 @@ const GalaxyModal = memo(({
         </View>
         <XPBar lv={lv} nextLv={nextLv} prog={prog} xp={xp}/>
 
-        {/* Stats */}
-        <View style={{ flexDirection:'row', gap:10, marginBottom:20 }}>
-          <StreakBubble streak={streak}/>
-          <View style={{ flex:1, gap:8 }}>
-            <View style={{ height:56, borderRadius:14, overflow:'hidden', borderWidth:1, borderColor:C.goldBd }}>
-              <LinearGradient colors={[C.goldFaint,'rgba(13,32,64,0.9)']} style={{ flex:1, paddingHorizontal:14, paddingVertical:10 }}>
-                <Text style={{ color:C.muted, fontSize:10, fontWeight:'700' }}>AUJOURD'HUI</Text>
-                <View style={{ flexDirection:'row', alignItems:'center', gap:4, marginTop:1 }}>
-                  <Ionicons name="flash" size={13} color={C.gold}/>
-                  <Text style={{ color:C.gold, fontSize:20, fontWeight:'900' }}>+{todayXP}</Text>
-                  <Text style={{ color:C.muted, fontSize:10 }}>XP</Text>
-                </View>
-              </LinearGradient>
-            </View>
-            <View style={{ height:56, borderRadius:14, overflow:'hidden', borderWidth:1, borderColor:C.border }}>
-              <LinearGradient colors={[C.card,'rgba(4,8,15,0.96)']} style={{ flex:1, paddingHorizontal:14, paddingVertical:10 }}>
-                <Text style={{ color:C.muted, fontSize:10, fontWeight:'700' }}>CETTE SEMAINE</Text>
-                <View style={{ flexDirection:'row', alignItems:'center', gap:4, marginTop:1 }}>
-                  <Ionicons name="flash" size={13} color={C.white}/>
-                  <Text style={{ color:C.white, fontSize:20, fontWeight:'900' }}>+{weekXP}</Text>
-                  <Text style={{ color:C.muted, fontSize:10 }}>XP</Text>
-                </View>
-              </LinearGradient>
-            </View>
-          </View>
-        </View>
 
         {/* ★ BADGE INTERACTION GLISSANT — remplace la liste */}
         <View style={{ marginBottom:8 }}>
           <View style={{ flexDirection:'row', alignItems:'center', gap:6, marginBottom:10 }}>
-            <Text style={{ color:C.white, fontSize:15, fontWeight:'800' }}>Agis maintenant</Text>
-            <View style={{ backgroundColor:C.goldFaint, borderRadius:7, paddingHorizontal:7, paddingVertical:3,
-              borderWidth:StyleSheet.hairlineWidth, borderColor:C.goldBd }}>
-              <Text style={{ color:C.gold, fontSize:9, fontWeight:'800' }}>XP À LA COMPLÉTION</Text>
-            </View>
+          
           </View>
           <InteractionBadge onNavigate={navigate}/>
         </View>
@@ -1293,11 +1253,8 @@ const GalaxyModal = memo(({
     if (tab === 'badges') return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding:E, paddingBottom:52 }}>
         <Text style={{ color:C.white, fontSize:15, fontWeight:'800', marginBottom:4 }}>Collection</Text>
-        <Text style={{ color:C.muted, fontSize:12, marginBottom:4 }}>{unlocked.length}/{BADGES.length} débloqués</Text>
-        <View style={{ backgroundColor:C.goldFaint, borderRadius:14, padding:13, borderWidth:1, borderColor:C.goldBd, marginBottom:18, flexDirection:'row', alignItems:'center', gap:10 }}>
-          <Ionicons name="flash" size={14} color={C.gold}/>
-          <Text style={{ color:C.gold, fontSize:11, flex:1 }}>Déblocage automatique au seuil XP — jamais au clic</Text>
-        </View>
+        <Text style={{ color:C.muted, fontSize:12, marginBottom:20 }}>{unlocked.length}/{BADGES.length} débloqués</Text>
+       
         <View style={{ flexDirection:'row', flexWrap:'wrap', gap:12 }}>
           {BADGES.map(b => <BadgeCard key={b.id} badge={b} unlocked={unlocked.includes(b.id)}/>)}
         </View>
@@ -1852,7 +1809,7 @@ export default function SearchScreen() {
         <View style={{ marginBottom:24, gap:12 }}>
           <View style={{ flexDirection:'row',alignItems:'center',gap:7,paddingHorizontal:E,marginBottom:6 }}>
             <Text style={{ color:C.gold,fontSize:13 }}>★</Text>
-            <Text style={{ color:C.white,fontSize:17,fontWeight:'800' }}>Ton cosmos</Text>
+            <Text style={{ color:C.white,fontSize:17,fontWeight:'800' }}>Découvres ton cosmos...</Text>
             {unlocked.length>0&&<View style={{ marginLeft:'auto' as any,
               paddingHorizontal:9,paddingVertical:3,borderRadius:9,
               backgroundColor:C.goldFaint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.goldBd }}>
@@ -1860,7 +1817,6 @@ export default function SearchScreen() {
             </View>}
           </View>
           <GamificationBadge xp={xp} lv={lv} prog={prog} streak={streak} unlocked={unlocked.length} onPress={()=>setGalaxy(true)}/>
-          <InteractionBadge onNavigate={route=>{ if(route){setSrch(false);setTimeout(()=>{},0);}else setGalaxy(true); }}/>
         </View>
         <RowSection title="Les plus populaires" count={loading?undefined:works.length} items={popular} loading={loading} portrait rank/>
         {DIV}
