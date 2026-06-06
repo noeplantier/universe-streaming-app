@@ -1168,7 +1168,7 @@ export default function SearchScreen(){
         {(courts.length>0||loading)&&<><RowSection title="Courts métrages" sub="Moins de 60 min" count={loading?undefined:courts.length} items={courts} loading={loading} portrait={false} onItemPress={item=>onFilmPress(item,'courts')}/>{DIV}</>}
         {(moyens.length>0||loading)&&<><RowSection title="Moyens métrages" sub="60 – 100 min" count={loading?undefined:moyens.length} items={moyens} loading={loading} portrait={false} onItemPress={item=>onFilmPress(item,'moyens')}/>{DIV}</>}
         {(longs.length>0||loading)&&<RowSection title="Mini-séries & longs" sub="100 min+" count={loading?undefined:longs.length} items={longs} loading={loading} portrait={false} onItemPress={item=>onFilmPress(item,'longs')}/>}
-        <View style={{height:120}}/>
+        <View style={{height:0}}/>
       </Animated.ScrollView>
     </View>
   );

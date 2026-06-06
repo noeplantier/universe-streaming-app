@@ -520,7 +520,6 @@ const VideoTab = memo(function VideoTab() {
   // ─────────────────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     // Validation
-    if (!video)              { setError('Sélectionne une vidéo.');     return; }
     if (!thumbUri)           { setError('Ajoute une miniature.');       return; }
     if (!form.title.trim())  { setError('Le titre est obligatoire.');   return; }
     if (!form.genre)         { setError('Sélectionne un genre.');       return; }
@@ -600,12 +599,6 @@ const VideoTab = memo(function VideoTab() {
     () => !!video && !!thumbUri && !uploading,
     [video, thumbUri, uploading],
   );
-
-  const missingMsg = useMemo(() => {
-    if (!video)   return 'Sélectionne une vidéo';
-    if (!thumbUri) return 'Ajoute une miniature';
-    return '';
-  }, [video, thumbUri]);
 
   const progressLabel = useMemo(() => {
     if (phase) return phase;
@@ -735,10 +728,6 @@ const VideoTab = memo(function VideoTab() {
             </Text>
           </TouchableOpacity>
 
-          {/* Indique ce qui manque */}
-          {!canSubmit && !uploading && !!missingMsg && (
-            <Text style={s.hint}>{missingMsg}</Text>
-          )}
 
           <View style={{height:80}}/>
         </ScrollView>

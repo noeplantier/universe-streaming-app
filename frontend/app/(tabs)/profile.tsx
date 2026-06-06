@@ -240,7 +240,7 @@ const Empty = memo(({icon,text,sub}:{icon:keyof typeof Ionicons.glyphMap;text:st
 //   Avatar tap → édition implicite (pas de bouton edit dans la top bar)
 // ════════════════════════════════════════════════════════════════════════════
 const AVATAR_SIZE = 90;
-const RING_SIZE   = AVATAR_SIZE + 14;
+const RING_SIZE   = AVATAR_SIZE 
 
 const ProfileHeader = memo(function ProfileHeader({
   profile, filmCount, critiqueCount, reelCount,
@@ -334,29 +334,26 @@ const ProfileHeader = memo(function ProfileHeader({
       <View style={ph.identRow}>
         {/* Avatar — tap implicite → édition */}
         <TouchableOpacity onPress={onAvatarEdit} activeOpacity={0.82} style={{flexShrink:0}}>
-          <View style={{position:'relative',width:AVATAR_SIZE+8,height:AVATAR_SIZE+8,alignItems:'center',justifyContent:'center'}}>
-            {/* Ring pulsant */}
-            <Animated.View style={[ph.ring,{
-              borderColor:`${levelColor}55`,
-              transform:[{scale:ringScale}],
-              opacity:glowAnim,
-            }]}/>
-            {/* Avatar image / fallback */}
-            {profile.avatar_url&&!imgErr
-              ? <Image
-                  source={{uri:profile.avatar_url}}
-                  style={ph.avatar}
-                  resizeMode="cover"
-                  onError={()=>setImgErr(true)}
-                />
-              : <View style={[ph.avatar,ph.avatarFb]}>
-                  <Text style={ph.avatarInit}>{init}</Text>
-                </View>
-            }
-            {/* Overlay caméra implicite "tap to edit" */}
-            <View style={ph.editOverlay} pointerEvents="none">
-              <Ionicons name="camera-outline" size={12} color={C.white}/>
+          <View style={{position:'relative',width:RING_SIZE,height:RING_SIZE,alignItems:'center',justifyContent:'center'}}>
+        {/* Ring pulsant */}
+        <Animated.View style={[ph.ring,{
+          borderColor:`${levelColor}55`,
+          transform:[{scale:ringScale}],
+          opacity:glowAnim,
+        }]}/>
+        {/* Avatar image / fallback */}
+        {profile.avatar_url&&!imgErr
+          ? <Image
+          source={{uri:profile.avatar_url}}
+          style={ph.avatar}
+          resizeMode="cover"
+          onError={()=>setImgErr(true)}
+            />
+          : <View style={[ph.avatar,ph.avatarFb]}>
+          <Text style={ph.avatarInit}>{init}</Text>
             </View>
+        }
+          
             {/* Badge niveau réel */}
             <View style={[ph.lvlBadge,{borderColor:`${levelColor}60`,backgroundColor:C.navyDark}]}>
               <Text style={[ph.lvlTxt,{color:levelColor}]}>{lvlStr}</Text>

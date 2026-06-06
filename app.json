@@ -1,5 +1,29 @@
 {
   "plugins": [
     "expo-router"
-  ]
+  ],
+  "extra": {
+    "router": {
+      "origin": false
+    },
+    "eas": {
+      "projectId": "e6105903-0636-48d6-8a20-b099b211401d"
+    }
+  },
+  "expo": {
+    "android": {
+      "package": "com.noeplantier.reactnativeapp"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e6105903-0636-48d6-8a20-b099b211401d"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "universe",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    }
+  }
 }
