@@ -1,15 +1,11 @@
 /**
- * app/(tabs)/profile.tsx — UNIVERSE
+ * app/(tabs)/profile.tsx — UNIVERSE v2
  *
- * ★ getDeviceId() — ZERO supabase.auth.*
- * ★ useFocusEffect — re-fetch auto à chaque retour sur l'onglet
- * ★ Header harmonieux : avatar · XP inline · stats compactes (pas de gros blocs)
- * ★ Gamification : ScoreStrip + badges interactifs (missions supprimées)
- * ★ Cinema 100% réactif + interactions galaxie sur chaque item important
- *   → tap genre : flash doré + icône spring scale
- *   → tap festival : glow trophy + ring expansion
- *   → tap œuvre notable : meteor streak
- *   → accordion ouvert : pulse icon nébuleuse
+ * ✦ Header dynamique branché sur GamificationSystem (xpToLevel + TITLES)
+ * ✦ Avatar cliquable → édition implicite (caméra overlay, no edit button)
+ * ✦ Header plus aéré : avatar 90px, level section proéminente, spacing ++
+ * ✦ getDeviceId() — ZERO supabase.auth.*
+ * ✦ gamiProfile rechargé à chaque useFocusEffect
  */
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState,
@@ -28,6 +24,10 @@ import { StatusBar }                   from 'expo-status-bar';
 import GalaxyBackground                from '@/components/social/GalaxyBackground';
 import { supabase }                    from '@/lib/supabase';
 import { getDeviceId }                 from '@/services/api';
+import {
+  xpToLevel, TITLES, resolveImg as resolveImgGami,
+  type GamiProfile, type Work,
+} from '@/contexts/GamificationSystem';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -38,19 +38,25 @@ const C = {
   mid:'rgba(255,255,255,0.55)', muted:'rgba(255,255,255,0.35)',
   faint:'rgba(255,255,255,0.07)', subtle:'rgba(255,255,255,0.13)',
   border:'rgba(255,255,255,0.09)', borderHi:'rgba(255,255,255,0.20)',
-  gold:'#F5C842', goldDim:'rgba(245,200,66,0.12)',
+  gold:'#F5C842', goldDim:'rgba(245,200,66,0.12)', goldBd:'rgba(245,200,66,0.28)',
   blue:'#5A96E6', blueDim:'rgba(90,150,230,0.10)',
   purple:'#BF5FFF', purpleDim:'rgba(191,95,255,0.12)',
   ring:'rgba(255,255,255,0.22)',
 } as const;
 
-const H_PAD  = 20;
+const H_PAD = 20;
 const CARD_W = 124, CARD_H = 185;
 const REEL_W = 156, REEL_H = 220;
 const CRIT_W = 214, CRIT_H = 144;
 const GRID_GAP = 10;
 const GRID_COL = (SW - 32 - GRID_GAP) / 2;
 const WORK_COLS = 'id,title,category,genre,year,likes,image,is_original,duration,director';
+
+// Valeur par défaut GamiProfile (avant fetch)
+const DEFAULT_GAMI: GamiProfile = {
+  xp:0, level:1, title:TITLES[0], streak_days:0,
+  xpToNext:100, xpInLevel:0, pct:0, contribution_score:0,
+};
 
 // ─── GENRE META ───────────────────────────────────────────────────────────────
 const GENRE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -66,7 +72,6 @@ const GENRE_COLORS: Record<string, string> = {
   Romance:'#F472B6', Action:'#FB923C', Fantastique:'#C084FC',
   Expérimental:'#67E8F9', Animation:'#4ADE80', Biopic:'#94A3B8',
 };
-
 const ROLE_LABELS: Record<string,string> = {
   director:'Réalisateur·rice', producer:'Producteur·rice', writer:'Scénariste',
   actor:'Acteur·rice', dp:'Dir. photo', editor:'Monteur·euse',
@@ -74,53 +79,84 @@ const ROLE_LABELS: Record<string,string> = {
 };
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
-interface Work { id:number; title:string; category:string; genre:string; year:number; likes:number; image:string|null; is_original:boolean; duration:number|null; director:string|null }
-interface UserReel { id:string; video_url:string; thumbnail_url:string|null; title:string|null; genre:string|null; duration:number|null; status:'pending'|'approved'|'rejected'; likes_count:number; views_count:number; created_at:string }
-interface ReviewItem { id:string; content:string; rating:number; likes:number; film:{ id:string; title:string; genre:string } }
-interface ProfileData { display_name:string; username:string; bio:string; role:string; location:string; avatar_url:string; website:string; is_pro:boolean; is_industry_contact:boolean; specialties:string[]; festivals:string[]; open_to:string[]; notable_works:any[]; equipment:string; social_instagram:string; social_vimeo:string; social_youtube:string; social_imdb:string }
-interface Badge { id:string; label:string; icon:keyof typeof Ionicons.glyphMap; earned:boolean; pts:number; desc:string }
-interface GamiStats { watchCount:number; critiqueCount:number; favCount:number; isNight:boolean; streak:number }
+interface LocalWork { id:number;title:string;category:string;genre:string;year:number;likes:number;image:string|null;is_original:boolean;duration:number|null;director:string|null }
+interface UserReel { id:string;video_url:string;thumbnail_url:string|null;title:string|null;genre:string|null;duration:number|null;status:'pending'|'approved'|'rejected';likes_count:number;views_count:number;created_at:string }
+interface ReviewItem { id:string;content:string;rating:number;likes:number;film:{id:string;title:string;genre:string} }
+interface ProfileData { display_name:string;username:string;bio:string;role:string;location:string;avatar_url:string;website:string;is_pro:boolean;is_industry_contact:boolean;specialties:string[];festivals:string[];open_to:string[];notable_works:any[];equipment:string;social_instagram:string;social_vimeo:string;social_youtube:string;social_imdb:string }
+interface Badge { id:string;label:string;icon:keyof typeof Ionicons.glyphMap;earned:boolean;pts:number;desc:string }
+interface GamiStats { watchCount:number;critiqueCount:number;favCount:number;isNight:boolean;streak:number }
 type GridTab   = 0|1|2;
 type ModalType = 'favorites'|'reviews'|'watched'|'recs'|'creations';
 
-const EMPTY_PROFILE: ProfileData = { display_name:'', username:'', bio:'', role:'creator', location:'', avatar_url:'', website:'', is_pro:false, is_industry_contact:false, specialties:[], festivals:[], open_to:[], notable_works:[], equipment:'', social_instagram:'', social_vimeo:'', social_youtube:'', social_imdb:'' };
+const EMPTY_PROFILE: ProfileData = {
+  display_name:'',username:'',bio:'',role:'creator',location:'',avatar_url:'',website:'',
+  is_pro:false,is_industry_contact:false,specialties:[],festivals:[],open_to:[],
+  notable_works:[],equipment:'',social_instagram:'',social_vimeo:'',social_youtube:'',social_imdb:'',
+};
 
 // ─── MAPPERS ──────────────────────────────────────────────────────────────────
-const mapProfile = (r:any): ProfileData => ({ display_name:r?.display_name??'', username:r?.username??'', bio:r?.bio??'', role:r?.role??'creator', location:r?.location??'', avatar_url:r?.avatar_url??'', website:r?.website??'', is_pro:r?.is_pro??false, is_industry_contact:r?.is_industry_contact??false, specialties:Array.isArray(r?.specialties)?r.specialties:[], festivals:Array.isArray(r?.festivals)?r.festivals:[], open_to:Array.isArray(r?.open_to)?r.open_to:[], notable_works:Array.isArray(r?.notable_works)?r.notable_works:[], equipment:r?.equipment??'', social_instagram:r?.social_instagram??'', social_vimeo:r?.social_vimeo??'', social_youtube:r?.social_youtube??'', social_imdb:r?.social_imdb??'' });
-const mapWork   = (r:any): Work => ({ id:Number(r?.id)||0, title:r?.title??'', category:r?.category??'', genre:r?.genre??'', year:Number(r?.year)||0, likes:Number(r?.likes)||0, image:r?.image??null, is_original:r?.is_original??false, duration:r?.duration!=null?Number(r.duration):null, director:r?.director??null });
-const mapReel   = (r:any): UserReel => ({ id:String(r?.id??''), video_url:r?.video_url??'', thumbnail_url:r?.thumbnail_url??null, title:r?.title??null, genre:r?.genre??null, duration:r?.duration!=null?Number(r.duration):null, status:(['pending','approved','rejected'].includes(r?.status)?r.status:'pending') as any, likes_count:Number(r?.likes_count)||0, views_count:Number(r?.views_count)||0, created_at:r?.created_at??new Date().toISOString() });
-const mapReview = (r:any): ReviewItem => ({ id:String(r?.id??''), content:String(r?.content??r?.contenu??''), rating:r?.rating!=null?Number(r.rating):r?.note!=null?Number(r.note):0, likes:Number(r?.likes_count??0), film:{ id:String(r?.reel_id??r?.work_id??r?.id), title:String(r?.film_title??r?.work_title??r?.title??r?.titre??'—'), genre:r?.work_genre??r?.genre??'—' } });
+const mapProfile = (r:any): ProfileData => ({
+  display_name:r?.display_name??'',username:r?.username??'',bio:r?.bio??'',role:r?.role??'creator',
+  location:r?.location??'',avatar_url:r?.avatar_url??'',website:r?.website??'',
+  is_pro:r?.is_pro??false,is_industry_contact:r?.is_industry_contact??false,
+  specialties:Array.isArray(r?.specialties)?r.specialties:[],festivals:Array.isArray(r?.festivals)?r.festivals:[],
+  open_to:Array.isArray(r?.open_to)?r.open_to:[],notable_works:Array.isArray(r?.notable_works)?r.notable_works:[],
+  equipment:r?.equipment??'',social_instagram:r?.social_instagram??'',
+  social_vimeo:r?.social_vimeo??'',social_youtube:r?.social_youtube??'',social_imdb:r?.social_imdb??'',
+});
+const mapWork   = (r:any): LocalWork => ({
+  id:Number(r?.id)||0,title:r?.title??'',category:r?.category??'',genre:r?.genre??'',
+  year:Number(r?.year)||0,likes:Number(r?.likes)||0,image:r?.image??null,
+  is_original:r?.is_original??false,duration:r?.duration!=null?Number(r.duration):null,director:r?.director??null,
+});
+const mapReel   = (r:any): UserReel => ({
+  id:String(r?.id??''),video_url:r?.video_url??'',thumbnail_url:r?.thumbnail_url??null,
+  title:r?.title??null,genre:r?.genre??null,duration:r?.duration!=null?Number(r.duration):null,
+  status:(['pending','approved','rejected'].includes(r?.status)?r.status:'pending') as any,
+  likes_count:Number(r?.likes_count)||0,views_count:Number(r?.views_count)||0,
+  created_at:r?.created_at??new Date().toISOString(),
+});
+const mapReview = (r:any): ReviewItem => ({
+  id:String(r?.id??''),content:String(r?.content??r?.contenu??''),
+  rating:r?.rating!=null?Number(r.rating):r?.note!=null?Number(r.note):0,
+  likes:Number(r?.likes_count??0),
+  film:{id:String(r?.reel_id??r?.work_id??r?.id),title:String(r?.film_title??r?.work_title??r?.title??r?.titre??'—'),genre:r?.work_genre??r?.genre??'—'},
+});
 
-const resolveImg = (id:number, img:string|null) => { if(!img)return`https://picsum.photos/seed/w${id}/400/600`; if(img.startsWith('http'))return img; try{return supabase.storage.from('community-images').getPublicUrl(img).data.publicUrl;}catch{return`https://picsum.photos/seed/w${id}/400/600`;} };
+const resolveImg = (id:number, img:string|null) => {
+  if(!img)return`https://picsum.photos/seed/w${id}/400/600`;
+  if(img.startsWith('http'))return img;
+  try{return supabase.storage.from('community-images').getPublicUrl(img).data.publicUrl;}
+  catch{return`https://picsum.photos/seed/w${id}/400/600`;}
+};
 const fmt = (n:number) => n>=1e6?`${(n/1e6).toFixed(1)}M`:n>=1e3?`${(n/1e3).toFixed(n>=1e4?0:1)}K`:`${n}`;
 const momentum = (r:UserReel) => Math.round((r.views_count*0.3+r.likes_count*2)/Math.max(0.5,(Date.now()-new Date(r.created_at).getTime())/86400000));
 
 // ─── FETCH HELPERS ────────────────────────────────────────────────────────────
 async function fetchCritiques(uid:string): Promise<ReviewItem[]> {
   try {
-    const { data:v, error:vErr } = await supabase.from('v_user_critiques')
+    const{data:v,error:vErr}=await supabase.from('v_user_critiques')
       .select('id,user_id,reel_id,work_id,film_title,work_title,title,titre,content,contenu,rating,note,likes_count,work_genre,genre,created_at')
       .eq('user_id',uid).order('created_at',{ascending:false});
-    if (!vErr && v) return v.map(mapReview).sort((a,b)=>(b.likes??0)-(a.likes??0));
+    if(!vErr&&v)return v.map(mapReview).sort((a,b)=>(b.likes??0)-(a.likes??0));
   } catch {}
   try {
-    const { data:c } = await supabase.from('critiques')
+    const{data:c}=await supabase.from('critiques')
       .select('id,user_id,reel_id,film_title,title,titre,content,contenu,rating,note,likes_count,tags,created_at')
       .eq('user_id',uid).order('created_at',{ascending:false});
-    return (c??[]).map(mapReview).sort((a,b)=>(b.likes??0)-(a.likes??0));
-  } catch { return []; }
+    return(c??[]).map(mapReview).sort((a,b)=>(b.likes??0)-(a.likes??0));
+  } catch{return[];}
 }
-
 async function fetchSeen(uid:string): Promise<{workId:number;watchedAt:string}[]> {
-  const { data:sf, error:sfErr } = await supabase.from('seen_films').select('film_id,created_at').eq('user_id',uid);
-  if (!sfErr&&sf) { const i=sf.map((r:any)=>({workId:Number(r.film_id),watchedAt:r.created_at??''})).filter(r=>r.workId>0); if(i.length>0)return i; }
-  const { data:usf, error:usfErr } = await supabase.from('user_seen_films').select('film_id,created_at').eq('user_id',uid);
-  if (!usfErr&&usf) { const i=usf.map((r:any)=>({workId:Number(r.film_id),watchedAt:r.created_at??''})).filter(r=>r.workId>0); if(i.length>0)return i; }
-  const { data:uh } = await supabase.from('user_history').select('work_id,watched_at').eq('user_id',uid).order('watched_at',{ascending:false});
-  return (uh??[]).map((r:any)=>({workId:Number(r.work_id),watchedAt:r.watched_at??''})).filter(r=>r.workId>0);
+  const{data:sf,error:sfErr}=await supabase.from('seen_films').select('film_id,created_at').eq('user_id',uid);
+  if(!sfErr&&sf){const i=sf.map((r:any)=>({workId:Number(r.film_id),watchedAt:r.created_at??''})).filter(r=>r.workId>0);if(i.length>0)return i;}
+  const{data:usf,error:usfErr}=await supabase.from('user_seen_films').select('film_id,created_at').eq('user_id',uid);
+  if(!usfErr&&usf){const i=usf.map((r:any)=>({workId:Number(r.film_id),watchedAt:r.created_at??''})).filter(r=>r.workId>0);if(i.length>0)return i;}
+  const{data:uh}=await supabase.from('user_history').select('work_id,watched_at').eq('user_id',uid).order('watched_at',{ascending:false});
+  return(uh??[]).map((r:any)=>({workId:Number(r.work_id),watchedAt:r.watched_at??''})).filter(r=>r.workId>0);
 }
 
-// ─── GAMIFICATION (sans missions) ────────────────────────────────────────────
+// ─── GAMIFICATION LOCALE (badges activité + score strip) ─────────────────────
 function buildBadges(s:GamiStats): Badge[] {
   return [
     {id:'explorer', label:'Explorateur',  icon:'compass-outline',  earned:s.watchCount>=5,    pts:15, desc:'5 œuvres visionnées'  },
@@ -138,8 +174,8 @@ function cinephileLevel(score:number):{n:number;label:string;pct:number;nextAt:n
   const nxt=L[ni]??L[L.length-1];
   return{n:cur.n,label:cur.l,pct:cur.n===5?1:Math.min(1,(score-cur.at)/(nxt.at-cur.at)),nextAt:nxt.at};
 }
-function useGamification(uid:string|null) {
-  const [stats,setStats]=useState<GamiStats>({watchCount:0,critiqueCount:0,favCount:0,isNight:false,streak:0});
+function useLocalGamification(uid:string|null) {
+  const[stats,setStats]=useState<GamiStats>({watchCount:0,critiqueCount:0,favCount:0,isNight:false,streak:0});
   useEffect(()=>{
     if(!uid)return;
     const isNight=new Date().getHours()>=22||new Date().getHours()<4;
@@ -155,52 +191,26 @@ function useGamification(uid:string|null) {
   return{score,level,badges};
 }
 
-// ─── ★ GALAXY ANIMATION PRIMITIVES ───────────────────────────────────────────
-// Ring expansion — utilisé sur les items importants du tab Cinéma
+// ─── GALAXY ANIMATION PRIMITIVES ─────────────────────────────────────────────
 function useGalaxyTap() {
-  const ring  = useRef(new Animated.Value(0)).current;
-  const ringOp= useRef(new Animated.Value(0)).current;
-  const glow  = useRef(new Animated.Value(0)).current;
-  const fire  = useCallback(()=>{
-    ring.setValue(0.25);
-    ringOp.setValue(0.85);
-    glow.setValue(1);
-    Animated.parallel([
-      Animated.timing(ring,  {toValue:2.4, duration:500, easing:Easing.out(Easing.cubic), useNativeDriver:true}),
-      Animated.timing(ringOp,{toValue:0,   duration:500, useNativeDriver:true}),
-      Animated.timing(glow,  {toValue:0,   duration:600, useNativeDriver:false}),
-    ]).start();
-  },[]);
+  const ring=useRef(new Animated.Value(0)).current,ringOp=useRef(new Animated.Value(0)).current,glow=useRef(new Animated.Value(0)).current;
+  const fire=useCallback(()=>{ring.setValue(0.25);ringOp.setValue(0.85);glow.setValue(1);Animated.parallel([Animated.timing(ring,{toValue:2.4,duration:500,easing:Easing.out(Easing.cubic),useNativeDriver:true}),Animated.timing(ringOp,{toValue:0,duration:500,useNativeDriver:true}),Animated.timing(glow,{toValue:0,duration:600,useNativeDriver:false})]).start();},[]);
   return{fire,ring,ringOp,glow};
 }
-
-// Meteor streak — utilisé sur les festivals
 function useMeteorTap() {
-  const prog = useRef(new Animated.Value(0)).current;
-  const op   = useRef(new Animated.Value(0)).current;
-  const fire = useCallback(()=>{
-    prog.setValue(0); op.setValue(1);
-    Animated.parallel([
-      Animated.timing(prog,{toValue:1,duration:480,easing:Easing.out(Easing.quad),useNativeDriver:true}),
-      Animated.sequence([
-        Animated.delay(280),
-        Animated.timing(op,{toValue:0,duration:200,useNativeDriver:true}),
-      ]),
-    ]).start();
-  },[]);
+  const prog=useRef(new Animated.Value(0)).current,op=useRef(new Animated.Value(0)).current;
+  const fire=useCallback(()=>{prog.setValue(0);op.setValue(1);Animated.parallel([Animated.timing(prog,{toValue:1,duration:480,easing:Easing.out(Easing.quad),useNativeDriver:true}),Animated.sequence([Animated.delay(280),Animated.timing(op,{toValue:0,duration:200,useNativeDriver:true})])]).start();},[]);
   return{fire,prog,op};
 }
 
 // ─── MICRO UI ─────────────────────────────────────────────────────────────────
 const Shimmer = memo(({w,h,r=8}:{w:number;h:number;r?:number}) => {
-  const op = useRef(new Animated.Value(0.12)).current;
-  useEffect(()=>{ const l=Animated.loop(Animated.sequence([Animated.timing(op,{toValue:0.30,duration:900,useNativeDriver:true}),Animated.timing(op,{toValue:0.12,duration:900,useNativeDriver:true})])); l.start(); return()=>l.stop(); },[op]);
-  return <Animated.View style={{width:w,height:h,borderRadius:r,backgroundColor:C.navyMid,opacity:op}}/>;
+  const op=useRef(new Animated.Value(0.12)).current;
+  useEffect(()=>{const l=Animated.loop(Animated.sequence([Animated.timing(op,{toValue:0.30,duration:900,useNativeDriver:true}),Animated.timing(op,{toValue:0.12,duration:900,useNativeDriver:true})]));l.start();return()=>l.stop();},[]);
+  return<Animated.View style={{width:w,height:h,borderRadius:r,backgroundColor:C.navyMid,opacity:op}}/>;
 });
-const HRow = memo(({c,pb=0}:{c:React.ReactNode;pb?:number}) => (
-  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,paddingBottom:pb}}>{c}</ScrollView>
-));
-const Div  = memo(() => <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginTop:22}}/>);
+const HRow  = memo(({c,pb=0}:{c:React.ReactNode;pb?:number}) => <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,paddingBottom:pb}}>{c}</ScrollView>);
+const Div   = memo(() => <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.faint,marginTop:22}}/>);
 const SecHead = memo(({icon,label,count,onMore}:{icon:keyof typeof Ionicons.glyphMap;label:string;count?:number;onMore?:()=>void}) => (
   <View style={{flexDirection:'row',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:22,paddingBottom:12,gap:7}}>
     <Ionicons name={icon} size={13} color={C.mid}/>
@@ -225,103 +235,174 @@ const Empty = memo(({icon,text,sub}:{icon:keyof typeof Ionicons.glyphMap;text:st
   </View>
 ));
 
-// ─── ★ PROFILE HEADER épuré ────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+// ★ PROFILE HEADER — redesigné : aéré, gamiProfile depuis GamificationSystem
+//   Avatar tap → édition implicite (pas de bouton edit dans la top bar)
+// ════════════════════════════════════════════════════════════════════════════
+const AVATAR_SIZE = 90;
+const RING_SIZE   = AVATAR_SIZE + 14;
+
 const ProfileHeader = memo(function ProfileHeader({
   profile, filmCount, critiqueCount, reelCount,
-  level, score, unreadNotifs, streak,
-  onEdit, onAdmin, onNotifs, onSettings,
+  gamiProfile,
+  unreadNotifs, streak,
+  onAvatarEdit, onAdmin, onNotifs, onSettings,
 }:{
   profile:ProfileData; filmCount:number; critiqueCount:number; reelCount:number;
-  level:ReturnType<typeof cinephileLevel>; score:number;
+  gamiProfile:GamiProfile;
   unreadNotifs:number; streak:number;
-  onEdit:()=>void; onAdmin:()=>void; onNotifs:()=>void; onSettings:()=>void;
+  onAvatarEdit:()=>void; onAdmin:()=>void; onNotifs:()=>void; onSettings:()=>void;
 }) {
   const [imgErr,  setImgErr]  = useState(false);
   const [bioOpen, setBioOpen] = useState(false);
-  const levelAnim = useRef(new Animated.Value(0)).current;
-  const glowAnim  = useRef(new Animated.Value(0.3)).current;
-  const ringAnim  = useRef(new Animated.Value(0)).current;
+  const barAnim   = useRef(new Animated.Value(0)).current;
+  const glowAnim  = useRef(new Animated.Value(0.30)).current;
+  const ringAnim  = useRef(new Animated.Value(1)).current;
 
   useEffect(()=>setImgErr(false),[profile.avatar_url]);
-  useEffect(()=>{
-    Animated.timing(levelAnim,{toValue:level.pct,duration:1100,useNativeDriver:false}).start();
-    Animated.loop(Animated.sequence([Animated.timing(glowAnim,{toValue:0.9,duration:2400,useNativeDriver:true}),Animated.timing(glowAnim,{toValue:0.3,duration:2400,useNativeDriver:true})])).start();
-    Animated.loop(Animated.sequence([Animated.timing(ringAnim,{toValue:1,duration:3200,useNativeDriver:true}),Animated.timing(ringAnim,{toValue:0,duration:3200,useNativeDriver:true})])).start();
-  },[level.pct]);
 
+  // Barre XP → animée à chaque mise à jour gamiProfile
+  useEffect(()=>{
+    Animated.timing(barAnim,{toValue:gamiProfile.pct,duration:1200,useNativeDriver:false,easing:Easing.out(Easing.exp)}).start();
+  },[gamiProfile.pct]);
+
+  useEffect(()=>{
+    const gl = Animated.loop(Animated.sequence([
+      Animated.timing(glowAnim,{toValue:0.92,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),
+      Animated.timing(glowAnim,{toValue:0.30,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),
+    ]));
+    const rg = Animated.loop(Animated.sequence([
+      Animated.timing(ringAnim,{toValue:1.04,duration:3200,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),
+      Animated.timing(ringAnim,{toValue:1,   duration:3200,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),
+    ]));
+    gl.start(); rg.start();
+    return()=>{gl.stop();rg.stop();};
+  },[]);
+
+  // Pré-calcul strings (perf)
   const dn    = profile.display_name || profile.username || 'Cinéphile';
   const init  = dn.trim().split(/\s+/).map(n=>n[0]).join('').toUpperCase().slice(0,2);
-  const links = [{k:'ig',icon:'logo-instagram' as const,url:profile.social_instagram,label:'Instagram'},{k:'vi',icon:'videocam-outline' as const,url:profile.social_vimeo,label:'Vimeo'},{k:'yt',icon:'logo-youtube' as const,url:profile.social_youtube,label:'YouTube'},{k:'ws',icon:'globe-outline' as const,url:profile.website,label:'Portfolio'}].filter(l=>!!l.url);
-  const barW      = levelAnim.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
-  const ringScale = ringAnim.interpolate({inputRange:[0,1],outputRange:[1,1.05]});
-  // Pre-compute strings
-  const notifBadgeStr = unreadNotifs > 9 ? '9+' : String(unreadNotifs);
-  const levelStr      = `Niv.${level.n}`;
-  const scoreStr      = `${fmt(score)} pts`;
-  const ptsLeft       = Math.max(0, level.nextAt - score);
-  const nextStr       = `${fmt(ptsLeft)} pts → Niv.${level.n+1}`;
+  const links = useMemo(()=>[
+    {k:'ig',icon:'logo-instagram' as const,url:profile.social_instagram,label:'Instagram'},
+    {k:'vi',icon:'videocam-outline' as const,url:profile.social_vimeo,label:'Vimeo'},
+    {k:'yt',icon:'logo-youtube' as const,url:profile.social_youtube,label:'YouTube'},
+    {k:'ws',icon:'globe-outline' as const,url:profile.website,label:'Portfolio'},
+  ].filter(l=>!!l.url),[profile.social_instagram,profile.social_vimeo,profile.social_youtube,profile.website]);
+
+  // Interpolations
+  const barW      = barAnim.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
+  const ringScale = ringAnim;
+
+  // Couleur accent par niveau
+  const levelColor = useMemo(()=>{
+    const l = gamiProfile.level;
+    if(l>=9)return C.gold;
+    if(l>=7)return'#C084FC';
+    if(l>=5)return C.blue;
+    return C.mid;
+  },[gamiProfile.level]);
+
+  const notifBadge = unreadNotifs > 9 ? '9+' : String(unreadNotifs);
+  const lvlStr     = String(gamiProfile.level);
+  const xpStr      = gamiProfile.xp.toLocaleString('fr-FR');
+  const nextStr    = `encore ${gamiProfile.xpToNext.toLocaleString('fr-FR')} XP → Niv.${gamiProfile.level + 1}`;
 
   return (
     <View>
-      {/* ── Top bar ── */}
+      {/* ── Top bar : UNIVERSE · role · [admin | notifs | settings] ── */}
       <View style={ph.topBar}>
         <View style={ph.topLeft}>
           <Text style={ph.brand}>UNIVERSE</Text>
           <View style={ph.dot}/>
-          <Text style={ph.roleChip}>{ROLE_LABELS[profile.role]??'Cinéaste'}</Text>
+          <Text style={ph.roleChip}>{ROLE_LABELS[profile.role] ?? 'Cinéaste'}</Text>
         </View>
         <View style={ph.actions}>
-          <TouchableOpacity style={ph.btn} onPress={onEdit}><Ionicons name="create-outline" size={16} color={C.offWhite}/></TouchableOpacity>
-          <TouchableOpacity style={ph.btn} onPress={onAdmin}><Ionicons name="eye-outline" size={16} color={C.offWhite}/></TouchableOpacity>
+          <TouchableOpacity style={ph.btn} onPress={onAdmin}>
+            <Ionicons name="eye-outline" size={16} color={C.offWhite}/>
+          </TouchableOpacity>
           <TouchableOpacity style={ph.btn} onPress={onNotifs}>
             <Ionicons name="notifications-outline" size={17} color={C.offWhite}/>
-            {unreadNotifs>0&&<View style={ph.notifDot}><Text style={ph.notifTxt}>{notifBadgeStr}</Text></View>}
+            {unreadNotifs>0&&<View style={ph.notifDot}><Text style={ph.notifTxt}>{notifBadge}</Text></View>}
           </TouchableOpacity>
-          <TouchableOpacity style={ph.btn} onPress={onSettings}><Ionicons name="settings-outline" size={16} color={C.offWhite}/></TouchableOpacity>
+          <TouchableOpacity style={ph.btn} onPress={onSettings}>
+            <Ionicons name="settings-outline" size={16} color={C.offWhite}/>
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* ── Identité ── */}
+      {/* ── Identité : avatar + infos ── */}
       <View style={ph.identRow}>
-        {/* Avatar */}
-        <View style={{position:'relative',marginRight:16}}>
-          <Animated.View style={[ph.ring,{transform:[{scale:ringScale}],opacity:glowAnim}]}/>
-          <View>
+        {/* Avatar — tap implicite → édition */}
+        <TouchableOpacity onPress={onAvatarEdit} activeOpacity={0.82} style={{flexShrink:0}}>
+          <View style={{position:'relative',width:AVATAR_SIZE+8,height:AVATAR_SIZE+8,alignItems:'center',justifyContent:'center'}}>
+            {/* Ring pulsant */}
+            <Animated.View style={[ph.ring,{
+              borderColor:`${levelColor}55`,
+              transform:[{scale:ringScale}],
+              opacity:glowAnim,
+            }]}/>
+            {/* Avatar image / fallback */}
             {profile.avatar_url&&!imgErr
-              ? <Image source={{uri:profile.avatar_url}} style={ph.avatar} resizeMode="cover" onError={()=>setImgErr(true)}/>
-              : <View style={[ph.avatar,ph.avatarFb]}><Text style={ph.avatarInit}>{init}</Text></View>
+              ? <Image
+                  source={{uri:profile.avatar_url}}
+                  style={ph.avatar}
+                  resizeMode="cover"
+                  onError={()=>setImgErr(true)}
+                />
+              : <View style={[ph.avatar,ph.avatarFb]}>
+                  <Text style={ph.avatarInit}>{init}</Text>
+                </View>
             }
-            <View style={ph.lvlBadge}><Text style={ph.lvlTxt}>{level.n}</Text></View>
+            {/* Overlay caméra implicite "tap to edit" */}
+            <View style={ph.editOverlay} pointerEvents="none">
+              <Ionicons name="camera-outline" size={12} color={C.white}/>
+            </View>
+            {/* Badge niveau réel */}
+            <View style={[ph.lvlBadge,{borderColor:`${levelColor}60`,backgroundColor:C.navyDark}]}>
+              <Text style={[ph.lvlTxt,{color:levelColor}]}>{lvlStr}</Text>
+            </View>
+            {/* Badge PRO */}
             {profile.is_pro&&<View style={ph.proBadge}><Text style={ph.proBadgeTxt}>PRO</Text></View>}
           </View>
-        </View>
+        </TouchableOpacity>
 
-        {/* Infos */}
-        <View style={{flex:1,gap:5}}>
-          {/* Nom + badges inline */}
-          <View style={{flexDirection:'row',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+        {/* Infos identité */}
+        <View style={ph.infoCol}>
+          {/* Nom */}
+          <View style={{flexDirection:'row',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:2}}>
             <Text style={ph.name} numberOfLines={1}>{dn}</Text>
             {profile.is_industry_contact&&<View style={ph.indBadge}><Text style={ph.indTxt}>INDUSTRIE</Text></View>}
-            {streak>=3&&<View style={ph.streakBadge}><Ionicons name="flame-outline" size={9} color={C.gold}/><Text style={[ph.indTxt,{color:C.gold}]}>{streak}J</Text></View>}
+            {streak>=3&&<View style={ph.streakBadge}>
+              <Ionicons name="flame-outline" size={9} color={C.gold}/>
+              <Text style={[ph.indTxt,{color:C.gold}]}>{streak}J</Text>
+            </View>}
           </View>
-          {/* Sous-ligne username + location */}
-          {(profile.username||profile.location)&&(
-            <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
-              {profile.location&&<Ionicons name="location-outline" size={10} color={C.muted}/>}
-              <Text style={ph.sub} numberOfLines={1}>{[profile.username&&`@${profile.username}`,profile.location].filter(Boolean).join(' · ')}</Text>
+
+          {/* Username + location */}
+          {(profile.username||profile.location)&&<View style={{flexDirection:'row',alignItems:'center',gap:4,marginBottom:8}}>
+            {profile.location&&<Ionicons name="location-outline" size={10} color={C.muted}/>}
+            <Text style={ph.sub} numberOfLines={1}>{[profile.username&&`@${profile.username}`,profile.location].filter(Boolean).join(' · ')}</Text>
+          </View>}
+
+          {/* ── Niveau + barre XP (GamificationSystem) ── */}
+          <View style={{gap:5,marginTop:2}}>
+            <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
+              <View style={{paddingHorizontal:7,paddingVertical:2.5,borderRadius:7,borderWidth:StyleSheet.hairlineWidth,borderColor:`${levelColor}45`,backgroundColor:`${levelColor}12`}}>
+                <Text style={{color:levelColor,fontSize:10,fontWeight:'800',letterSpacing:0.3}}>NIV.{lvlStr}</Text>
+              </View>
+              <Text style={{color:C.offWhite,fontSize:11,fontWeight:'700',flex:1,letterSpacing:-0.2}} numberOfLines={1}>{gamiProfile.title}</Text>
+              <View style={{flexDirection:'row',alignItems:'center',gap:2}}>
+                <Ionicons name="flash" size={9} color={C.gold}/>
+                <Text style={{color:C.muted,fontSize:9,fontWeight:'600'}}>{xpStr}</Text>
+              </View>
             </View>
-          )}
-          {/* Level + score inline — une ligne */}
-          <View style={{flexDirection:'row',alignItems:'center',gap:7}}>
-            <Text style={ph.lvlLabel}>{levelStr} · {level.label}</Text>
-            <Text style={ph.scoreLabel}>{scoreStr}</Text>
+            <View style={ph.xpTrack}>
+              <Animated.View style={[ph.xpFill,{width:barW,backgroundColor:levelColor}]}/>
+            </View>
+            {gamiProfile.level<10&&<Text style={ph.xpNext}>{nextStr}</Text>}
           </View>
-          {/* XP bar compacte */}
-          <View style={ph.xpTrack}><Animated.View style={[ph.xpFill,{width:barW}]}/></View>
-          {level.n<5&&<Text style={ph.xpNext}>{nextStr}</Text>}
         </View>
       </View>
-
 
       {/* ── Bio ── */}
       {!!profile.bio&&(
@@ -333,7 +414,8 @@ const ProfileHeader = memo(function ProfileHeader({
 
       {/* ── Socials ── */}
       {links.length>0&&(
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,gap:7,paddingBottom:12}}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{paddingHorizontal:H_PAD,gap:7,paddingBottom:14}}>
           {links.map(l=>(
             <TouchableOpacity key={l.k} style={ph.socialBtn} onPress={()=>Linking.openURL(l.url!).catch(()=>{})} activeOpacity={0.78}>
               <BlurView intensity={Platform.OS==='ios'?12:8} tint="dark" style={StyleSheet.absoluteFill}/>
@@ -343,61 +425,75 @@ const ProfileHeader = memo(function ProfileHeader({
           ))}
         </ScrollView>
       )}
-
     </View>
   );
 });
 
 const ph = StyleSheet.create({
-  topBar:   {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:6,paddingBottom:10},
-  topLeft:  {flexDirection:'row',alignItems:'center',gap:5},
-  brand:    {color:C.muted,fontSize:8,fontWeight:'900',letterSpacing:2.5,textTransform:'uppercase'},
-  dot:      {width:2,height:8,backgroundColor:C.faint,borderRadius:1},
-  roleChip: {color:C.muted,fontSize:9,fontWeight:'600',letterSpacing:0.3},
-  actions:  {flexDirection:'row',gap:5},
-  btn:      {width:32,height:32,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:C.navyLow,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
-  notifDot: {position:'absolute',top:3,right:3,minWidth:12,height:12,borderRadius:6,backgroundColor:C.white,alignItems:'center',justifyContent:'center',paddingHorizontal:2},
-  notifTxt: {color:C.navyDark,fontSize:6.5,fontWeight:'900'},
-  identRow: {flexDirection:'row',alignItems:'flex-start',paddingHorizontal:H_PAD,marginBottom:12},
-  ring:     {position:'absolute',top:-4,left:-4,width:84,height:84,borderRadius:42,borderWidth:1.5,borderColor:C.ring},
-  avatar:   {width:76,height:76,borderRadius:38,backgroundColor:C.navyMid},
-  avatarFb: {alignItems:'center',justifyContent:'center'},
-  avatarInit:{color:C.white,fontSize:22,fontWeight:'900'},
-  lvlBadge: {position:'absolute',top:-3,right:-3,width:20,height:20,borderRadius:10,backgroundColor:C.navyDark,borderWidth:1.5,borderColor:C.borderHi,alignItems:'center',justifyContent:'center'},
-  lvlTxt:   {color:C.white,fontSize:8,fontWeight:'900'},
-  proBadge: {position:'absolute',bottom:0,right:-2,paddingHorizontal:4,paddingVertical:1.5,borderRadius:4,backgroundColor:C.navyDark,borderWidth:1,borderColor:C.borderHi},
+  // Top bar
+  topBar:     {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:6,paddingBottom:12},
+  topLeft:    {flexDirection:'row',alignItems:'center',gap:5},
+  brand:      {color:C.muted,fontSize:8,fontWeight:'900',letterSpacing:2.5,textTransform:'uppercase'},
+  dot:        {width:2,height:8,backgroundColor:C.faint,borderRadius:1},
+  roleChip:   {color:C.muted,fontSize:9,fontWeight:'600',letterSpacing:0.3},
+  actions:    {flexDirection:'row',gap:5},
+  btn:        {width:32,height:32,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:C.navyLow,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
+  notifDot:   {position:'absolute',top:3,right:3,minWidth:12,height:12,borderRadius:6,backgroundColor:C.white,alignItems:'center',justifyContent:'center',paddingHorizontal:2},
+  notifTxt:   {color:C.navyDark,fontSize:6.5,fontWeight:'900'},
+  // Identity row
+  identRow:   {flexDirection:'row',alignItems:'flex-start',paddingHorizontal:H_PAD,marginBottom:16,gap:16},
+  // Avatar
+  ring:       {position:'absolute',top:0,left:0,right:0,bottom:0,width:RING_SIZE,height:RING_SIZE,borderRadius:RING_SIZE/2,borderWidth:1.5},
+  avatar:     {width:AVATAR_SIZE,height:AVATAR_SIZE,borderRadius:AVATAR_SIZE/2,backgroundColor:C.navyMid},
+  avatarFb:   {alignItems:'center',justifyContent:'center'},
+  avatarInit: {color:C.white,fontSize:26,fontWeight:'900'},
+  editOverlay:{position:'absolute',bottom:0,left:0,right:0,height:'35%',
+    borderBottomLeftRadius:AVATAR_SIZE/2,borderBottomRightRadius:AVATAR_SIZE/2,
+    backgroundColor:'rgba(0,0,0,0.42)',alignItems:'center',justifyContent:'flex-end',paddingBottom:6},
+  lvlBadge:   {position:'absolute',top:-2,right:-2,minWidth:22,height:22,borderRadius:11,
+    borderWidth:1.5,alignItems:'center',justifyContent:'center',paddingHorizontal:5},
+  lvlTxt:     {fontSize:9,fontWeight:'900'},
+  proBadge:   {position:'absolute',bottom:2,right:-4,paddingHorizontal:5,paddingVertical:2,borderRadius:4,
+    backgroundColor:C.navyDark,borderWidth:1,borderColor:C.borderHi},
   proBadgeTxt:{color:C.offWhite,fontSize:6.5,fontWeight:'900',letterSpacing:0.6},
-  name:     {color:C.white,fontSize:18,fontWeight:'900',letterSpacing:-0.4,flexShrink:1},
-  indBadge: {flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:6,paddingVertical:2,borderRadius:5,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.navyMid},
-  indTxt:   {color:C.muted,fontSize:7,fontWeight:'800',letterSpacing:0.5},
-  streakBadge:{flexDirection:'row',alignItems:'center',gap:2,paddingHorizontal:6,paddingVertical:2,borderRadius:5,borderWidth:StyleSheet.hairlineWidth,borderColor:C.goldDim,backgroundColor:'rgba(245,200,66,0.07)'},
-  sub:      {color:C.muted,fontSize:10.5,fontWeight:'500'},
-  lvlLabel: {color:C.muted,fontSize:9,fontWeight:'600',flex:1},
-  scoreLabel:{color:C.muted,fontSize:9,fontWeight:'700'},
-  xpTrack:  {height:3,borderRadius:1.5,backgroundColor:C.faint,overflow:'hidden'},
-  xpFill:   {height:'100%',borderRadius:1.5,backgroundColor:'rgba(255,255,255,0.50)'},
-  xpNext:   {color:C.muted,fontSize:8,fontWeight:'600'},
-  chip:     {flex:1,alignItems:'center',gap:1,paddingVertical:8,borderRadius:11,backgroundColor:C.navyLow,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
-  chipVal:  {color:C.white,fontSize:15,fontWeight:'900',letterSpacing:-0.5},
-  chipLbl:  {color:C.muted,fontSize:7,fontWeight:'700',textTransform:'uppercase',letterSpacing:0.4},
-  bio:      {color:C.mid,fontSize:12.5,lineHeight:18},
-  bioMore:  {color:C.offWhite,fontSize:11,fontWeight:'700',marginTop:3},
-  socialBtn:{flexDirection:'row',alignItems:'center',gap:5,paddingHorizontal:11,paddingVertical:7,borderRadius:10,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
-  socialTxt:{color:C.offWhite,fontSize:10,fontWeight:'600'},
+  // Info column
+  infoCol:    {flex:1,gap:0,paddingTop:2},
+  name:       {color:C.white,fontSize:18,fontWeight:'900',letterSpacing:-0.4,flexShrink:1},
+  indBadge:   {paddingHorizontal:6,paddingVertical:2,borderRadius:5,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.navyMid},
+  indTxt:     {color:C.muted,fontSize:7,fontWeight:'800',letterSpacing:0.5},
+  streakBadge:{flexDirection:'row',alignItems:'center',gap:2,paddingHorizontal:6,paddingVertical:2,borderRadius:5,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(245,200,66,0.28)',backgroundColor:'rgba(245,200,66,0.07)'},
+  sub:        {color:C.muted,fontSize:10.5,fontWeight:'500'},
+  // Level card (zone niveau depuis GamificationSystem)
+  levelCard:  {borderRadius:14,borderWidth:StyleSheet.hairlineWidth,backgroundColor:'rgba(255,255,255,0.025)',padding:12,gap:0},
+  levelCircle:{width:44,height:44,borderRadius:12,borderWidth:1,alignItems:'center',justifyContent:'center'},
+  levelLbl:   {fontSize:7,fontWeight:'900',letterSpacing:1.2,lineHeight:9},
+  levelNum:   {fontSize:18,fontWeight:'900',letterSpacing:-0.8,lineHeight:20},
+  levelTitle: {color:C.white,fontSize:13,fontWeight:'800',letterSpacing:-0.2},
+  xpCount:    {color:C.muted,fontSize:10,fontWeight:'700'},
+  contribPill:{flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:7,paddingVertical:3,borderRadius:8,backgroundColor:C.goldDim,borderWidth:StyleSheet.hairlineWidth,borderColor:C.goldBd},
+  contribTxt: {color:C.gold,fontSize:9,fontWeight:'700'},
+  xpTrack:    {height:4,borderRadius:2,backgroundColor:C.faint,overflow:'hidden',marginTop:8,marginBottom:6},
+  xpFill:     {height:'100%',borderRadius:2},
+  xpNext:     {color:C.muted,fontSize:9,fontWeight:'600'},
+  // Bio + socials
+  bio:        {color:C.mid,fontSize:12.5,lineHeight:18},
+  bioMore:    {color:C.offWhite,fontSize:11,fontWeight:'700',marginTop:3},
+  socialBtn:  {flexDirection:'row',alignItems:'center',gap:5,paddingHorizontal:11,paddingVertical:7,borderRadius:10,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
+  socialTxt:  {color:C.offWhite,fontSize:10,fontWeight:'600'},
 });
 
-// ─── ★ SCORE STRIP (compact, remplace AnimScore + missions) ──────────────────
+// ─── ★ SCORE STRIP ────────────────────────────────────────────────────────────
 const ScoreStrip = memo(function ScoreStrip({
   score, level, badges,
 }:{score:number;level:ReturnType<typeof cinephileLevel>;badges:Badge[]}) {
   const prog = useRef(new Animated.Value(0)).current;
   useEffect(()=>{Animated.timing(prog,{toValue:level.pct,duration:1200,useNativeDriver:false}).start();},[level.pct]);
-  const barW    = prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
-  const earned  = badges.filter(b=>b.earned).length;
-  const scoreStr  = `${fmt(score)} pts`;
+  const barW   = prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
+  const earned = badges.filter(b=>b.earned).length;
+  const ptsLeft  = Math.max(0,level.nextAt-score);
+  const scoreStr = `${fmt(score)} pts`;
   const earnedStr = `${earned}/${badges.length}`;
-  const ptsLeft   = Math.max(0, level.nextAt - score);
-  const nextStr   = `${fmt(ptsLeft)} pts → niv.${level.n+1}`;
+  const nextStr  = `${fmt(ptsLeft)} pts → niv.${level.n+1}`;
   return(
     <View style={ss.row}>
       <View style={ss.scoreCircle}>
@@ -406,7 +502,7 @@ const ScoreStrip = memo(function ScoreStrip({
       </View>
       <View style={{flex:1,gap:5}}>
         <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
-          <Text style={ss.levelTxt}>Niveau {level.n}</Text>
+          <Text style={ss.levelTxt}>Activité Niv.{level.n}</Text>
           <View style={ss.levelPill}><Text style={ss.levelPillTxt}>{level.label}</Text></View>
           <View style={ss.badgePill}><Ionicons name="ribbon-outline" size={9} color={C.gold}/><Text style={ss.badgePillTxt}>{earnedStr}</Text></View>
         </View>
@@ -433,22 +529,17 @@ const ss = StyleSheet.create({
 
 // ─── ★ BADGE INTERACTIF ───────────────────────────────────────────────────────
 const IBadge = memo(function IBadge({b}:{b:Badge}) {
-  const [open,setOpen]=useState(false);
-  const sc = useRef(new Animated.Value(1)).current;
-  const press = ()=>{
-    Animated.sequence([
-      Animated.spring(sc,{toValue:0.88,tension:350,friction:7,useNativeDriver:true}),
-      Animated.spring(sc,{toValue:1,tension:200,friction:8,useNativeDriver:true}),
-    ]).start();
+  const[open,setOpen]=useState(false);
+  const sc=useRef(new Animated.Value(1)).current;
+  const press=()=>{
+    Animated.sequence([Animated.spring(sc,{toValue:0.88,tension:350,friction:7,useNativeDriver:true}),Animated.spring(sc,{toValue:1,tension:200,friction:8,useNativeDriver:true})]).start();
     setOpen(v=>!v);
   };
-  const ptsStr = `+${b.pts}pts`;
+  const ptsStr=`+${b.pts}pts`;
   return(
     <Animated.View style={{transform:[{scale:sc}]}}>
       <TouchableOpacity onPress={press} activeOpacity={0.85} style={[ib.wrap,b.earned&&ib.wrapOn,open&&ib.wrapExpanded]}>
-        <View style={[ib.icon,b.earned&&ib.iconOn]}>
-          <Ionicons name={b.icon} size={16} color={b.earned?C.white:C.muted}/>
-        </View>
+        <View style={[ib.icon,b.earned&&ib.iconOn]}><Ionicons name={b.icon} size={16} color={b.earned?C.white:C.muted}/></View>
         <Text style={[ib.label,b.earned&&{color:C.white}]} numberOfLines={open?undefined:2}>{b.label}</Text>
         {b.earned?<Text style={ib.pts}>{ptsStr}</Text>:<View style={{position:'absolute',top:6,right:6}}><Ionicons name="lock-closed" size={7} color={C.muted}/></View>}
         {open&&<Text style={ib.desc}>{b.desc}</Text>}
@@ -468,9 +559,8 @@ const ib = StyleSheet.create({
 });
 
 // ─── CARDS ────────────────────────────────────────────────────────────────────
-const PortraitCard = memo(({item,rank}:{item:Work;rank?:number}) => {
-  const router=useRouter();
-  const uri=useMemo(()=>resolveImg(item.id,item.image),[item.id,item.image]);
+const PortraitCard = memo(({item,rank}:{item:LocalWork;rank?:number}) => {
+  const router=useRouter(),uri=useMemo(()=>resolveImg(item.id,item.image),[item.id,item.image]);
   return(
     <TouchableOpacity style={{marginRight:10}} onPress={()=>router.push(`/film/${item.id}` as any)} activeOpacity={0.88}>
       <View style={ptc.card}>
@@ -478,21 +568,14 @@ const PortraitCard = memo(({item,rank}:{item:Work;rank?:number}) => {
         <LinearGradient colors={['transparent','rgba(7,12,23,0.94)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.4}} end={{x:0,y:1}}/>
         <View style={ptc.badge}><Text style={ptc.badgeTxt}>{item.is_original?'ORIG':(item.category??'').slice(0,4).toUpperCase()}</Text></View>
         {rank!=null&&<Text style={ptc.rank}>{rank}</Text>}
-        <View style={ptc.meta}>
-          <Text style={ptc.title} numberOfLines={2}>{item.title}</Text>
-          <View style={{flexDirection:'row',alignItems:'center',gap:4}}>
-            <Ionicons name="heart" size={9} color={C.mid}/>
-            <Text style={ptc.stat}>{(item.likes??0).toLocaleString('fr-FR')}</Text>
-            {item.year>0&&<><View style={{width:2,height:2,borderRadius:1,backgroundColor:C.subtle}}/><Text style={ptc.stat}>{item.year}</Text></>}
-          </View>
-        </View>
+        <View style={ptc.meta}><Text style={ptc.title} numberOfLines={2}>{item.title}</Text><View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="heart" size={9} color={C.mid}/><Text style={ptc.stat}>{(item.likes??0).toLocaleString('fr-FR')}</Text>{item.year>0&&<><View style={{width:2,height:2,borderRadius:1,backgroundColor:C.subtle}}/><Text style={ptc.stat}>{item.year}</Text></>}</View></View>
       </View>
     </TouchableOpacity>
   );
 });
 const ptc=StyleSheet.create({card:{width:CARD_W,height:CARD_H,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},img:{width:CARD_W,height:CARD_H},badge:{position:'absolute',top:7,left:7,paddingHorizontal:5,paddingVertical:2.5,borderRadius:5,backgroundColor:'rgba(7,12,23,0.72)'},badgeTxt:{color:C.mid,fontSize:7,fontWeight:'800',letterSpacing:0.4},rank:{position:'absolute',bottom:32,right:5,fontSize:44,fontWeight:'900',lineHeight:44,letterSpacing:-3,color:'rgba(255,255,255,0.08)'},meta:{position:'absolute',bottom:7,left:8,right:8,gap:3},title:{color:C.white,fontSize:11,fontWeight:'700',lineHeight:14},stat:{color:C.muted,fontSize:9,fontWeight:'600'}});
 
-const WorkGridCard=memo(({item,onPress}:{item:Work;onPress:()=>void})=>{const uri=useMemo(()=>resolveImg(item.id,item.image),[item.id,item.image]);return(<TouchableOpacity style={gc.card} onPress={onPress} activeOpacity={0.88}><Image source={{uri}} style={gc.img} resizeMode="cover"/><LinearGradient colors={['transparent','rgba(7,12,23,0.96)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.4}} end={{x:0,y:1}}/><View style={gc.badge}><Text style={gc.badgeTxt}>{item.is_original?'ORIG':(item.category??'').slice(0,4).toUpperCase()}</Text></View><View style={gc.meta}>{item.genre?<Text style={gc.genre}>{item.genre.toUpperCase()}</Text>:null}<Text style={gc.title} numberOfLines={2}>{item.title}</Text><View style={{flexDirection:'row',alignItems:'center',gap:5,marginTop:2}}><Ionicons name="heart" size={9} color={C.muted}/><Text style={gc.stat}>{fmt(item.likes??0)}</Text>{item.year>0&&<><Text style={{color:C.muted,fontSize:9}}>·</Text><Text style={gc.stat}>{item.year}</Text></>}</View></View></TouchableOpacity>);});
+const WorkGridCard=memo(({item,onPress}:{item:LocalWork;onPress:()=>void})=>{const uri=useMemo(()=>resolveImg(item.id,item.image),[item.id,item.image]);return(<TouchableOpacity style={gc.card} onPress={onPress} activeOpacity={0.88}><Image source={{uri}} style={gc.img} resizeMode="cover"/><LinearGradient colors={['transparent','rgba(7,12,23,0.96)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.4}} end={{x:0,y:1}}/><View style={gc.badge}><Text style={gc.badgeTxt}>{item.is_original?'ORIG':(item.category??'').slice(0,4).toUpperCase()}</Text></View><View style={gc.meta}>{item.genre?<Text style={gc.genre}>{item.genre.toUpperCase()}</Text>:null}<Text style={gc.title} numberOfLines={2}>{item.title}</Text><View style={{flexDirection:'row',alignItems:'center',gap:5,marginTop:2}}><Ionicons name="heart" size={9} color={C.muted}/><Text style={gc.stat}>{fmt(item.likes??0)}</Text>{item.year>0&&<><Text style={{color:C.muted,fontSize:9}}>·</Text><Text style={gc.stat}>{item.year}</Text></>}</View></View></TouchableOpacity>);});
 const gc=StyleSheet.create({card:{width:GRID_COL,height:GRID_COL*1.5,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},img:{width:'100%',height:'100%',position:'absolute'},badge:{position:'absolute',top:7,left:7,paddingHorizontal:5,paddingVertical:2.5,borderRadius:5,backgroundColor:'rgba(7,12,23,0.72)'},badgeTxt:{color:C.mid,fontSize:7,fontWeight:'800',letterSpacing:0.4},meta:{position:'absolute',bottom:0,left:0,right:0,padding:10,gap:2},genre:{color:C.muted,fontSize:8,fontWeight:'700',letterSpacing:0.8},title:{color:C.white,fontSize:12,fontWeight:'800',lineHeight:16},stat:{color:C.muted,fontSize:9,fontWeight:'600'}});
 const CritiqueGridCard=memo(({r,rank,onPress}:{r:ReviewItem;rank:number;onPress:()=>void})=>{const stars=Math.round(r.rating??0);return(<TouchableOpacity style={cgc.card} onPress={onPress} activeOpacity={0.88}><LinearGradient colors={[C.navyMid,C.navyLow]} style={StyleSheet.absoluteFillObject}/><View style={{position:'absolute',top:9,left:9,paddingHorizontal:7,paddingVertical:3,borderRadius:7,backgroundColor:C.navyDark}}><Text style={{color:C.mid,fontSize:9,fontWeight:'800'}}>#{rank}</Text></View>{r.likes>0&&<View style={{position:'absolute',top:9,right:9,flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:6,paddingVertical:2.5,borderRadius:7,backgroundColor:C.navyDark}}><Ionicons name="heart" size={8} color={C.mid}/><Text style={{color:C.mid,fontSize:8,fontWeight:'700'}}>{fmt(r.likes)}</Text></View>}<View style={{position:'absolute',bottom:0,left:0,right:0,padding:11,gap:3}}><Text style={{color:C.white,fontSize:12,fontWeight:'800',letterSpacing:-0.2}} numberOfLines={1}>{r.film?.title??'—'}</Text><View style={{flexDirection:'row',gap:2}}>{[1,2,3,4,5].map(s=><Ionicons key={s} name={s<=stars?'star':'star-outline'} size={9} color={s<=stars?C.offWhite:C.subtle}/>)}</View><Text style={{color:C.muted,fontSize:10,lineHeight:13}} numberOfLines={2}>{r.content||'—'}</Text></View><View style={{...StyleSheet.absoluteFillObject,borderRadius:13,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}} pointerEvents="none"/></TouchableOpacity>);});
 const cgc=StyleSheet.create({card:{width:GRID_COL,height:GRID_COL*1.1,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid}});
@@ -507,7 +590,7 @@ const ReelGridCard=memo(({reel,isHot,onPress}:{reel:UserReel;isHot:boolean;onPre
 const rgc=StyleSheet.create({card:{width:GRID_COL,height:GRID_COL*1.4,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},img:{width:'100%',height:'100%',position:'absolute'},ph:{width:'100%',height:'100%',alignItems:'center',justifyContent:'center'},status:{position:'absolute',top:8,left:8,flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:7,paddingVertical:3,borderRadius:8,backgroundColor:'rgba(7,12,23,0.72)'},stTxt:{color:C.muted,fontSize:7.5,fontWeight:'700'},hot:{position:'absolute',top:8,right:8,width:22,height:22,borderRadius:11,backgroundColor:'rgba(7,12,23,0.72)',alignItems:'center',justifyContent:'center'},meta:{position:'absolute',bottom:0,left:0,right:0,padding:10,gap:2},title:{color:C.white,fontSize:11,fontWeight:'800',lineHeight:14},stat:{color:C.muted,fontSize:9,fontWeight:'600'}});
 
 // ─── SEE ALL MODAL ────────────────────────────────────────────────────────────
-interface SeeAllModalProps{visible:boolean;onClose:()=>void;type:ModalType;title:string;icon:keyof typeof Ionicons.glyphMap;works?:Work[];reviews?:ReviewItem[];reels?:UserReel[];hotReelId?:string|null}
+interface SeeAllModalProps{visible:boolean;onClose:()=>void;type:ModalType;title:string;icon:keyof typeof Ionicons.glyphMap;works?:LocalWork[];reviews?:ReviewItem[];reels?:UserReel[];hotReelId?:string|null}
 const SeeAllModal=memo(function SeeAllModal({visible,onClose,type,title,icon,works=[],reviews=[],reels=[],hotReelId=null}:SeeAllModalProps){
   const router=useRouter(),insets=useSafeAreaInsets(),[q,setQ]=useState('');
   const inputRef=useRef<TextInput>(null),slideY=useRef(new Animated.Value(600)).current;
@@ -516,7 +599,7 @@ const SeeAllModal=memo(function SeeAllModal({visible,onClose,type,title,icon,wor
   const fR=useMemo(()=>q.trim()?reviews.filter(r=>r.film?.title.toLowerCase().includes(q.toLowerCase())||r.content.toLowerCase().includes(q.toLowerCase())):reviews,[reviews,q]);
   const fRl=useMemo(()=>q.trim()?reels.filter(r=>(r.title??'').toLowerCase().includes(q.toLowerCase())):reels,[reels,q]);
   const count=type==='reviews'?fR.length:type==='creations'?fRl.length:fW.length;
-  const renderWork=useCallback(({item}:{item:Work})=><WorkGridCard item={item} onPress={()=>{onClose();router.push(`/film/${item.id}` as any);}}/>,[router,onClose]);
+  const renderWork=useCallback(({item}:{item:LocalWork})=><WorkGridCard item={item} onPress={()=>{onClose();router.push(`/film/${item.id}` as any);}}/>,[router,onClose]);
   const renderRev=useCallback(({item,index}:{item:ReviewItem;index:number})=><CritiqueGridCard r={item} rank={index+1} onPress={()=>{onClose();router.push(`/review/${item.id}` as any);}}/>,[router,onClose]);
   const renderReel=useCallback(({item}:{item:UserReel})=><ReelGridCard reel={item} isHot={item.id===hotReelId} onPress={()=>{onClose();router.push({pathname:'/reel/[id]',params:{id:item.id}} as any);}}/>,[router,onClose,hotReelId]);
   if(!visible)return null;
@@ -525,213 +608,55 @@ const SeeAllModal=memo(function SeeAllModal({visible,onClose,type,title,icon,wor
 const sam=StyleSheet.create({root:{flex:1,backgroundColor:C.bg},topBar:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',paddingHorizontal:16,paddingBottom:10},title:{color:C.white,fontSize:16,fontWeight:'800',letterSpacing:-0.3},close:{color:C.muted,fontSize:14,fontWeight:'600'},inputWrap:{flexDirection:'row',alignItems:'center',gap:10,marginHorizontal:16,marginBottom:8,paddingHorizontal:14,height:42,borderRadius:13,backgroundColor:C.navyLow,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},input:{flex:1,color:C.white,fontSize:14},count:{color:C.muted,fontSize:10,paddingHorizontal:16,marginBottom:12},col:{justifyContent:'space-between',gap:GRID_GAP,marginBottom:GRID_GAP},list:{paddingHorizontal:16},empty:{flex:1,alignItems:'center',justifyContent:'center',gap:10,paddingBottom:80}});
 
 // ─── ★ CINEMA — composants réactifs avec interactions galaxie ─────────────────
-
-// Barre animée réutilisable
 const AnimBar = memo(({value,max,color='rgba(255,255,255,0.45)',h=4}:{value:number;max:number;color?:string;h?:number}) => {
-  const pct  = max>0?value/max:0;
-  const prog = useRef(new Animated.Value(0)).current;
+  const pct=max>0?value/max:0,prog=useRef(new Animated.Value(0)).current;
   useEffect(()=>{Animated.timing(prog,{toValue:pct,duration:800,useNativeDriver:false}).start();},[pct]);
-  return(
-    <View style={{flex:1,height:h,borderRadius:h/2,backgroundColor:C.faint,overflow:'hidden'}}>
-      <Animated.View style={{height:'100%',borderRadius:h/2,backgroundColor:color,width:prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/>
-    </View>
-  );
+  return(<View style={{flex:1,height:h,borderRadius:h/2,backgroundColor:C.faint,overflow:'hidden'}}><Animated.View style={{height:'100%',borderRadius:h/2,backgroundColor:color,width:prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/></View>);
 });
-
-// ★ Genre row avec interaction galaxie (flash doré + spring scale sur l'icône)
-const GenreRowGalaxy = memo(function GenreRowGalaxy({genre,count,max}:{genre:string;count:number;max:number}) {
-  const [detail,setDetail] = useState(false);
-  const {fire,glow} = useGalaxyTap();
-  const iconScale  = useRef(new Animated.Value(1)).current;
-  const color      = GENRE_COLORS[genre] ?? 'rgba(255,255,255,0.45)';
-  const icon       = GENRE_ICONS[genre] ?? 'film-outline';
-  const pct        = max>0?Math.round(count/max*100):0;
-  const countStr   = String(count);
-  const pctStr     = `${pct}%`;
-
-  const handleTap = () => {
-    setDetail(v => !v);
-    fire();
-    Animated.sequence([
-      Animated.spring(iconScale,{toValue:1.45,tension:350,friction:6,useNativeDriver:true}),
-      Animated.spring(iconScale,{toValue:1,tension:200,friction:8,useNativeDriver:true}),
-    ]).start();
-  };
-
-  const rowBg = glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.09)']});
-
-  return(
-    <TouchableOpacity onPress={handleTap} activeOpacity={0.80}>
-      <Animated.View style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:7,paddingHorizontal:8,borderRadius:10,backgroundColor:rowBg}}>
-        <Animated.View style={{transform:[{scale:iconScale}]}}>
-          <Ionicons name={icon} size={13} color={color}/>
-        </Animated.View>
-        <Text style={{width:108,color:C.mid,fontSize:11,fontWeight:'600'}}>{genre}</Text>
-        <AnimBar value={count} max={max} color={color}/>
-        <Text style={{color:C.muted,fontSize:10,fontWeight:'700',width:22,textAlign:'right'}}>{countStr}</Text>
-      </Animated.View>
-      {detail&&(
-        <View style={{paddingLeft:34,paddingRight:8,paddingBottom:6}}>
-          <Text style={{color:C.muted,fontSize:9,lineHeight:13}}>{count} film{count>1?'s':''} · {pctStr} de ta filmothèque</Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+const GenreRowGalaxy=memo(function GenreRowGalaxy({genre,count,max}:{genre:string;count:number;max:number}){
+  const[detail,setDetail]=useState(false);const{fire,glow}=useGalaxyTap();const iconScale=useRef(new Animated.Value(1)).current;const color=GENRE_COLORS[genre]??'rgba(255,255,255,0.45)';const icon=GENRE_ICONS[genre]??'film-outline';const pct=max>0?Math.round(count/max*100):0;
+  const handleTap=()=>{setDetail(v=>!v);fire();Animated.sequence([Animated.spring(iconScale,{toValue:1.45,tension:350,friction:6,useNativeDriver:true}),Animated.spring(iconScale,{toValue:1,tension:200,friction:8,useNativeDriver:true})]).start();};
+  const rowBg=glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.09)']});
+  return(<TouchableOpacity onPress={handleTap} activeOpacity={0.80}><Animated.View style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:7,paddingHorizontal:8,borderRadius:10,backgroundColor:rowBg}}><Animated.View style={{transform:[{scale:iconScale}]}  }><Ionicons name={icon} size={13} color={color}/></Animated.View><Text style={{width:108,color:C.mid,fontSize:11,fontWeight:'600'}}>{genre}</Text><AnimBar value={count} max={max} color={color}/><Text style={{color:C.muted,fontSize:10,fontWeight:'700',width:22,textAlign:'right'}}>{count}</Text></Animated.View>{detail&&<View style={{paddingLeft:34,paddingRight:8,paddingBottom:6}}><Text style={{color:C.muted,fontSize:9,lineHeight:13}}>{count} film{count>1?'s':''} · {pct}% de ta filmothèque</Text></View>}</TouchableOpacity>);
 });
-
-// ★ Festival row avec meteor streak
-const FestivalRowGalaxy = memo(function FestivalRowGalaxy({name,rank,isLast}:{name:string;rank:number;isLast:boolean}) {
-  const {fire:fireMeteor,prog:meteorProg,op:meteorOp} = useMeteorTap();
-  const {fire:fireGlow,glow} = useGalaxyTap();
-  const trophyScale = useRef(new Animated.Value(1)).current;
-
-  const handleTap = () => {
-    fireMeteor();
-    fireGlow();
-    Animated.sequence([
-      Animated.spring(trophyScale,{toValue:1.3,tension:350,friction:6,useNativeDriver:true}),
-      Animated.spring(trophyScale,{toValue:1,tension:200,friction:8,useNativeDriver:true}),
-    ]).start();
-  };
-
-  const rowBg = glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.10)']});
-  const meteorTx = meteorProg.interpolate({inputRange:[0,1],outputRange:[0,120]});
-  const rankStr  = `#${rank+1}`;
-
-  return(
-    <TouchableOpacity onPress={handleTap} activeOpacity={0.80}>
-      <Animated.View style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:9,paddingHorizontal:6,borderRadius:9,borderBottomWidth:isLast?0:StyleSheet.hairlineWidth,borderBottomColor:C.border,backgroundColor:rowBg,overflow:'hidden'}}>
-        {/* Meteor streak */}
-        <Animated.View style={{position:'absolute',top:0,bottom:0,left:0,opacity:meteorOp,transform:[{translateX:meteorTx}],justifyContent:'center'}} pointerEvents="none">
-          <LinearGradient colors={['transparent','rgba(245,200,66,0.30)','transparent']} start={{x:0,y:0}} end={{x:1,y:0}} style={{width:80,height:1.5,borderRadius:1}}/>
-        </Animated.View>
-        <Animated.View style={{width:28,height:28,borderRadius:8,backgroundColor:C.goldDim,borderWidth:StyleSheet.hairlineWidth,borderColor:C.gold,alignItems:'center',justifyContent:'center',transform:[{scale:trophyScale}]}}>
-          <Ionicons name="trophy-outline" size={13} color={C.gold}/>
-        </Animated.View>
-        <Text style={{color:C.offWhite,fontSize:13,fontWeight:'600',flex:1}}>{name}</Text>
-        <Text style={{color:C.muted,fontSize:10}}>{rankStr}</Text>
-      </Animated.View>
-    </TouchableOpacity>
-  );
+const FestivalRowGalaxy=memo(function FestivalRowGalaxy({name,rank,isLast}:{name:string;rank:number;isLast:boolean}){
+  const{fire:fireMeteor,prog:meteorProg,op:meteorOp}=useMeteorTap();const{fire:fireGlow,glow}=useGalaxyTap();const trophyScale=useRef(new Animated.Value(1)).current;
+  const handleTap=()=>{fireMeteor();fireGlow();Animated.sequence([Animated.spring(trophyScale,{toValue:1.3,tension:350,friction:6,useNativeDriver:true}),Animated.spring(trophyScale,{toValue:1,tension:200,friction:8,useNativeDriver:true})]).start();};
+  const rowBg=glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.10)']});
+  const meteorTx=meteorProg.interpolate({inputRange:[0,1],outputRange:[0,120]});
+  return(<TouchableOpacity onPress={handleTap} activeOpacity={0.80}><Animated.View style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:9,paddingHorizontal:6,borderRadius:9,borderBottomWidth:isLast?0:StyleSheet.hairlineWidth,borderBottomColor:C.border,backgroundColor:rowBg,overflow:'hidden'}}><Animated.View style={{position:'absolute',top:0,bottom:0,left:0,opacity:meteorOp,transform:[{translateX:meteorTx}],justifyContent:'center'}} pointerEvents="none"><LinearGradient colors={['transparent','rgba(245,200,66,0.30)','transparent']} start={{x:0,y:0}} end={{x:1,y:0}} style={{width:80,height:1.5,borderRadius:1}}/></Animated.View><Animated.View style={{width:28,height:28,borderRadius:8,backgroundColor:C.goldDim,borderWidth:StyleSheet.hairlineWidth,borderColor:C.gold,alignItems:'center',justifyContent:'center',transform:[{scale:trophyScale}]}}><Ionicons name="trophy-outline" size={13} color={C.gold}/></Animated.View><Text style={{color:C.offWhite,fontSize:13,fontWeight:'600',flex:1}}>{name}</Text><Text style={{color:C.muted,fontSize:10}}>#{rank+1}</Text></Animated.View></TouchableOpacity>);
 });
-
-// ★ Œuvre notable avec ring expansion
-const NotableWorkGalaxy = memo(function NotableWorkGalaxy({w,isLast}:{w:any;isLast:boolean}) {
-  const {fire,ring,ringOp,glow} = useGalaxyTap();
-  const yearStr = w.year?.slice(-2) ?? '—';
-
-  const handleTap = () => {
-    fire();
-    if(w.url) Linking.openURL(w.url).catch(()=>{});
-  };
-
-  const rowBg = glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(191,95,255,0.07)']});
-
-  return(
-    <TouchableOpacity onPress={handleTap} activeOpacity={0.80}>
-      <Animated.View style={{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:10,paddingHorizontal:4,borderRadius:9,borderBottomWidth:isLast?0:StyleSheet.hairlineWidth,borderBottomColor:C.border,backgroundColor:rowBg}}>
-        {/* Ring expansion au centre du badge */}
-        <View style={{width:36,height:36,position:'relative',alignItems:'center',justifyContent:'center'}}>
-          <Animated.View style={{position:'absolute',width:36,height:36,borderRadius:18,borderWidth:1.5,borderColor:C.purple,transform:[{scale:ring}],opacity:ringOp}} pointerEvents="none"/>
-          <View style={{width:36,height:36,borderRadius:10,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center'}}>
-            <Text style={{color:C.mid,fontSize:11,fontWeight:'900'}}>{yearStr}</Text>
-          </View>
-        </View>
-        <View style={{flex:1,gap:2}}>
-          <Text style={{color:C.white,fontSize:13,fontWeight:'700'}} numberOfLines={1}>{w.title||'Sans titre'}</Text>
-          <Text style={{color:C.muted,fontSize:11}}>{w.role||'—'}</Text>
-        </View>
-        {w.url&&<Ionicons name="open-outline" size={13} color={C.muted}/>}
-      </Animated.View>
-    </TouchableOpacity>
-  );
+const NotableWorkGalaxy=memo(function NotableWorkGalaxy({w,isLast}:{w:any;isLast:boolean}){
+  const{fire,ring,ringOp,glow}=useGalaxyTap();const yearStr=w.year?.slice(-2)??'—';
+  const handleTap=()=>{fire();if(w.url)Linking.openURL(w.url).catch(()=>{});};
+  const rowBg=glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(191,95,255,0.07)']});
+  return(<TouchableOpacity onPress={handleTap} activeOpacity={0.80}><Animated.View style={{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:10,paddingHorizontal:4,borderRadius:9,borderBottomWidth:isLast?0:StyleSheet.hairlineWidth,borderBottomColor:C.border,backgroundColor:rowBg}}><View style={{width:36,height:36,position:'relative',alignItems:'center',justifyContent:'center'}}><Animated.View style={{position:'absolute',width:36,height:36,borderRadius:18,borderWidth:1.5,borderColor:C.purple,transform:[{scale:ring}],opacity:ringOp}} pointerEvents="none"/><View style={{width:36,height:36,borderRadius:10,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center'}}><Text style={{color:C.mid,fontSize:11,fontWeight:'900'}}>{yearStr}</Text></View></View><View style={{flex:1,gap:2}}><Text style={{color:C.white,fontSize:13,fontWeight:'700'}} numberOfLines={1}>{w.title||'Sans titre'}</Text><Text style={{color:C.muted,fontSize:11}}>{w.role||'—'}</Text></View>{w.url&&<Ionicons name="open-outline" size={13} color={C.muted}/>}</Animated.View></TouchableOpacity>);
 });
-
-// ★ Accordion cinéma avec pulse nébuleuse sur l'icône à l'ouverture
-const CinemaAccordion = memo(function CinemaAccordion({icon,title,count,badge,defaultOpen=false,children}:{icon:keyof typeof Ionicons.glyphMap;title:string;count?:number;badge?:string;defaultOpen?:boolean;children:React.ReactNode}) {
-  const [open,setOpen] = useState(defaultOpen);
-  const rot       = useRef(new Animated.Value(defaultOpen?1:0)).current;
-  const nebulaPulse = useRef(new Animated.Value(0)).current;
-  const countStr  = count!=null ? String(count) : undefined;
-
-  const toggle = () => {
-    const next = !open;
-    Animated.spring(rot,{toValue:next?1:0,tension:80,friction:10,useNativeDriver:true}).start();
-    if(next) {
-      // Pulse nébuleuse en s'ouvrant
-      Animated.sequence([
-        Animated.timing(nebulaPulse,{toValue:1,duration:220,useNativeDriver:false}),
-        Animated.timing(nebulaPulse,{toValue:0,duration:500,useNativeDriver:false}),
-      ]).start();
-    }
-    setOpen(next);
-  };
-
-  const iconBg = nebulaPulse.interpolate({
-    inputRange:[0,1],
-    outputRange:[open?C.subtle:C.navyMid, 'rgba(191,95,255,0.28)'],
-  });
-
-  return(
-    <View style={{marginHorizontal:H_PAD,marginBottom:8,borderRadius:14,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:open?C.borderHi:C.border,backgroundColor:C.navyLow}}>
-      <TouchableOpacity onPress={toggle} activeOpacity={0.80} style={{flexDirection:'row',alignItems:'center',gap:11,padding:15}}>
-        <Animated.View style={{width:34,height:34,borderRadius:11,backgroundColor:iconBg,borderWidth:StyleSheet.hairlineWidth,borderColor:open?C.borderHi:C.border,alignItems:'center',justifyContent:'center'}}>
-          <Ionicons name={icon} size={15} color={open?C.white:C.mid}/>
-        </Animated.View>
-        <Text style={{color:open?C.white:C.offWhite,fontSize:13,fontWeight:'700',flex:1,letterSpacing:-0.2}}>{title}</Text>
-        {!!badge&&<View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.faint}}><Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{badge}</Text></View>}
-        {!!countStr&&<View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}><Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{countStr}</Text></View>}
-        <Animated.View style={{transform:[{rotate:rot.interpolate({inputRange:[0,1],outputRange:['0deg','90deg']})}]}}>
-          <Ionicons name="chevron-forward" size={14} color={C.muted}/>
-        </Animated.View>
-      </TouchableOpacity>
-      {open&&<View style={{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.border,paddingHorizontal:14,paddingTop:14,paddingBottom:16,gap:10}}>{children}</View>}
-    </View>
-  );
+const StarRatingRowGalaxy=memo(function StarRatingRowGalaxy({rating,count,max}:{rating:number;count:number;max:number}){
+  const{fire,glow}=useGalaxyTap();const rowBg=glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.08)']});
+  return(<TouchableOpacity onPress={fire} activeOpacity={0.85}><Animated.View style={{flexDirection:'row',alignItems:'center',gap:8,paddingVertical:3,paddingHorizontal:4,borderRadius:8,backgroundColor:rowBg}}><View style={{flexDirection:'row',gap:1,width:54}}>{[1,2,3,4,5].map(s=><Ionicons key={s} name={s<=rating?'star':'star-outline'} size={9} color={s<=rating?C.gold:C.muted}/>)}</View><AnimBar value={count} max={max} color={C.goldDim} h={4}/><Text style={{color:C.muted,fontSize:10,fontWeight:'700',width:18,textAlign:'right'}}>{count}</Text></Animated.View></TouchableOpacity>);
 });
-
-// ★ Star rating row avec interaction étoile
-const StarRatingRowGalaxy = memo(function StarRatingRowGalaxy({rating,count,max}:{rating:number;count:number;max:number}) {
-  const {fire,glow} = useGalaxyTap();
-  const rowBg = glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.08)']});
-  const countStr = String(count);
-  return(
-    <TouchableOpacity onPress={fire} activeOpacity={0.85}>
-      <Animated.View style={{flexDirection:'row',alignItems:'center',gap:8,paddingVertical:3,paddingHorizontal:4,borderRadius:8,backgroundColor:rowBg}}>
-        <View style={{flexDirection:'row',gap:1,width:54}}>
-          {[1,2,3,4,5].map(s=><Ionicons key={s} name={s<=rating?'star':'star-outline'} size={9} color={s<=rating?C.gold:C.muted}/>)}
-        </View>
-        <AnimBar value={count} max={max} color={C.goldDim} h={4}/>
-        <Text style={{color:C.muted,fontSize:10,fontWeight:'700',width:18,textAlign:'right'}}>{countStr}</Text>
-      </Animated.View>
-    </TouchableOpacity>
-  );
+const CinemaAccordion=memo(function CinemaAccordion({icon,title,count,badge,defaultOpen=false,children}:{icon:keyof typeof Ionicons.glyphMap;title:string;count?:number;badge?:string;defaultOpen?:boolean;children:React.ReactNode}){
+  const[open,setOpen]=useState(defaultOpen);const rot=useRef(new Animated.Value(defaultOpen?1:0)).current;const nebulaPulse=useRef(new Animated.Value(0)).current;
+  const toggle=()=>{const next=!open;Animated.spring(rot,{toValue:next?1:0,tension:80,friction:10,useNativeDriver:true}).start();if(next){Animated.sequence([Animated.timing(nebulaPulse,{toValue:1,duration:220,useNativeDriver:false}),Animated.timing(nebulaPulse,{toValue:0,duration:500,useNativeDriver:false})]).start();}setOpen(next);};
+  const iconBg=nebulaPulse.interpolate({inputRange:[0,1],outputRange:[open?C.subtle:C.navyMid,'rgba(191,95,255,0.28)']});
+  return(<View style={{marginHorizontal:H_PAD,marginBottom:8,borderRadius:14,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:open?C.borderHi:C.border,backgroundColor:C.navyLow}}><TouchableOpacity onPress={toggle} activeOpacity={0.80} style={{flexDirection:'row',alignItems:'center',gap:11,padding:15}}><Animated.View style={{width:34,height:34,borderRadius:11,backgroundColor:iconBg,borderWidth:StyleSheet.hairlineWidth,borderColor:open?C.borderHi:C.border,alignItems:'center',justifyContent:'center'}}><Ionicons name={icon} size={15} color={open?C.white:C.mid}/></Animated.View><Text style={{color:open?C.white:C.offWhite,fontSize:13,fontWeight:'700',flex:1,letterSpacing:-0.2}}>{title}</Text>{!!badge&&<View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.faint}}><Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{badge}</Text></View>}{count!=null&&<View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}><Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{count}</Text></View>}<Animated.View style={{transform:[{rotate:rot.interpolate({inputRange:[0,1],outputRange:['0deg','90deg']})}]}}><Ionicons name="chevron-forward" size={14} color={C.muted}/></Animated.View></TouchableOpacity>{open&&<View style={{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.border,paddingHorizontal:14,paddingTop:14,paddingBottom:16,gap:10}}>{children}</View>}</View>);
 });
+const SkeletonSection=memo(()=>(<View><View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:H_PAD,paddingTop:20,paddingBottom:12}}><Shimmer w={24} h={24} r={8}/><Shimmer w={120} h={11} r={6}/></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,gap:10}}>{[0,1,2,3].map(i=><Shimmer key={i} w={CARD_W} h={CARD_H} r={12}/>)}</ScrollView></View>));
 
-const SkeletonSection = memo(() => (
-  <View>
-    <View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:H_PAD,paddingTop:20,paddingBottom:12}}>
-      <Shimmer w={24} h={24} r={8}/><Shimmer w={120} h={11} r={6}/>
-    </View>
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,gap:10}}>
-      {[0,1,2,3].map(i=><Shimmer key={i} w={CARD_W} h={CARD_H} r={12}/>)}
-    </ScrollView>
-  </View>
-));
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ★★★  SCREEN  ★★★
-// ═════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// ★★★  PROFILE SCREEN
+// ════════════════════════════════════════════════════════════════════════════
 export default function ProfileScreen() {
   const router = useRouter();
 
-  const [uid,          setUid]   = useState<string|null>(null);
+  const [uid,          setUid]     = useState<string|null>(null);
   const [profile,      setProfile] = useState<ProfileData>(EMPTY_PROFILE);
   const [reels,        setReels]   = useState<UserReel[]>([]);
   const [reviews,      setReviews] = useState<ReviewItem[]>([]);
-  const [favWorks,     setFavW]    = useState<Work[]>([]);
-  const [watched,      setWatched] = useState<Work[]>([]);
-  const [recs,         setRecs]    = useState<Work[]>([]);
+  const [favWorks,     setFavW]    = useState<LocalWork[]>([]);
+  const [watched,      setWatched] = useState<LocalWork[]>([]);
+  const [recs,         setRecs]    = useState<LocalWork[]>([]);
   const [loading,      setLoading] = useState(true);
   const [refreshing,   setRef]     = useState(false);
   const [fetchError,   setFErr]    = useState(false);
@@ -739,9 +664,34 @@ export default function ProfileScreen() {
   const [modal,        setModal]   = useState<ModalType|null>(null);
   const [unreadNotifs, setUnread]  = useState(0);
   const [streak,       setStreak]  = useState(0);
+  // ★ Gamification réelle depuis GamificationSystem (cinephile_profiles)
+  const [gamiProfile, setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
 
-  const { score, level, badges } = useGamification(uid);
+  const { score, level, badges } = useLocalGamification(uid);
   const isFirstLoad = useRef(false);
+
+  // Charge le profil gamification depuis cinephile_profiles
+  const loadGami = useCallback(async(userId:string)=>{
+    try {
+      const{data}=await supabase.from('cinephile_profiles')
+        .select('xp,level,title,streak_days,contribution_score')
+        .eq('user_id',userId).maybeSingle();
+      if(data){
+        const d=data as any;
+        const lvl=xpToLevel(d.xp??0);
+        setGamiProfile({
+          xp:d.xp??0,
+          level:d.level??lvl.level,
+          title:d.title??TITLES[lvl.level-1],
+          streak_days:d.streak_days??0,
+          xpToNext:lvl.xpToNext,
+          xpInLevel:lvl.xpInLevel,
+          pct:lvl.pct,
+          contribution_score:d.contribution_score??0,
+        });
+      }
+    } catch{}
+  },[]);
 
   useEffect(()=>{
     getDeviceId().then(deviceId=>{
@@ -750,6 +700,7 @@ export default function ProfileScreen() {
       loadAll(deviceId);
       loadUnread(deviceId);
       loadStreak(deviceId);
+      loadGami(deviceId);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
@@ -758,6 +709,7 @@ export default function ProfileScreen() {
     if(!uid||!isFirstLoad.current)return;
     loadAll(uid);
     loadUnread(uid);
+    loadGami(uid); // ★ rafraîchit le niveau à chaque retour sur l'onglet
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[uid]));
 
@@ -809,24 +761,22 @@ export default function ProfileScreen() {
     finally{setLoading(false);setRef(false);}
   },[]);
 
-  const hotId       = useMemo(()=>reels.length<2?null:[...reels].sort((a,b)=>momentum(b)-momentum(a))[0]?.id??null,[reels]);
-  const reelsByCat  = useMemo(()=>{const co:UserReel[]=[],mo:UserReel[]=[],se:UserReel[]=[];reels.forEach(r=>{if(!r.duration||r.duration<=1800)co.push(r);else if(r.duration<=5400)mo.push(r);else se.push(r);});return{courts:co,moyens:mo,series:se};},[reels]);
+  const hotId      = useMemo(()=>reels.length<2?null:[...reels].sort((a,b)=>momentum(b)-momentum(a))[0]?.id??null,[reels]);
+  const reelsByCat = useMemo(()=>{const co:UserReel[]=[],mo:UserReel[]=[],se:UserReel[]=[];reels.forEach(r=>{if(!r.duration||r.duration<=1800)co.push(r);else if(r.duration<=5400)mo.push(r);else se.push(r);});return{courts:co,moyens:mo,series:se};},[reels]);
+  const genreStats = useMemo(()=>{const m:Record<string,number>={};[...favWorks,...watched].forEach(w=>{if(w.genre)m[w.genre]=(m[w.genre]??0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,10);},[favWorks,watched]);
+  const maxGenre   = useMemo(()=>Math.max(1,...genreStats.map(g=>g[1])),[genreStats]);
+  const ratingDist = useMemo(()=>{const d:Record<number,number>={1:0,2:0,3:0,4:0,5:0};reviews.forEach(r=>{const s=Math.round(r.rating);if(s>=1&&s<=5)d[s]++;});return d;},[reviews]);
+  const maxRating  = useMemo(()=>Math.max(1,...Object.values(ratingDist)),[ratingDist]);
+  const avgRating  = useMemo(()=>reviews.length?(reviews.reduce((s,r)=>s+r.rating,0)/reviews.length).toFixed(1):'—',[reviews]);
 
-  // Genres réactifs : merge favoris + vus
-  const genreStats  = useMemo(()=>{const m:Record<string,number>={};[...favWorks,...watched].forEach(w=>{if(w.genre)m[w.genre]=(m[w.genre]??0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,10);},[favWorks,watched]);
-  const maxGenre    = useMemo(()=>Math.max(1,...genreStats.map(g=>g[1])),[genreStats]);
-  const ratingDist  = useMemo(()=>{const d:Record<number,number>={1:0,2:0,3:0,4:0,5:0};reviews.forEach(r=>{const s=Math.round(r.rating);if(s>=1&&s<=5)d[s]++;});return d;},[reviews]);
-  const maxRating   = useMemo(()=>Math.max(1,...Object.values(ratingDist)),[ratingDist]);
-  const avgRating   = useMemo(()=>reviews.length?(reviews.reduce((s,r)=>s+r.rating,0)/reviews.length).toFixed(1):'—',[reviews]);
-
-  const nav = {
+  const nav = useMemo(()=>({
     notifs:   () => { setUnread(0); router.push('/notifications' as any); },
     settings: () => router.push('/settings' as any),
-    edit:     () => router.push('/edit' as any),
     admin:    () => router.push('/backoffice/universe-admin' as any),
-  };
+    avatarEdit: () => router.push('/edit' as any), // ★ avatar tap → edit
+  }),[router]);
 
-  const ErrorState = () => (
+  const ErrorState = useCallback(()=>(
     <View style={{alignItems:'center',paddingVertical:40,gap:12,paddingHorizontal:H_PAD}}>
       <View style={{width:60,height:60,borderRadius:30,backgroundColor:C.navyLow,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center'}}><Ionicons name="cloud-offline-outline" size={28} color={C.muted}/></View>
       <Text style={{color:C.muted,fontSize:13,textAlign:'center'}}>Impossible de charger les données</Text>
@@ -834,10 +784,10 @@ export default function ProfileScreen() {
         <Text style={{color:C.white,fontSize:13,fontWeight:'700'}}>Réessayer</Text>
       </TouchableOpacity>
     </View>
-  );
+  ),[uid,loadAll]);
 
-  // ─── Tab Films ───────────────────────────────────────────────────────────
-  const renderFilms = () => {
+  // ─── Tab Films ─────────────────────────────────────────────────────────────
+  const renderFilms = useCallback(()=>{
     if(loading)return<View><SkeletonSection/><SkeletonSection/><SkeletonSection/></View>;
     if(fetchError)return<ErrorState/>;
     return(
@@ -856,16 +806,14 @@ export default function ProfileScreen() {
         <View style={{height:110}}/>
       </View>
     );
-  };
+  },[loading,fetchError,favWorks,reviews,watched,recs,router,ErrorState]);
 
-  // ─── Tab Cinéma ★ 100% réactif + interactions galaxie ────────────────────
-  const renderCinema = () => {
+  // ─── Tab Cinéma ─────────────────────────────────────────────────────────────
+  const renderCinema = useCallback(()=>{
     if(loading)return<View><SkeletonSection/></View>;
-    const roleLabel = ROLE_LABELS[profile.role]??'Cinéaste';
+    const roleLabel=ROLE_LABELS[profile.role]??'Cinéaste';
     return(
       <View style={{marginTop:16}}>
-
-        {/* ── Identité ── */}
         <CinemaAccordion icon="person-circle-outline" title="Identité" defaultOpen badge={roleLabel}>
           <View style={{flexDirection:'row',flexWrap:'wrap',gap:7}}>
             {[roleLabel,...profile.specialties].map((s,i)=>(
@@ -877,66 +825,25 @@ export default function ProfileScreen() {
           {!!profile.location&&<View style={{flexDirection:'row',alignItems:'center',gap:7}}><Ionicons name="location-outline" size={12} color={C.muted}/><Text style={{color:C.muted,fontSize:12}}>{profile.location}</Text></View>}
           {!!profile.equipment&&<View style={{gap:4}}><Text style={{color:C.muted,fontSize:9,fontWeight:'800',letterSpacing:1,textTransform:'uppercase'}}>Équipement</Text><Text style={{color:C.mid,fontSize:12,lineHeight:18}}>{profile.equipment}</Text></View>}
           {profile.is_industry_contact&&<View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:9,borderRadius:10,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}><Ionicons name="briefcase-outline" size={13} color={C.mid}/><Text style={{color:C.mid,fontSize:12,flex:1}}>Contact professionnel</Text><View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.subtle}}><Text style={{color:C.white,fontSize:9,fontWeight:'700'}}>ACTIF</Text></View></View>}
-          {profile.open_to.length>0&&(
-            <View style={{gap:7}}>
-              <Text style={{color:C.muted,fontSize:9,fontWeight:'800',letterSpacing:1,textTransform:'uppercase'}}>Ouvert à</Text>
-              <View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>
-                {profile.open_to.map(col=>(
-                  <View key={col} style={{flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:10,paddingVertical:5,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:C.blueDim,backgroundColor:'rgba(90,150,230,0.06)'}}>
-                    <Ionicons name="checkmark-circle-outline" size={10} color={C.blue}/>
-                    <Text style={{color:C.blue,fontSize:10,fontWeight:'600'}}>{col}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
+          {profile.open_to.length>0&&<View style={{gap:7}}><Text style={{color:C.muted,fontSize:9,fontWeight:'800',letterSpacing:1,textTransform:'uppercase'}}>Ouvert à</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>{profile.open_to.map(col=>(<View key={col} style={{flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:10,paddingVertical:5,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:C.blueDim,backgroundColor:'rgba(90,150,230,0.06)'}}><Ionicons name="checkmark-circle-outline" size={10} color={C.blue}/><Text style={{color:C.blue,fontSize:10,fontWeight:'600'}}>{col}</Text></View>))}</View></View>}
         </CinemaAccordion>
-
-        {/* ── ★ Genres — barres colorées + flash galaxie au tap ── */}
         <CinemaAccordion icon="layers-outline" title="Genres explorés" count={genreStats.length}>
-          {genreStats.length===0
-            ? <Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Regardez des films pour voir vos genres préférés</Text>
-            : genreStats.map(([genre,count])=><GenreRowGalaxy key={genre} genre={genre} count={count} max={maxGenre}/>)
-          }
+          {genreStats.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Regardez des films pour voir vos genres préférés</Text>:genreStats.map(([genre,count])=><GenreRowGalaxy key={genre} genre={genre} count={count} max={maxGenre}/>)}
         </CinemaAccordion>
-
-        {/* ── ★ Notes — étoiles interactives + ring galaxie ── */}
         <CinemaAccordion icon="star-outline" title="Notes & avis" count={reviews.length}>
-          {reviews.length===0
-            ? <Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Aucune critique publiée</Text>
-            : (
-              <View style={{gap:4}}>
-                {[5,4,3,2,1].map(s=><StarRatingRowGalaxy key={s} rating={s} count={ratingDist[s]??0} max={maxRating}/>)}
-                <Text style={{color:C.muted,fontSize:10,textAlign:'center',marginTop:6}}>
-                  Note moyenne : {avgRating} / 5
-                </Text>
-              </View>
-            )
-          }
+          {reviews.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Aucune critique publiée</Text>:<View style={{gap:4}}>{[5,4,3,2,1].map(s=><StarRatingRowGalaxy key={s} rating={s} count={ratingDist[s]??0} max={maxRating}/>)}<Text style={{color:C.muted,fontSize:10,textAlign:'center',marginTop:6}}>Note moyenne : {avgRating} / 5</Text></View>}
         </CinemaAccordion>
-
-        {/* ── ★ Palmarès — meteor streak au tap ── */}
         <CinemaAccordion icon="trophy-outline" title="Palmarès & Festivals" count={profile.festivals.length}>
-          {profile.festivals.length===0
-            ? <Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Ajoutez vos festivals depuis "Modifier le profil"</Text>
-            : profile.festivals.map((f,i)=><FestivalRowGalaxy key={f} name={f} rank={i} isLast={i===profile.festivals.length-1}/>)
-          }
+          {profile.festivals.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Ajoutez vos festivals depuis "Modifier le profil"</Text>:profile.festivals.map((f,i)=><FestivalRowGalaxy key={f} name={f} rank={i} isLast={i===profile.festivals.length-1}/>)}
         </CinemaAccordion>
-
-        {/* ── ★ Œuvres notables — ring expansion au tap ── */}
-        {profile.notable_works.length>0&&(
-          <CinemaAccordion icon="film-outline" title="Œuvres notables" count={profile.notable_works.length}>
-            {profile.notable_works.map((w:any,i:number)=><NotableWorkGalaxy key={w.id??i} w={w} isLast={i===profile.notable_works.length-1}/>)}
-          </CinemaAccordion>
-        )}
-
+        {profile.notable_works.length>0&&<CinemaAccordion icon="film-outline" title="Œuvres notables" count={profile.notable_works.length}>{profile.notable_works.map((w:any,i:number)=><NotableWorkGalaxy key={w.id??i} w={w} isLast={i===profile.notable_works.length-1}/>)}</CinemaAccordion>}
         <View style={{height:110}}/>
       </View>
     );
-  };
+  },[loading,profile,genreStats,maxGenre,reviews,ratingDist,maxRating,avgRating]);
 
-  // ─── Tab Créations ────────────────────────────────────────────────────────
-  const renderCreations = () => {
+  // ─── Tab Créations ──────────────────────────────────────────────────────────
+  const renderCreations = useCallback(()=>{
     if(loading)return<View><SkeletonSection/></View>;
     if(!reels.length)return(
       <View style={{paddingTop:50,paddingHorizontal:H_PAD}}>
@@ -958,7 +865,7 @@ export default function ProfileScreen() {
         <View style={{height:110}}/>
       </View>
     );
-  };
+  },[loading,reels,reelsByCat,hotId,router]);
 
   const tabs=[{icon:'grid-outline' as const,label:'Films'},{icon:'star-outline' as const,label:'Cinéma'},{icon:'play-circle-outline' as const,label:'Créations'}];
 
@@ -966,19 +873,29 @@ export default function ProfileScreen() {
     <View style={{flex:1,backgroundColor:C.bg}}>
       <StatusBar style="light"/>
       <GalaxyBackground/>
-      <ScrollView showsVerticalScrollIndicator={false} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadUnread(uid);}}} tintColor={C.mid}/>}>
+      <ScrollView showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadUnread(uid);loadGami(uid);}}} tintColor={C.mid}/>}>
         <SafeAreaView edges={['top']}>
+          {/* ★ Header branché sur gamiProfile (GamificationSystem) */}
           <ProfileHeader
             profile={profile}
-            filmCount={watched.length} critiqueCount={reviews.length} reelCount={reels.length}
-            level={level} score={score} unreadNotifs={unreadNotifs} streak={streak}
-            onEdit={nav.edit} onAdmin={nav.admin} onNotifs={nav.notifs} onSettings={nav.settings}
+            filmCount={watched.length}
+            critiqueCount={reviews.length}
+            reelCount={reels.length}
+            gamiProfile={gamiProfile}
+            unreadNotifs={unreadNotifs}
+            streak={streak}
+            onAvatarEdit={nav.avatarEdit}
+            onAdmin={nav.admin}
+            onNotifs={nav.notifs}
+            onSettings={nav.settings}
           />
         </SafeAreaView>
 
+     
 
         {/* Tabs */}
-        <View style={{flexDirection:'row',borderTopWidth:StyleSheet.hairlineWidth,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginTop:14}}>
+        <View style={{flexDirection:'row',borderTopWidth:StyleSheet.hairlineWidth,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginTop:10}}>
           {tabs.map(({icon,label},idx)=>{
             const active=activeTab===idx;
             const badge=idx===2?reels.filter(r=>r.status==='pending').length:0;

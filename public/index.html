@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1.00001, viewport-fit=cover"
+    />
+
+    <!-- ── Thème & PWA ─────────────────────────────────────────────────── -->
+    <meta name="theme-color"                    content="#070C17" />
+    <meta name="background_color"               content="#070C17" />
+    <meta name="application-name"               content="Universe" />
+    <meta name="mobile-web-app-capable"         content="yes" />
+    <meta name="apple-mobile-web-app-capable"   content="yes" />
+    <meta name="apple-mobile-web-app-title"     content="Universe" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <!-- ── Manifest ────────────────────────────────────────────────────── -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- ── Icônes Apple (ajoute tes icônes dans /public/icons/) ────────── -->
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <title>Universe</title>
+
+    <!--
+      NE PAS ajouter de <script> ici.
+      Expo / Metro injecte automatiquement le bundle JS dans ce fichier
+      au moment du build (expo export) ou du démarrage du dev server.
+      Tout script manuel ici court-circuite l'injection et cause la page blanche.
+    -->
+  </head>
+  <body>
+    <!--
+      Point de montage React — doit s'appeler "root" (convention Expo web).
+      Aucun contenu statique ici : React remplace le contenu au montage.
+    -->
+    <div id="root"></div>
+  </body>
+</html>
