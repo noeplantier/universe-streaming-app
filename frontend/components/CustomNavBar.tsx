@@ -204,11 +204,11 @@ function CustomNavBarInner() {
         {/* ★ Profil — avatar live mis à jour */}
         <NavItem
           icon={
-            profile?.avatar_url && !profile.avatar_url.trim() ? (
-              <Ionicons name="person-circle-outline" size={26} color="rgba(255,255,255,0.78)"/>
-            ) : (
-              <NavAvatar profile={profile}/>
-            )
+        profile?.avatar_url ? (
+          <NavAvatar profile={profile}/>
+        ) : (
+          <Ionicons name="person-circle-outline" size={26} color="rgba(255,255,255,0.78)"/>
+        )
           }
           label="Profil"
           onPress={() => go('/profile')}

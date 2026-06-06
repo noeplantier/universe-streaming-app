@@ -3,6 +3,12 @@
  * ★ getDeviceId() — zéro supabase.auth.* → fonctionne sans session
  * ★ Realtime canal unique par montage (évite l'erreur .on() after subscribe)
  * ★ UX/UI enrichi : groupes temporels, filtres, animations slide
+ *
+ * ★ v2 :
+ *   - "Tout lire" → DELETE persistant (public.notifications) + rollback erreur
+ *   - Boutons trash supprimés, seul "Tout lire" reste dans le header
+ *   - Indicateur point blanc supprimé sur les notifications non-lues
+ *   - Fond non-lu accentué : rgba(255,255,255,0.025) → rgba(255,255,255,0.070)
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -40,26 +46,26 @@ type ListItem  = { kind:'header'; label:string } | { kind:'notif'; notif:Notif }
 // ─── Config notifs ────────────────────────────────────────────────────────────
 interface NCfg { icon:keyof typeof Ionicons.glyphMap; color:string; filter:FilterKey; label:string; route:(d:Record<string,any>)=>string|null }
 const NCFG: Record<string,NCfg> = {
-  like:               { icon:'heart',                    color:C.error,  filter:'films',       label:"J'aime",         route:_=>'/(tabs)/social'              },
-  critique_like:      { icon:'star',                     color:C.gold,   filter:'films',       label:'Critique aimée', route:d=>d.critique_id?`/review/${d.critique_id}`:null },
-  comment:            { icon:'chatbubble',               color:C.blue,   filter:'films',       label:'Commentaire',    route:d=>d.critique_id?`/review/${d.critique_id}`:null },
-  follow:             { icon:'person-add',               color:C.green,  filter:'connections', label:'Nouveau follower',route:d=>d.actor_id?`/user/${d.actor_id}`:null },
-  connection_request: { icon:'link',                     color:C.blue,   filter:'connections', label:'Connexion pro',  route:_=>'/(tabs)/social'              },
-  connection_accepted:{ icon:'checkmark-circle',         color:C.green,  filter:'connections', label:'Connexion pro',  route:_=>'/(tabs)/social'              },
-  reel_submitted:     { icon:'cloud-upload',             color:C.mid,    filter:'system',      label:'Soumis',         route:_=>'/profile'                    },
-  reel_approved:      { icon:'checkmark-circle',         color:C.green,  filter:'system',      label:'Reel validé',    route:d=>d.reel_id?`/reel/${d.reel_id}`:'/profile' },
-  reel_rejected:      { icon:'close-circle',             color:C.error,  filter:'system',      label:'Reel rejeté',    route:_=>'/profile'                    },
-  new_film:           { icon:'film',                     color:C.blue,   filter:'films',       label:'Nouveau film',   route:d=>d.film_id?`/film/${d.film_id}`:null },
-  mention:            { icon:'at-circle',                color:C.orange, filter:'films',       label:'Mention',        route:_=>'/(tabs)/social'              },
-  seen_film:          { icon:'eye',                      color:C.mid,    filter:'films',       label:'Visionnage',     route:d=>d.film_id?`/film/${d.film_id}`:null },
-  system:             { icon:'information-circle',       color:C.muted,  filter:'system',      label:'Système',        route:_=>null                          },
+  like:               { icon:'heart',              color:C.error,  filter:'films',       label:"J'aime",         route:_=>'/(tabs)/social'              },
+  critique_like:      { icon:'star',               color:C.gold,   filter:'films',       label:'Critique aimée', route:d=>d.critique_id?`/review/${d.critique_id}`:null },
+  comment:            { icon:'chatbubble',          color:C.blue,   filter:'films',       label:'Commentaire',    route:d=>d.critique_id?`/review/${d.critique_id}`:null },
+  follow:             { icon:'person-add',          color:C.green,  filter:'connections', label:'Nouveau follower',route:d=>d.actor_id?`/user/${d.actor_id}`:null },
+  connection_request: { icon:'link',                color:C.blue,   filter:'connections', label:'Connexion pro',  route:_=>'/(tabs)/social'              },
+  connection_accepted:{ icon:'checkmark-circle',    color:C.green,  filter:'connections', label:'Connexion pro',  route:_=>'/(tabs)/social'              },
+  reel_submitted:     { icon:'cloud-upload',        color:C.mid,    filter:'system',      label:'Soumis',         route:_=>'/profile'                    },
+  reel_approved:      { icon:'checkmark-circle',    color:C.green,  filter:'system',      label:'Reel validé',    route:d=>d.reel_id?`/reel/${d.reel_id}`:'/profile' },
+  reel_rejected:      { icon:'close-circle',        color:C.error,  filter:'system',      label:'Reel rejeté',    route:_=>'/profile'                    },
+  new_film:           { icon:'film',                color:C.blue,   filter:'films',       label:'Nouveau film',   route:d=>d.film_id?`/film/${d.film_id}`:null },
+  mention:            { icon:'at-circle',           color:C.orange, filter:'films',       label:'Mention',        route:_=>'/(tabs)/social'              },
+  seen_film:          { icon:'eye',                 color:C.mid,    filter:'films',       label:'Visionnage',     route:d=>d.film_id?`/film/${d.film_id}`:null },
+  system:             { icon:'information-circle',  color:C.muted,  filter:'system',      label:'Système',        route:_=>null                          },
 };
 const FILTERS: { key:FilterKey; label:string; icon:keyof typeof Ionicons.glyphMap }[] = [
-  { key:'all',         label:'Tout',        icon:'apps-outline'          },
-  { key:'unread',      label:'Non lus',     icon:'ellipse-outline'       },
-  { key:'films',       label:'Films',       icon:'film-outline'          },
-  { key:'connections', label:'Connexions',  icon:'people-outline'        },
-  { key:'system',      label:'Système',     icon:'settings-outline'      },
+  { key:'all',         label:'Tout',        icon:'apps-outline'             },
+  { key:'unread',      label:'Non lus',     icon:'ellipse-outline'          },
+  { key:'films',       label:'Films',       icon:'film-outline'             },
+  { key:'connections', label:'Connexions',  icon:'people-outline'           },
+  { key:'system',      label:'Système',     icon:'settings-outline'         },
 ];
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
@@ -78,10 +84,10 @@ function buildListItems(notifs:Notif[]):ListItem[] {
   const groups:[string,Notif[]][] = [["Aujourd'hui",[]],['Hier',[]],['Cette semaine',[]],['Plus tôt',[]]];
   notifs.forEach(n=>{
     const d=new Date(n.created_at);
-    if(d.toDateString()===today) groups[0][1].push(n);
+    if(d.toDateString()===today)               groups[0][1].push(n);
     else if(d.toDateString()===yest.toDateString()) groups[1][1].push(n);
-    else if(d>weekAgo) groups[2][1].push(n);
-    else groups[3][1].push(n);
+    else if(d>weekAgo)                         groups[2][1].push(n);
+    else                                        groups[3][1].push(n);
   });
   const items:ListItem[]=[];
   groups.forEach(([label,ns])=>{ if(!ns.length)return; items.push({kind:'header',label}); ns.forEach(n=>items.push({kind:'notif',notif:n})); });
@@ -90,28 +96,57 @@ function buildListItems(notifs:Notif[]):ListItem[] {
 
 // ─── DB helpers ───────────────────────────────────────────────────────────────
 async function dbFetch(uid:string):Promise<Notif[]> {
-  const{data,error}=await supabase.from('notifications').select('id,user_id,type,title,body,data,read,created_at').eq('user_id',uid).order('created_at',{ascending:false}).limit(100);
-  if(error){console.warn('[notifs] fetch:',error.message);return[];}
-  return(data??[]) as Notif[];
+  const{data,error}=await supabase
+    .from('notifications')
+    .select('id,user_id,type,title,body,data,read,created_at')
+    .eq('user_id',uid)
+    .order('created_at',{ascending:false})
+    .limit(100);
+  if(error){ console.warn('[notifs] fetch:',error.message); return []; }
+  return (data??[]) as Notif[];
 }
-const dbMarkRead    = (id:string)  => supabase.from('notifications').update({read:true}).eq('id',id);
-const dbDeleteOne   = (id:string)  => supabase.from('notifications').delete().eq('id',id);
-const dbDeleteAll   = (uid:string) => supabase.from('notifications').delete().eq('user_id',uid);
-const dbDeleteRead  = (uid:string) => supabase.from('notifications').delete().eq('user_id',uid).eq('read',true);
-const dbMarkAllRead = (uid:string) => supabase.from('notifications').update({read:true}).eq('user_id',uid).eq('read',false);
+
+// ★ Lecture d'une seule notification (presse unique)
+const dbMarkRead = (id:string) =>
+  supabase.from('notifications').update({read:true}).eq('id',id);
+
+// ★ Suppression ciblée (long-press)
+const dbDeleteOne = (id:string) =>
+  supabase.from('notifications').delete().eq('id',id);
+
+// ★ "Tout lire" = DELETE complet sur public.notifications pour cet utilisateur
+async function dbDeleteAll(uid:string): Promise<void> {
+  const { error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('user_id', uid);
+  if (error) throw new Error(error.message);
+}
 
 // ─── Micro UI ─────────────────────────────────────────────────────────────────
 const Shimmer = memo(({w,h,r=6}:{w:number|string;h:number;r?:number})=>{
   const op=useRef(new Animated.Value(0.14)).current;
   useEffect(()=>{const l=Animated.loop(Animated.sequence([Animated.timing(op,{toValue:0.34,duration:800,useNativeDriver:true}),Animated.timing(op,{toValue:0.14,duration:800,useNativeDriver:true})]));l.start();return()=>l.stop();},[op]);
-  return<Animated.View style={{width:w as any,height:h,borderRadius:r,backgroundColor:C.navyMid,opacity:op}}/>;
+  return <Animated.View style={{width:w as any,height:h,borderRadius:r,backgroundColor:C.navyMid,opacity:op}}/>;
 });
+
 const Skeleton=memo(()=>(
-  <View>{[0,1,2,3,4,5].map(i=>(<View key={i} style={{flexDirection:'row',alignItems:'center',gap:13,paddingHorizontal:EDGE,paddingVertical:14,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border}}><Shimmer w={46} h={46} r={23}/><View style={{flex:1,gap:9}}><Shimmer w="60%" h={12}/><Shimmer w="40%" h={10}/></View><Shimmer w={28} h={9} r={4}/></View>))}</View>
+  <View>
+    {[0,1,2,3,4,5].map(i=>(
+      <View key={i} style={{flexDirection:'row',alignItems:'center',gap:13,paddingHorizontal:EDGE,paddingVertical:14,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border}}>
+        <Shimmer w={46} h={46} r={23}/>
+        <View style={{flex:1,gap:9}}><Shimmer w="60%" h={12}/><Shimmer w="40%" h={10}/></View>
+        <Shimmer w={28} h={9} r={4}/>
+      </View>
+    ))}
+  </View>
 ));
 
 const FilterTabs = memo(({active,counts,onChange}:{active:FilterKey;counts:Partial<Record<FilterKey,number>>;onChange:(k:FilterKey)=>void})=>(
-  <FlatList horizontal showsHorizontalScrollIndicator={false} data={FILTERS} keyExtractor={f=>f.key} contentContainerStyle={{paddingHorizontal:EDGE,gap:8,paddingBottom:10,alignItems:'center'}}
+  <FlatList
+    horizontal showsHorizontalScrollIndicator={false}
+    data={FILTERS} keyExtractor={f=>f.key}
+    contentContainerStyle={{paddingHorizontal:EDGE,gap:8,paddingBottom:10,alignItems:'center'}}
     renderItem={({item:f})=>{
       const on=active===f.key; const cnt=counts[f.key]??0;
       return(
@@ -124,7 +159,14 @@ const FilterTabs = memo(({active,counts,onChange}:{active:FilterKey;counts:Parti
     }}
   />
 ));
-const ft=StyleSheet.create({pill:{flexDirection:'row',alignItems:'center',alignSelf:'flex-start',gap:5,paddingHorizontal:12,paddingVertical:7,borderRadius:20,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.faint},pillOn:{backgroundColor:C.subtle,borderColor:C.borderHi},label:{color:C.muted,fontSize:12,fontWeight:'600'},cnt:{paddingHorizontal:5,paddingVertical:1,borderRadius:8,backgroundColor:C.border,minWidth:18,alignItems:'center'},cntOn:{backgroundColor:C.subtle},cntTxt:{color:C.muted,fontSize:9,fontWeight:'800'}});
+const ft=StyleSheet.create({
+  pill:   {flexDirection:'row',alignItems:'center',alignSelf:'flex-start',gap:5,paddingHorizontal:12,paddingVertical:7,borderRadius:20,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.faint},
+  pillOn: {backgroundColor:C.subtle,borderColor:C.borderHi},
+  label:  {color:C.muted,fontSize:12,fontWeight:'600'},
+  cnt:    {paddingHorizontal:5,paddingVertical:1,borderRadius:8,backgroundColor:C.border,minWidth:18,alignItems:'center'},
+  cntOn:  {backgroundColor:C.subtle},
+  cntTxt: {color:C.muted,fontSize:9,fontWeight:'800'},
+});
 
 const SectionHeader=memo(({label}:{label:string})=>(
   <View style={{flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:EDGE,paddingTop:20,paddingBottom:8}}>
@@ -160,9 +202,14 @@ const NotifCard = memo(function NotifCard({
 
   return (
     <Animated.View style={{transform:[{translateX:slideX}],opacity}}>
-      <TouchableOpacity style={[nc.card, !notif.read&&nc.cardUnread]} onPress={()=>onPress(notif)} onLongPress={handleDelete} activeOpacity={0.85} delayLongPress={500}>
-        {/* Indicateur non-lu */}
-        {!notif.read&&<View style={nc.unreadDot}/>}
+      {/* ★ cardUnread : fond accentué (×2.8), sans point blanc */}
+      <TouchableOpacity
+        style={[nc.card, !notif.read && nc.cardUnread]}
+        onPress={()=>onPress(notif)}
+        onLongPress={handleDelete}
+        activeOpacity={0.85}
+        delayLongPress={500}
+      >
         {/* Icône / avatar */}
         <View style={nc.iconWrap}>
           {avatarUri
@@ -183,7 +230,7 @@ const NotifCard = memo(function NotifCard({
             <Text style={nc.title} numberOfLines={1}>{notif.title}</Text>
             <Text style={nc.time}>{relTime(notif.created_at)}</Text>
           </View>
-          <Text style={nc.bodyTxt} numberOfLines={2}>{notif.body}</Text>
+          <Text style={[nc.bodyTxt, !notif.read && nc.bodyTxtUnread]} numberOfLines={2}>{notif.body}</Text>
           <View style={[nc.chip,{borderColor:`${cfg.color}22`,backgroundColor:`${cfg.color}0A`}]}>
             <Ionicons name={cfg.icon} size={8} color={cfg.color}/>
             <Text style={[nc.chipTxt,{color:cfg.color}]}>{cfg.label}</Text>
@@ -196,30 +243,32 @@ const NotifCard = memo(function NotifCard({
 }, (p,n)=>p.notif.id===n.notif.id&&p.notif.read===n.notif.read&&p.isNew===n.isNew);
 
 const nc=StyleSheet.create({
-  card:       {flexDirection:'row',alignItems:'center',gap:13,paddingHorizontal:EDGE,paddingVertical:14,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border,position:'relative'},
-  cardUnread: {backgroundColor:'rgba(255,255,255,0.025)'},
-  unreadDot:  {position:'absolute',left:6,top:'50%',marginTop:-3.5,width:7,height:7,borderRadius:3.5,backgroundColor:C.white},
-  iconWrap:   {flexShrink:0},
-  iconCircle: {width:46,height:46,borderRadius:23,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,alignItems:'center',justifyContent:'center'},
-  avatarWrap: {position:'relative',width:46,height:46},
-  avatar:     {width:46,height:46,borderRadius:23,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
-  pin:        {position:'absolute',bottom:-2,right:-2,width:17,height:17,borderRadius:9,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center'},
-  body:       {flex:1,gap:3},
-  titleRow:   {flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',gap:8},
-  title:      {color:C.white,fontSize:13,fontWeight:'700',flex:1},
-  time:       {color:C.muted,fontSize:10,flexShrink:0,marginTop:1},
-  bodyTxt:    {color:C.muted,fontSize:12,lineHeight:17},
-  chip:       {flexDirection:'row',alignItems:'center',gap:4,alignSelf:'flex-start',paddingHorizontal:7,paddingVertical:2,borderRadius:7,borderWidth:StyleSheet.hairlineWidth,marginTop:2},
-  chipTxt:    {fontSize:9,fontWeight:'700'},
+  card:         {flexDirection:'row',alignItems:'center',gap:13,paddingHorizontal:EDGE,paddingVertical:14,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border,position:'relative'},
+  // ★ Fond accentué : 0.025 → 0.070 (×2.8) — plus de point blanc
+  cardUnread:   {backgroundColor:'rgba(255,255,255,0.070)'},
+  iconWrap:     {flexShrink:0},
+  iconCircle:   {width:46,height:46,borderRadius:23,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,alignItems:'center',justifyContent:'center'},
+  avatarWrap:   {position:'relative',width:46,height:46},
+  avatar:       {width:46,height:46,borderRadius:23,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
+  pin:          {position:'absolute',bottom:-2,right:-2,width:17,height:17,borderRadius:9,borderWidth:1,borderColor:C.border,alignItems:'center',justifyContent:'center'},
+  body:         {flex:1,gap:3},
+  titleRow:     {flexDirection:'row',justifyContent:'space-between',alignItems:'flex-start',gap:8},
+  title:        {color:C.white,fontSize:13,fontWeight:'700',flex:1},
+  time:         {color:C.muted,fontSize:10,flexShrink:0,marginTop:1},
+  bodyTxt:      {color:C.muted,fontSize:12,lineHeight:17},
+  // ★ Corps du message légèrement plus clair pour les non-lues
+  bodyTxtUnread:{color:C.mid},
+  chip:         {flexDirection:'row',alignItems:'center',gap:4,alignSelf:'flex-start',paddingHorizontal:7,paddingVertical:2,borderRadius:7,borderWidth:StyleSheet.hairlineWidth,marginTop:2},
+  chipTxt:      {fontSize:9,fontWeight:'700'},
 });
 
 const EmptyState=memo(({filter}:{filter:FilterKey})=>{
   const m:Record<FilterKey,{icon:keyof typeof Ionicons.glyphMap;text:string;sub:string}> = {
-    all:         {icon:'notifications-off-outline',  text:'Aucune notification',    sub:'Vos interactions apparaîtront ici'},
-    unread:      {icon:'checkmark-done-circle-outline',text:'Tout est lu',          sub:'Vous êtes à jour'},
-    films:       {icon:'film-outline',               text:'Aucune activité films',  sub:'Likes, mentions et vues arrivent ici'},
-    connections: {icon:'people-outline',             text:'Aucune connexion pro',   sub:'Demandes et confirmations arrivent ici'},
-    system:      {icon:'settings-outline',           text:'Aucune notif système',   sub:'Statuts de modération et mises à jour'},
+    all:         {icon:'notifications-off-outline',   text:'Aucune notification',    sub:'Vos interactions apparaîtront ici'},
+    unread:      {icon:'checkmark-done-circle-outline',text:'Tout est lu',           sub:'Vous êtes à jour'},
+    films:       {icon:'film-outline',                text:'Aucune activité films',  sub:'Likes, mentions et vues arrivent ici'},
+    connections: {icon:'people-outline',              text:'Aucune connexion pro',   sub:'Demandes et confirmations arrivent ici'},
+    system:      {icon:'settings-outline',            text:'Aucune notif système',   sub:'Statuts de modération et mises à jour'},
   };
   const cfg=m[filter];
   return(
@@ -236,36 +285,34 @@ const EmptyState=memo(({filter}:{filter:FilterKey})=>{
 // ─── ★★★ SCREEN ★★★ ──────────────────────────────────────────────────────────
 export default function NotificationsScreen() {
   const router  = useRouter();
-  const [uid,         setUid]         = useState<string|null>(null);
-  const [notifs,      setNotifs]      = useState<Notif[]>([]);
-  const [loading,     setLoading]     = useState(true);
-  const [refreshing,  setRefreshing]  = useState(false);
-  const [filter,      setFilter]      = useState<FilterKey>('all');
-  const [newIds,      setNewIds]      = useState<Set<string>>(new Set());
+  const [uid,        setUid]        = useState<string|null>(null);
+  const [notifs,     setNotifs]     = useState<Notif[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter,     setFilter]     = useState<FilterKey>('all');
+  const [newIds,     setNewIds]     = useState<Set<string>>(new Set());
+  const [deleting,   setDeleting]   = useState(false); // anti-double-tap
 
-  // Realtime channel ref (unique par montage)
   const rtRef   = useRef<ReturnType<typeof supabase.channel>|null>(null);
   const mountId = useRef(Date.now());
 
-  // ── ★ Init — UUID device (zéro supabase.auth.*) ────────────────────────────
+  // ── Init device ID ────────────────────────────────────────────────────────
   useEffect(()=>{
-    getDeviceId().then(deviceId=>{
-      setUid(deviceId);
-    });
+    getDeviceId().then(setUid);
   },[]);
 
-  // ── Fetch notifs ──────────────────────────────────────────────────────────
+  // ── Fetch ─────────────────────────────────────────────────────────────────
   const load = useCallback(async(showLoading=true)=>{
     const id = uid || await getDeviceId();
-    if(!id){setLoading(false);setRefreshing(false);return;}
+    if(!id){ setLoading(false); setRefreshing(false); return; }
     if(showLoading) setLoading(true);
-    const data=await dbFetch(id);
+    const data = await dbFetch(id);
     setNotifs(data);
     setLoading(false);
     setRefreshing(false);
   },[uid]);
 
-  useEffect(()=>{if(uid)load();},[uid,load]);
+  useEffect(()=>{ if(uid) load(); },[uid,load]);
 
   // ── Realtime — tous les .on() AVANT .subscribe() ──────────────────────────
   useEffect(()=>{
@@ -294,43 +341,53 @@ export default function NotificationsScreen() {
     return()=>{ if(rtRef.current){supabase.removeChannel(rtRef.current);rtRef.current=null;} };
   },[uid]);
 
-  // ── Actions ───────────────────────────────────────────────────────────────
-  const handlePress=useCallback(async(notif:Notif)=>{
+  // ── ★ "Tout lire" = DELETE persistant sur public.notifications ─────────────
+  // Optimistic : vide l'état local immédiatement.
+  // Rollback : restaure l'état précédent si Supabase renvoie une erreur.
+  const handleMarkAllRead = useCallback(async()=>{
+    if(!uid||!notifs.length||deleting)return;
+    setDeleting(true);
+    const snapshot = notifs; // sauvegarde pour rollback
+    setNotifs([]);            // optimistic clear
+    try {
+      await dbDeleteAll(uid);
+    } catch(err) {
+      console.warn('[notifs] deleteAll error:', err);
+      setNotifs(snapshot);  // rollback en cas d'échec
+    } finally {
+      setDeleting(false);
+    }
+  },[uid,notifs,deleting]);
+
+  // ── Presse sur une notification → marque lue + navigation ─────────────────
+  const handlePress = useCallback(async(notif:Notif)=>{
     if(!notif.read){
       setNotifs(prev=>prev.map(n=>n.id===notif.id?{...n,read:true}:n));
       dbMarkRead(notif.id);
     }
-    const cfg=NCFG[notif.type]??NCFG.system;
-    const route=cfg.route(notif.data??{});
+    const cfg   = NCFG[notif.type] ?? NCFG.system;
+    const route = cfg.route(notif.data??{});
     if(route) router.push(route as any);
   },[router]);
 
-  const handleDelete=useCallback((id:string)=>{
+  // ── Long-press sur une notification → supprime (avec animation) ────────────
+  const handleDelete = useCallback((id:string)=>{
     setNotifs(prev=>prev.filter(n=>n.id!==id));
     dbDeleteOne(id);
     if(Platform.OS!=='web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{});
   },[]);
 
-  const handleMarkAllRead = useCallback(()=>{
-    if(!uid||!notifs.some(n=>!n.read))return;
-    setNotifs(prev=>prev.map(n=>({...n,read:true})));
-    dbMarkAllRead(uid);
-  },[uid,notifs]);
-
-  const handleDeleteAll  = useCallback(()=>{ if(!uid||!notifs.length)return; setNotifs([]); dbDeleteAll(uid); },[uid,notifs.length]);
-  const handleDeleteRead = useCallback(()=>{ if(!uid)return; setNotifs(prev=>prev.filter(n=>!n.read)); dbDeleteRead(uid); },[uid]);
-
   // ── Derived ───────────────────────────────────────────────────────────────
-  const filtered=useMemo(()=>{
+  const filtered = useMemo(()=>{
     if(filter==='all')    return notifs;
     if(filter==='unread') return notifs.filter(n=>!n.read);
     return notifs.filter(n=>(NCFG[n.type]?.filter??'system')===filter);
   },[notifs,filter]);
 
-  const listItems=useMemo<ListItem[]>(()=>buildListItems(filtered),[filtered]);
+  const listItems = useMemo<ListItem[]>(()=>buildListItems(filtered),[filtered]);
 
-  const filterCounts=useMemo<Partial<Record<FilterKey,number>>>(()=>{
-    const u=notifs.filter(n=>!n.read);
+  const filterCounts = useMemo<Partial<Record<FilterKey,number>>>(()=>{
+    const u = notifs.filter(n=>!n.read);
     return{
       unread:      u.length,
       films:       u.filter(n=>(NCFG[n.type]?.filter??'system')==='films').length,
@@ -340,7 +397,6 @@ export default function NotificationsScreen() {
   },[notifs]);
 
   const unreadCount = useMemo(()=>notifs.filter(n=>!n.read).length,[notifs]);
-  const readCount   = useMemo(()=>notifs.filter(n=>n.read).length,[notifs]);
 
   return(
     <View style={{flex:1,backgroundColor:C.bg}}>
@@ -348,7 +404,7 @@ export default function NotificationsScreen() {
       <GalaxyBackground/>
       <SafeAreaView style={{flex:1}} edges={['top']}>
 
-        {/* Header */}
+        {/* ── Header ── */}
         <View style={{flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:EDGE,paddingTop:8,paddingBottom:14}}>
           <TouchableOpacity style={hd.backBtn} onPress={()=>router.back()} activeOpacity={0.80}>
             <Ionicons name="chevron-back" size={20} color={C.white}/>
@@ -357,28 +413,22 @@ export default function NotificationsScreen() {
             <Text style={{color:C.white,fontSize:20,fontWeight:'900',letterSpacing:-0.4}}>Notifications</Text>
             {unreadCount>0&&<Text style={{color:C.muted,fontSize:11,marginTop:1}}>{unreadCount} non lue{unreadCount>1?'s':''}</Text>}
           </View>
-          <View style={{flexDirection:'row',alignItems:'center',gap:7}}>
-            {unreadCount>0&&(
-              <TouchableOpacity style={hd.actionBtn} onPress={handleMarkAllRead} activeOpacity={0.80}>
-                <Ionicons name="checkmark-done-outline" size={13} color={C.mid}/>
-                <Text style={hd.actionTxt}>Tout lire</Text>
-              </TouchableOpacity>
-            )}
-            {readCount>0&&(
-              <TouchableOpacity style={hd.actionBtn} onPress={handleDeleteRead} activeOpacity={0.80}>
-                <Ionicons name="trash-outline" size={13} color={C.muted}/>
-                <Text style={[hd.actionTxt,{color:C.muted}]}>Lues</Text>
-              </TouchableOpacity>
-            )}
-            {notifs.length>0&&(
-              <TouchableOpacity style={hd.deleteBtn} onPress={handleDeleteAll} activeOpacity={0.80}>
-                <Ionicons name="trash" size={14} color={C.error}/>
-              </TouchableOpacity>
-            )}
-          </View>
+
+          {/* ★ Un seul bouton : "Tout lire" = DELETE persistant */}
+          {notifs.length>0&&(
+            <TouchableOpacity
+              style={[hd.actionBtn, deleting&&{opacity:0.5}]}
+              onPress={handleMarkAllRead}
+              activeOpacity={0.80}
+              disabled={deleting}
+            >
+              <Ionicons name="checkmark-done-outline" size={13} color={C.mid}/>
+              <Text style={hd.actionTxt}>Tout lire</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Filtres */}
+        {/* ── Filtres ── */}
         <View style={{flexShrink:0}}>
           <FilterTabs active={filter} counts={filterCounts} onChange={setFilter}/>
           {!loading&&notifs.length>0&&(
@@ -388,18 +438,35 @@ export default function NotificationsScreen() {
           )}
         </View>
 
-        {/* Liste */}
-        {loading ? <Skeleton/> : listItems.length===0 ? <EmptyState filter={filter}/> : (
+        {/* ── Liste ── */}
+        {loading ? (
+          <Skeleton/>
+        ) : listItems.length===0 ? (
+          <EmptyState filter={filter}/>
+        ) : (
           <FlatList
             data={listItems}
             keyExtractor={item=>item.kind==='header'?`h_${item.label}`:`n_${item.notif.id}`}
             showsVerticalScrollIndicator={false}
             removeClippedSubviews={false}
             contentContainerStyle={{paddingBottom:100}}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRefreshing(true);load(false);}} tintColor={C.mid}/>}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={()=>{setRefreshing(true);load(false);}}
+                tintColor={C.mid}
+              />
+            }
             renderItem={({item})=>{
               if(item.kind==='header') return <SectionHeader label={item.label}/>;
-              return <NotifCard notif={item.notif} isNew={newIds.has(item.notif.id)} onPress={handlePress} onDelete={handleDelete}/>;
+              return(
+                <NotifCard
+                  notif={item.notif}
+                  isNew={newIds.has(item.notif.id)}
+                  onPress={handlePress}
+                  onDelete={handleDelete}
+                />
+              );
             }}
           />
         )}
@@ -408,9 +475,9 @@ export default function NotificationsScreen() {
   );
 }
 
+// ─── Styles header ────────────────────────────────────────────────────────────
 const hd=StyleSheet.create({
   backBtn:   {width:38,height:38,borderRadius:19,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.faint,alignItems:'center',justifyContent:'center'},
   actionBtn: {flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:10,paddingVertical:6,borderRadius:12,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.faint},
   actionTxt: {color:C.mid,fontSize:11,fontWeight:'600'},
-  deleteBtn:  {width:36,height:36,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(239,68,68,0.28)',backgroundColor:'rgba(239,68,68,0.07)',alignItems:'center',justifyContent:'center'},
 });

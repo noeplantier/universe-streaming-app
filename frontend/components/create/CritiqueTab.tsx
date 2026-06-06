@@ -273,7 +273,7 @@ const CritiqueTab = memo(function CritiqueTab() {
             <Text style={ct.submitTxt}>{submitting?'Publication…':'Publier la critique'}</Text>
           </TouchableOpacity>
         )}
-        <View style={{height:60}}/>
+        <View style={{height:75}}/>
       </ScrollView>
     </KeyboardAvoidingView>
   );

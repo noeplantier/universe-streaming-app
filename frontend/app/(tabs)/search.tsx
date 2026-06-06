@@ -33,7 +33,6 @@ import { supabase }          from '@/lib/supabase';
 import { getDeviceId }       from '@/services/api';
 import GalaxyBackground      from '@/components/social/GalaxyBackground';
 import { resolveImg, type Work } from '@/contexts/GamificationSystem';
-import { useLeaderboard }        from '@/components/gamification';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 let _H: any = null;
@@ -625,7 +624,7 @@ const CosBotGame=memo(({works,onXP,onClose}:{works:Work[];onXP:(n:number)=>void;
 
   const botGlowOp=useRef(new Animated.Value(0.3)).current;
   useEffect(()=>{
-    const l=Animated.loop(Animated.sequence([Animated.timing(botGlowOp,{toValue:0.92,duration:2200,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(botGlowOp,{toValue:0.3,duration:2200,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));
+    const l=Animated.loop(Animated.sequence([Animated.timing(botGlowOp,{toValue:0.3,duration:2200,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(botGlowOp,{toValue:0.3,duration:2200,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));
     l.start();return()=>l.stop();
   },[]);
 
@@ -1169,8 +1168,42 @@ export default function SearchScreen(){
         {(courts.length>0||loading)&&<><RowSection title="Courts métrages" sub="Moins de 60 min" count={loading?undefined:courts.length} items={courts} loading={loading} portrait={false} onItemPress={item=>onFilmPress(item,'courts')}/>{DIV}</>}
         {(moyens.length>0||loading)&&<><RowSection title="Moyens métrages" sub="60 – 100 min" count={loading?undefined:moyens.length} items={moyens} loading={loading} portrait={false} onItemPress={item=>onFilmPress(item,'moyens')}/>{DIV}</>}
         {(longs.length>0||loading)&&<RowSection title="Mini-séries & longs" sub="100 min+" count={loading?undefined:longs.length} items={longs} loading={loading} portrait={false} onItemPress={item=>onFilmPress(item,'longs')}/>}
-        <View style={{height:120}}/>
+        <View style={{height:0}}/>
       </Animated.ScrollView>
     </View>
   );
+}
+
+function useLeaderboard(userId: string): { leaders: any; myRank: any; loading: any; } {
+  const [leaders, setLeaders] = React.useState<any[]>([]);
+  const [myRank, setMyRank] = React.useState<number | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        setLoading(true);
+        const { data, error } = await supabase
+          .from('leaderboard')
+          .select('*')
+          .order('score', { ascending: false })
+          .limit(100);
+
+        if (error) throw error;
+
+        setLeaders(data || []);
+        
+        const userRank = data?.findIndex((user: any) => user.user_id === userId);
+        setMyRank(userRank >= 0 ? userRank + 1 : null);
+      } catch (err) {
+        console.error('Error fetching leaderboard:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLeaderboard();
+  }, [userId]);
+
+  return { leaders, myRank, loading };
 }
