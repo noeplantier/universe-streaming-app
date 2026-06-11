@@ -9,34 +9,88 @@
     />
 
     <!-- ── Thème & PWA ─────────────────────────────────────────────────── -->
-    <meta name="theme-color"                    content="#070C17" />
-    <meta name="background_color"               content="#070C17" />
-    <meta name="application-name"               content="Universe" />
-    <meta name="mobile-web-app-capable"         content="yes" />
-    <meta name="apple-mobile-web-app-capable"   content="yes" />
-    <meta name="apple-mobile-web-app-title"     content="Universe" />
+    <meta name="theme-color" content="#070C17" />
+    <meta name="background_color" content="#070C17" />
+    <meta name="application-name" content="Universe" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Universe" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-    <!-- ── Manifest ────────────────────────────────────────────────────── -->
+    <!-- ── SEO Core ────────────────────────────────────────────────────── -->
+    <title>Universe - Explorez l'Infini</title>
+    <meta name="description" content="Universe : Découvrez une expérience immersive et innovante. Explorez, créez et connectez-vous avec une communauté mondiale." />
+    <meta name="keywords" content="universe, exploration, innovation, technologie, communauté" />
+    <meta name="author" content="Universe Team" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <meta name="language" content="fr-FR" />
+
+    <!-- ── Open Graph (Réseaux sociaux) ─────────────────────────────── -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://universe.app" />
+    <meta property="og:title" content="Universe - Explorez l'Infini" />
+    <meta property="og:description" content="Une expérience immersive et innovante pour explorer, créer et se connecter." />
+    <meta property="og:image" content="https://universe.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="fr_FR" />
+
+    <!-- ── Twitter Card ────────────────────────────────────────────────── -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Universe - Explorez l'Infini" />
+    <meta name="twitter:description" content="Une expérience immersive et innovante pour explorer, créer et se connecter." />
+    <meta name="twitter:image" content="https://universe.app/og-image.png" />
+
+    <!-- ── Canonical URL ────────────────────────────────────────────────── -->
+    <link rel="canonical" href="https://universe.app" />
+
+    <!-- ── Manifest & Icônes ───────────────────────────────────────────── -->
     <link rel="manifest" href="/manifest.json" />
-
-    <!-- ── Icônes Apple (ajoute tes icônes dans /public/icons/) ────────── -->
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+    <link rel="shortcut icon" href="/favicon.ico" />
 
-    <title>Universe</title>
+    <!-- ── Preconnect & DNS Prefetch ───────────────────────────────────── -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://cdn.example.com" />
 
-    <!--
-      NE PAS ajouter de <script> ici.
-      Expo / Metro injecte automatiquement le bundle JS dans ce fichier
-      au moment du build (expo export) ou du démarrage du dev server.
-      Tout script manuel ici court-circuite l'injection et cause la page blanche.
-    -->
+    <!-- ── Styles Critiques ────────────────────────────────────────────── -->
+    <link rel="stylesheet" href="/styles/critical.css" />
+
+    <!-- ── Polices Google Fonts ─────────────────────────────────────────── -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet" />
+
+    <!-- ── JSON-LD Schema ──────────────────────────────────────────────── -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Universe",
+      "description": "Une expérience immersive et innovante pour explorer, créer et se connecter.",
+      "url": "https://universe.app",
+      "applicationCategory": "WebApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "EUR"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "Universe Team"
+      }
+    }
+    </script>
+
+    <!-- ── Sitemap & RSS ────────────────────────────────────────────────── -->
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
   </head>
   <body>
-    <!--
-      Point de montage React — doit s'appeler "root" (convention Expo web).
-      Aucun contenu statique ici : React remplace le contenu au montage.
-    -->
+    <noscript>
+      <p>Veuillez activer JavaScript pour utiliser cette application.</p>
+    </noscript>
     <div id="root"></div>
+    <script src="/main.js" defer></script>
   </body>
 </html>
