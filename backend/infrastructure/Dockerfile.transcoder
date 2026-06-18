@@ -1,0 +1,16 @@
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# FFmpeg — full build for H.264 + AAC + HLS
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Celery worker entrypoint — CMD overridden in docker-compose
+CMD ["celery", "-A", "worker.celery_app", "worker", "--loglevel=info"]
