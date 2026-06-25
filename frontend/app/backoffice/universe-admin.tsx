@@ -16,7 +16,7 @@ import React, {
   import { Ionicons }      from '@expo/vector-icons';
   import * as Haptics      from 'expo-haptics';
   import { supabase }      from '@/lib/supabase';
-  import GalaxyBackground  from '@/components/social/GalaxyBackground';
+  import GalaxyBackground  from '@/components/shared/GalaxyBackground';
   
   // ── expo-video (optional)
   let _useVideoPlayer: any = null;

@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "backend",
+    "slug": "backend",
+    "version": "1.0.0",
+    "description": "",
+    "sdkVersion": "51.0.0",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.noeplantier.backend"
+    }
+  }
+}

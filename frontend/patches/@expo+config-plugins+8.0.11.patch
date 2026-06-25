@@ -1,0 +1,19 @@
+diff --git a/node_modules/@expo/config-plugins/build/ios/Maps.js b/node_modules/@expo/config-plugins/build/ios/Maps.js
+index c1ce2b2..d6e36d8 100644
+--- a/node_modules/@expo/config-plugins/build/ios/Maps.js
++++ b/node_modules/@expo/config-plugins/build/ios/Maps.js
+@@ -186,6 +186,14 @@ const withMapsCocoaPods = (config, {
+ const withGoogleMapsAppDelegate = (config, {
+   apiKey
+ }) => {
++  if (!apiKey) {
++    // Pas de clé Google Maps configurée dans ce projet : rien à faire sur
++    // l'AppDelegate. Sans ce guard, ce mod plante inconditionnellement sur
++    // les AppDelegate Swift (template par défaut depuis SDK ~50) même quand
++    // Maps n'est ni configuré ni utilisé — bug amont, aucun correctif publié
++    // dans la branche 8.0.x au moment de l'écriture (voir patches/).
++    return config;
++  }
+   return (0, _iosPlugins().withAppDelegate)(config, config => {
+     if (['objc', 'objcpp'].includes(config.modResults.language)) {
+       if (apiKey && isReactNativeMapsAutolinked(config) && isReactNativeMapsInstalled(config.modRequest.projectRoot)) {

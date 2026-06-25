@@ -19,7 +19,7 @@ import React, {
   import { BlurView }   from 'expo-blur';
   import * as Haptics   from 'expo-haptics';
   import { supabase }   from '@/lib/supabase';
-  import GalaxyBackground from '@/components/social/GalaxyBackground';
+  import GalaxyBackground from '@/components/shared/GalaxyBackground';
   
   const EDGE = 18;
   const C = {

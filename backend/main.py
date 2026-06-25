@@ -9,6 +9,7 @@ import redis.asyncio as redis
 
 from config.settings import APP_TITLE, APP_VERSION, CORS_ORIGINS
 from routes import auth, users, data
+from routes import streaming, upload
 from middleware.security_middleware import RateLimitMiddleware
 
 # Configuration du logger
@@ -61,9 +62,11 @@ app.add_middleware(
 )
 
 # --- INCLUSION DES ROUTES ---
-app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
-app.include_router(users.router, prefix="/api/users", tags=["Users"])
-app.include_router(data.router, prefix="/api/data", tags=["Data"])
+app.include_router(auth.router,      prefix="/api/auth",    tags=["Auth"])
+app.include_router(users.router,     prefix="/api/users",   tags=["Users"])
+app.include_router(data.router,      prefix="/api/data",    tags=["Data"])
+app.include_router(streaming.router, prefix="/api/stream",  tags=["Streaming"])
+app.include_router(upload.router,    prefix="/api/upload",  tags=["Upload"])
 
 # --- GESTION GLOBALE DES ERREURS ---
 @app.exception_handler(Exception)

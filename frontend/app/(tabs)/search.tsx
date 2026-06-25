@@ -31,7 +31,7 @@ import { StatusBar }         from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase }          from '@/lib/supabase';
 import { getDeviceId }       from '@/services/api';
-import GalaxyBackground      from '@/components/social/GalaxyBackground';
+import GalaxyBackground      from '@/components/shared/GalaxyBackground';
 import { resolveImg, type Work } from '@/contexts/GamificationSystem';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -473,7 +473,11 @@ const OracleGame=memo(({onXP,onClose}:{onXP:(n:number)=>void;onClose:()=>void})=
   const[sel,setSel]=useState<number|null>(null);const[phase,setPhase]=useState<'q'|'r'|'done'>('q');
   const[timer,setTimer]=useState(30);const timerRef=useRef<any>(null);const fade=useRef(new Animated.Value(0)).current;
   const stars=useRef(Array.from({length:10},(_,i)=>({x:new Animated.Value(Math.random()*SW),y:new Animated.Value(Math.random()*180),op:new Animated.Value(Math.random())}))).current;
-  useEffect(()=>{ stars.forEach((s,i)=>Animated.loop(Animated.sequence([Animated.timing(s.op,{toValue:0.6+Math.random()*0.4,duration:500+i*80,useNativeDriver:true}),Animated.timing(s.op,{toValue:0.1,duration:500+i*80,useNativeDriver:true})])).start()); },[]);
+  useEffect(()=>{
+    const loops=stars.map((s,i)=>Animated.loop(Animated.sequence([Animated.timing(s.op,{toValue:0.6+Math.random()*0.4,duration:500+i*80,useNativeDriver:true}),Animated.timing(s.op,{toValue:0.1,duration:500+i*80,useNativeDriver:true})])));
+    loops.forEach(l=>l.start());
+    return()=>loops.forEach(l=>l.stop());
+  },[]);
   useEffect(()=>{
     if(phase!=='q')return;setTimer(30);fade.setValue(0);Animated.timing(fade,{toValue:1,duration:350,useNativeDriver:true}).start();
     timerRef.current=setInterval(()=>setTimer(t=>{if(t<=1){clearInterval(timerRef.current);answer(-1);return 0;}return t-1;}),1000);
@@ -521,10 +525,10 @@ const WarpSwipe=memo(({works,onXP,onClose}:{works:Work[];onXP:(n:number)=>void;o
 const StarMap=memo(({works,onXP,onClose}:{works:Work[];onXP:(n:number)=>void;onClose:()=>void})=>{
   const PAIRS=6;
   const deck=useMemo(()=>[...works.filter(w=>w.title).slice(0,PAIRS),...works.filter(w=>w.title).slice(0,PAIRS)].map((w,i)=>({id:i,workId:w.id,title:w.title,flipped:false,matched:false})).sort(()=>Math.random()-0.5),[works]);
-  const[cards,setCards]=useState(deck);const[open,setOpen]=useState<number[]>([]);const[pairs,setPairs]=useState(0);const[moves,setMoves]=useState(0);const[time,setTime]=useState(90);const[done,setDone]=useState(false);const timerRef=useRef<any>(null);
-  useEffect(()=>{timerRef.current=setInterval(()=>setTime(t=>{if(t<=1){clearInterval(timerRef.current);setDone(true);return 0;}return t-1;}),1000);return()=>clearInterval(timerRef.current);},[]);
+  const[cards,setCards]=useState(deck);const[open,setOpen]=useState<number[]>([]);const[pairs,setPairs]=useState(0);const[moves,setMoves]=useState(0);const[time,setTime]=useState(90);const[done,setDone]=useState(false);const timerRef=useRef<any>(null);const flipBackRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  useEffect(()=>{timerRef.current=setInterval(()=>setTime(t=>{if(t<=1){clearInterval(timerRef.current);setDone(true);return 0;}return t-1;}),1000);return()=>{clearInterval(timerRef.current);if(flipBackRef.current)clearTimeout(flipBackRef.current);};},[]);
   useEffect(()=>{if(pairs>=PAIRS){clearInterval(timerRef.current);onXP(pairs*60+time*5);setDone(true);}  },[pairs]);
-  const flip=(idx:number)=>{const card=cards[idx];if(card.flipped||card.matched||open.length>=2)return;hL();const nd=cards.map((c,i)=>i===idx?{...c,flipped:true}:c);setCards(nd);const no=[...open,idx];setOpen(no);if(no.length===2){setMoves(m=>m+1);const[a,b]=no;if(nd[a].workId===nd[b].workId){hS();setCards(c=>c.map((x,i)=>i===a||i===b?{...x,matched:true}:x));setPairs(p=>p+1);setOpen([]);}else setTimeout(()=>{setCards(c=>c.map((x,i)=>i===a||i===b?{...x,flipped:false}:x));setOpen([]);},900);}};
+  const flip=(idx:number)=>{const card=cards[idx];if(card.flipped||card.matched||open.length>=2)return;hL();const nd=cards.map((c,i)=>i===idx?{...c,flipped:true}:c);setCards(nd);const no=[...open,idx];setOpen(no);if(no.length===2){setMoves(m=>m+1);const[a,b]=no;if(nd[a].workId===nd[b].workId){hS();setCards(c=>c.map((x,i)=>i===a||i===b?{...x,matched:true}:x));setPairs(p=>p+1);setOpen([]);}else flipBackRef.current=setTimeout(()=>{setCards(c=>c.map((x,i)=>i===a||i===b?{...x,flipped:false}:x));setOpen([]);},900);}};
   if(done)return<GameDone col={C.blue} icon="star-outline" title={pairs>=PAIRS?'Galaxie !':'Temps !'}score={pairs*60+time*5} sub={`${pairs}/${PAIRS} · ${moves} essais`} onClose={onClose}/>;
   const cW=(SW-E*2-48)/4;
   return(<View style={{flex:1,padding:16}}><View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginBottom:10}}><View style={{flexDirection:'row',alignItems:'center',gap:4}}><Ionicons name="time-outline" size={13} color={time<=20?C.red:C.gold}/><Text style={{color:time<=20?C.red:C.gold,fontSize:14,fontWeight:'900'}}>{time}s</Text></View><Text style={{color:C.muted,fontSize:12}}>{pairs}/{PAIRS} paires</Text><View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="flash" size={12} color={C.gold}/><Text style={{color:C.gold,fontSize:13,fontWeight:'800'}}>{pairs*60}</Text></View></View><View style={{height:3,backgroundColor:C.subtle,borderRadius:2,overflow:'hidden',marginBottom:14}}><View style={{height:'100%',borderRadius:2,width:`${(time/90)*100}%` as any,backgroundColor:C.white}}/></View><View style={{flexDirection:'row',flexWrap:'wrap',gap:8,justifyContent:'center'}}>{cards.map((card,i)=>(<TouchableOpacity key={card.id} onPress={()=>flip(i)} activeOpacity={0.88} style={{width:cW,aspectRatio:0.72}}><LinearGradient colors={card.matched?['rgba(245,200,66,0.16)','rgba(13,32,64,0.9)']:card.flipped?['rgba(255,255,255,0.12)','rgba(13,32,64,0.9)']:['rgba(13,32,64,0.85)','rgba(4,8,15,0.95)']} style={{flex:1,borderRadius:10,borderWidth:1,borderColor:card.matched?C.goldBd:card.flipped?C.borderHi:C.border,alignItems:'center',justifyContent:'center',padding:5}}>{(card.flipped||card.matched)?<Text style={{color:card.matched?C.gold:C.white,fontSize:9,fontWeight:'700',textAlign:'center',lineHeight:13}} numberOfLines={3}>{card.title}</Text>:<Text style={{color:C.muted,fontSize:18}}>★</Text>}</LinearGradient></TouchableOpacity>))}</View></View>);
@@ -628,11 +632,15 @@ const CosBotGame=memo(({works,onXP,onClose}:{works:Work[];onXP:(n:number)=>void;
     l.start();return()=>l.stop();
   },[]);
 
+  const botCountRef=useRef<ReturnType<typeof setInterval>|null>(null);
+  const botResultRef=useRef<ReturnType<typeof setTimeout>|null>(null);
+  useEffect(()=>()=>{if(botCountRef.current)clearInterval(botCountRef.current);if(botResultRef.current)clearTimeout(botResultRef.current);},[]);
+
   const handleUserDone=(score:number)=>{
     setUserScore(score);setPhase('bot');
     const target=Math.floor(score*botDiff);
     const steps=40;const inc=target/steps;let cur=0;
-    const t=setInterval(()=>{cur+=inc;if(cur>=target){setBotScore(target);setBotCounter(target);clearInterval(t);setTimeout(()=>setPhase('result'),600);}else setBotCounter(Math.floor(cur));},50);
+    botCountRef.current=setInterval(()=>{cur+=inc;if(cur>=target){setBotScore(target);setBotCounter(target);if(botCountRef.current)clearInterval(botCountRef.current);botResultRef.current=setTimeout(()=>setPhase('result'),600);}else setBotCounter(Math.floor(cur));},50);
   };
 
   // CTA pour distribuer l'XP

@@ -39,7 +39,14 @@ target 'Universe' do
     ]
   end
 
-  config = use_native_modules!(config_command)
+  # NOTE: config_command non utilisé — la version installée de
+  # @react-native-community/cli-platform-ios (13.6.9, dépendance exacte de
+  # react-native 0.74.5) attend soit aucun argument soit un Hash déjà parsé,
+  # pas un tableau de commande shell (incompatibilité réelle entre le
+  # template Podfile généré par @expo/cli@0.18.31 et cette version de
+  # cli-platform-ios — confirmé en lisant native_modules.rb). Sans argument,
+  # la fonction résout elle-même son propre cli_bin et fonctionne.
+  config = use_native_modules!()
 
   use_frameworks! :linkage => podfile_properties['ios.useFrameworks'].to_sym if podfile_properties['ios.useFrameworks']
   use_frameworks! :linkage => ENV['USE_FRAMEWORKS'].to_sym if ENV['USE_FRAMEWORKS']

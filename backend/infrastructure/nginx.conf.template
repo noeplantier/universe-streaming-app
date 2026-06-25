@@ -1,0 +1,136 @@
+worker_processes auto;
+worker_rlimit_nofile 65535;
+
+events {
+    worker_connections 4096;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    # ── Mime types ────────────────────────────────────────────
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+    types {
+        application/vnd.apple.mpegurl  m3u8;
+        video/mp2t                     ts;
+    }
+
+    # ── Performance ───────────────────────────────────────────
+    sendfile            on;
+    tcp_nopush          on;
+    tcp_nodelay         on;
+    keepalive_timeout   65;
+    gzip                on;
+    gzip_types          application/json application/vnd.apple.mpegurl text/plain;
+
+    # ── Rate limiting zones ───────────────────────────────────
+    limit_req_zone  $binary_remote_addr zone=api:10m   rate=30r/s;
+    limit_req_zone  $binary_remote_addr zone=token:10m rate=5r/s;
+    limit_req_zone  $binary_remote_addr zone=hls:10m   rate=200r/s;
+
+    # ── Upstream — API replicas (round-robin) ─────────────────
+    upstream api_backend {
+        least_conn;
+        server api:8000;
+        keepalive 64;
+    }
+
+    # ── HLS segment cache ─────────────────────────────────────
+    proxy_cache_path /var/cache/nginx/hls
+        levels=1:2
+        keys_zone=hls_cache:50m
+        max_size=10g
+        inactive=4h
+        use_temp_path=off;
+
+    # ── Main server ───────────────────────────────────────────
+    server {
+        listen 80;
+        server_name _;
+        return 301 https://$host$request_uri;
+    }
+
+    server {
+        listen 443 ssl http2;
+        server_name universe.film www.universe.film;
+
+        ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+        ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+        ssl_ciphers         HIGH:!aNULL:!MD5;
+        ssl_session_cache   shared:SSL:10m;
+
+        # ── Security headers ──────────────────────────────────
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Frame-Options           DENY always;
+        add_header X-Content-Type-Options    nosniff always;
+        add_header Referrer-Policy           "no-referrer" always;
+        # Block screenshot-assist bots / screen recorders
+        add_header X-Robots-Tag              "noindex, nofollow" always;
+
+        # ── API proxy ─────────────────────────────────────────
+        location /api/ {
+            limit_req zone=api burst=60 nodelay;
+
+            proxy_pass         http://api_backend;
+            proxy_http_version 1.1;
+            proxy_set_header   Upgrade $http_upgrade;
+            proxy_set_header   Connection "upgrade";
+            proxy_set_header   Host $host;
+            proxy_set_header   X-Real-IP $remote_addr;
+            proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_read_timeout 120s;
+        }
+
+        # ── Stream token endpoint — stricter rate limit ───────
+        location /api/stream/ {
+            limit_req zone=token burst=10 nodelay;
+            proxy_pass http://api_backend;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # ── HLS manifest + segments — cached + DRM validated ──
+        # ${SUPABASE_URL}/${VIDEO_BUCKET} sont substitués au démarrage du
+        # conteneur par l'entrypoint officiel nginx (envsubst-on-templates) —
+        # ce fichier doit rester monté sous /etc/nginx/templates/*.template,
+        # jamais directement en /etc/nginx/nginx.conf (sinon pas de substitution).
+        location ~ ^/cdn/(.+)/segments/(.+\.ts)$ {
+            limit_req zone=hls burst=500 nodelay;
+
+            # Token validation via subrequest to /api/stream/validate
+            auth_request /drm_validate;
+            auth_request_set $auth_status $upstream_status;
+
+            # Proxy to Supabase Storage CDN
+            proxy_pass         ${SUPABASE_URL}/storage/v1/object/public/${VIDEO_BUCKET}/hls/$1/segments/$2;
+            proxy_cache        hls_cache;
+            proxy_cache_valid  200 4h;
+            proxy_cache_use_stale error timeout updating;
+            add_header         X-Cache-Status $upstream_cache_status;
+
+            # No browser caching of DRM-protected segments
+            add_header Cache-Control "private, no-store" always;
+        }
+
+        location ~ ^/cdn/(.+)/(.+\.m3u8)$ {
+            limit_req zone=hls burst=100 nodelay;
+            auth_request /drm_validate;
+
+            proxy_pass         ${SUPABASE_URL}/storage/v1/object/public/${VIDEO_BUCKET}/hls/$1/$2;
+            proxy_cache        hls_cache;
+            proxy_cache_valid  200 30s;    # short cache — playlists update
+            add_header         Cache-Control "private, no-store" always;
+        }
+
+        # ── DRM validation subrequest ─────────────────────────
+        location = /drm_validate {
+            internal;
+            proxy_pass              http://api_backend/api/stream/validate?drm=$arg_drm;
+            proxy_pass_request_body off;
+            proxy_set_header        Content-Length "";
+            proxy_set_header        X-Original-URI $request_uri;
+        }
+    }
+}

@@ -1,0 +1,99 @@
+version: "3.9"
+
+services:
+
+  # ── API (FastAPI) — multiple replicas pour scaling horizontal ──
+  api:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.api
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - DRM_SECRET=${DRM_SECRET}
+      - REDIS_URL=redis://redis:6379/0
+      - VIDEO_BUCKET=${VIDEO_BUCKET}
+      - CDN_BASE_URL=${CDN_BASE_URL}
+      - FFMPEG_PATH=/usr/bin/ffmpeg
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+    expose:
+      - "8000"
+    networks:
+      - universe_net
+
+  # ── Nginx (reverse proxy + HLS cache + edge auth) ─────────────
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Substitués dans nginx.conf.template par l'entrypoint officiel nginx
+      # (envsubst-on-templates) au démarrage — voir commentaire dans le template.
+      - SUPABASE_URL=${SUPABASE_URL}
+      - VIDEO_BUCKET=${VIDEO_BUCKET}
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+      - ./ssl:/etc/nginx/ssl:ro         # mount Let's Encrypt certs
+    depends_on:
+      - api
+    networks:
+      - universe_net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── Redis — token cache + rate limiting + job queue ───────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 5
+    networks:
+      - universe_net
+
+  # ── Celery worker — async transcoding queue ───────────────────
+  transcoder:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.transcoder
+    command: celery -A worker.celery_app worker --loglevel=info --concurrency=2 -Q transcode
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      - VIDEO_BUCKET=${VIDEO_BUCKET}
+      - FFMPEG_PATH=/usr/bin/ffmpeg
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      replicas: 2         # 2 parallel transcoders
+      restart_policy:
+        condition: on-failure
+    volumes:
+      - /tmp/transcode:/tmp  # fast local disk for segments
+    networks:
+      - universe_net
+
+volumes:
+  redis_data:
+
+networks:
+  universe_net:
+    driver: overlay      # Docker Swarm mode — horizontal scaling
