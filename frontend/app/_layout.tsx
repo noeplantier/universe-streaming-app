@@ -1,33 +1,41 @@
 /**
- * app/_layout.tsx — UNIVERSE · ROOT LAYOUT · v9
+ * app/_layout.tsx — UNIVERSE · ROOT LAYOUT · v12 (consolidé)
  *
- * ★ Overlay anti-screenshot RETIRÉ du web ici
- *   → géré exclusivement par la couche app.json / service worker
- * ★ Natif uniquement : FLAG_SECURE Android + détection iOS
+ * ★ Fusion de deux root layouts qui avaient divergé (voir doc/decisions) :
+ *   celui-ci (vrai root, utilisé par expo-router) + app/(tabs)/_layout.tsx
+ *   qui avait reçu la protection Android FLAG_SECURE + la dissuasion web
+ *   mais jamais ce fichier-ci. (tabs)/_layout.tsx est redevenu un layout de
+ *   groupe minimal — toute la logique cross-cutting vit ici, une seule fois.
+ * ★ Natif : FLAG_SECURE Android + preventScreenCaptureAsync iOS
+ * ★ Web : dissuasion (sélection, clic droit, raccourcis, PrintScreen)
  * ★ NavBar toujours visible, animée uniquement sur /reels
- * ★ Zéro typeof/document/window au module-level → plus de SyntaxError SSR
+ * ★ Zéro typeof/document/window au module-level → pas de SyntaxError SSR
  */
 import React, {
-  useCallback, useEffect, useRef, useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
 } from 'react';
 import {
   Animated,
   AppState,
+  AppStateStatus,
   Dimensions,
   Platform,
   StyleSheet,
   Text,
   View,
-  type AppStateStatus,
 } from 'react-native';
 import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
-import { SafeAreaProvider }  from 'react-native-safe-area-context';
-import { StatusBar }         from 'expo-status-bar';
-import * as SplashScreen     from 'expo-splash-screen';
-import { Ionicons }          from '@expo/vector-icons';
-import { LinearGradient }    from 'expo-linear-gradient';
-import { supabase }          from '@/lib/supabase';
-import CustomNavBar          from '@/components/CustomNavBar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { supabase } from '@/lib/supabase';
+import CustomNavBar from '@/components/CustomNavBar';
 import { ReelsUIProvider, useReelsUI } from '@/contexts/ReelsUIContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -37,18 +45,146 @@ const { width: SW, height: SH } = Dimensions.get('window');
 // Étoiles pré-calculées — aucun typeof, aucun window ici
 const STARS = Array.from({ length: 80 }, (_, i) => ({
   key: i,
-  x:   ((Math.sin(i * 2.399) + 1) / 2) * SW,
-  y:   ((Math.cos(i * 1.618) + 1) / 2) * SH,
-  r:   i % 7 === 0 ? 1.6 : i % 3 === 0 ? 0.9 : 0.5,
-  op:  0.12 + (i % 8) * 0.06,
+  x: ((Math.sin(i * 2.399) + 1) / 2) * SW,
+  y: ((Math.cos(i * 1.618) + 1) / 2) * SH,
+  r: i % 7 === 0 ? 1.6 : i % 3 === 0 ? 0.9 : 0.5,
+  op: 0.12 + (i % 8) * 0.06,
 }));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOK ANTI-SCREENSHOT — natif (FLAG_SECURE Android + preventScreenCapture iOS)
+// + web (dissuasion : sélection, clic droit, raccourcis, PrintScreen)
+// ─────────────────────────────────────────────────────────────────────────────
+function useAntiScreenshot() {
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const show = useCallback((ms = 0) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setVisible(true);
+    if (ms > 0) {
+      timerRef.current = setTimeout(() => setVisible(false), ms);
+    }
+  }, []);
+
+  const hide = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    setVisible(false);
+  }, []);
+
+  // Natif : FLAG_SECURE (Android) + preventScreenCaptureAsync (iOS)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    let ScreenCapture: any = null;
+    try {
+      ScreenCapture = require('expo-screen-capture');
+    } catch {}
+
+    ScreenCapture?.preventScreenCaptureAsync?.().catch(() => {});
+
+    const screenshotSub =
+      ScreenCapture?.addScreenshotListener?.(() => show(3000)) ?? null;
+
+    const appSub = AppState.addEventListener('change', (s: AppStateStatus) => {
+      if (s === 'background' || s === 'inactive') show(0);
+      if (s === 'active') hide();
+    });
+
+    const activateAndroidSecureFlag = async () => {
+      if (Platform.OS !== 'android') return;
+      try {
+        const mod = require('react-native-flag-secure-android');
+        mod?.default?.activate?.() ?? mod?.activate?.();
+      } catch {}
+    };
+
+    activateAndroidSecureFlag();
+
+    return () => {
+      screenshotSub?.remove?.();
+      appSub.remove();
+      ScreenCapture?.allowScreenCaptureAsync?.().catch(() => {});
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+
+      if (Platform.OS === 'android') {
+        try {
+          const mod = require('react-native-flag-secure-android');
+          mod?.default?.deactivate?.() ?? mod?.deactivate?.();
+        } catch {}
+      }
+    };
+  }, [show, hide]);
+
+  // Web : dissuasion (pas de vrai blocage possible côté navigateur)
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const doc = document;
+    const win = window;
+
+    const style = doc.createElement('style');
+    style.setAttribute('data-universe', 'shield');
+    style.textContent = [
+      '* { -webkit-user-select:none!important; user-select:none!important; }',
+      'input,textarea,[contenteditable]{ -webkit-user-select:text!important; user-select:text!important; }',
+      'img,video,canvas{ -webkit-user-drag:none!important; pointer-events:none; }',
+      'input,textarea,button,a,select{ pointer-events:auto!important; }',
+    ].join('');
+    doc.head.appendChild(style);
+
+    const onContext = (e: MouseEvent) => e.preventDefault();
+    const onKeyDown = (e: KeyboardEvent) => {
+      const k = e.key.toUpperCase();
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && 'IJCK'.includes(k)) ||
+        (e.metaKey && e.altKey && 'IJCK'.includes(k))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'PrintScreen') show(2500);
+    };
+    const onVisibility = () => {
+      if (doc.hidden) show(0);
+      else hide();
+    };
+
+    win.addEventListener('blur', () => show(1800));
+    win.addEventListener('focus', hide);
+    doc.addEventListener('contextmenu', onContext);
+    doc.addEventListener('keydown', onKeyDown);
+    doc.addEventListener('keyup', onKeyUp);
+    doc.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      doc.removeEventListener('contextmenu', onContext);
+      doc.removeEventListener('keydown', onKeyDown);
+      doc.removeEventListener('keyup', onKeyUp);
+      doc.removeEventListener('visibilitychange', onVisibility);
+      try {
+        doc.head.removeChild(style);
+      } catch {}
+    };
+  }, [show, hide]);
+
+  // Sur web → toujours false (overlay non rendu, cf. ScreenshotOverlay)
+  return Platform.OS !== 'web' && visible;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OVERLAY UNIVERSE (natif seulement — non rendu sur web)
 // ─────────────────────────────────────────────────────────────────────────────
 const ScreenshotOverlay = React.memo(function ScreenshotOverlay({
   visible,
-}: { visible: boolean }) {
+}: {
+  visible: boolean;
+}) {
   const anim = useRef(new Animated.Value(0)).current;
   const [mounted, setMounted] = useState(false);
 
@@ -83,11 +219,6 @@ const ScreenshotOverlay = React.memo(function ScreenshotOverlay({
           borderRadius: s.r, backgroundColor: '#fff', opacity: s.op,
         }} />
       ))}
-      <View style={{
-        position: 'absolute', top: SH * 0.1, left: -SW * 0.25,
-        width: SW * 1.5, height: SH * 0.45, borderRadius: SW,
-        backgroundColor: 'rgba(80,120,220,0.04)',
-      }} />
       <View style={ov.center}>
         <View style={ov.iconBox}>
           <Ionicons name="film-outline" size={36} color="rgba(255,255,255,0.68)" />
@@ -135,89 +266,39 @@ const ov = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// HOOK ANTI-SCREENSHOT — NATIF UNIQUEMENT
-// Web : géré séparément (voir instructions client ci-dessous)
-// ─────────────────────────────────────────────────────────────────────────────
-function useAntiScreenshot() {
-  const [visible, setVisible] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const show = useCallback((ms = 0) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setVisible(true);
-    if (ms > 0) timerRef.current = setTimeout(() => setVisible(false), ms);
-  }, []);
-
-  const hide = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setVisible(false);
-  }, []);
-
-  useEffect(() => {
-    // Web → rien à faire ici (pas d'overlay RN sur web, pas de SyntaxError)
-    if (Platform.OS === 'web') return;
-
-    // require() dynamique dans useEffect — jamais évalué par Node.js SSR
-    let SC: any = null;
-    try { SC = require('expo-screen-capture'); } catch {}
-
-    // Android : FLAG_SECURE → capture = image noire (bloqué au niveau OS)
-    // iOS     : écran noir dans AirPlay/QuickTime/preview
-    SC?.preventScreenCaptureAsync?.().catch(() => {});
-
-    // iOS : détecte la capture (Power + Volume) → overlay 3 s
-    let screenshotSub: { remove: () => void } | null = null;
-    if (SC?.addScreenshotListener) {
-      try { screenshotSub = SC.addScreenshotListener(() => show(3000)); } catch {}
-    }
-
-    // App switcher → overlay jusqu'au retour en foreground
-    const appSub = AppState.addEventListener('change', (s: AppStateStatus) => {
-      if (s === 'background' || s === 'inactive') show(0);
-      else if (s === 'active') hide();
-    });
-
-    return () => {
-      screenshotSub?.remove();
-      appSub.remove();
-      SC?.allowScreenCaptureAsync?.().catch(() => {});
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [show, hide]);
-
-  // Sur web → toujours false (overlay non rendu)
-  return Platform.OS !== 'web' && visible;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Auth guard
 // ─────────────────────────────────────────────────────────────────────────────
 function useAuthGuard(ready: boolean) {
-  const router   = useRouter();
+  const router = useRouter();
   const segments = useSegments();
+
   useEffect(() => {
     if (!ready) return;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       const inAuth = segments[0] === '(auth)' || segments[0] === 'login';
       if (!session && !inAuth) {
         // router.replace('/login');
       }
     });
-  }, [ready, segments]);
+  }, [ready, segments, router]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NavBarWrapper — toujours monté, animé uniquement sur /reels
 // ─────────────────────────────────────────────────────────────────────────────
 function NavBarWrapper() {
-  const { navBarOpacity, restoreNavBar } = useReelsUI();
-  const pathname   = usePathname();
+  const { navBarOpacity, uiVisible, restoreNavBar } = useReelsUI();
+  const pathname = usePathname();
   const wasOnReels = useRef(false);
 
-  const isReels =
-    pathname === '/reels' ||
-    pathname === '/(tabs)/reels' ||
-    pathname.endsWith('/reels');
+  const isReels = useMemo(() => {
+    return (
+      pathname === '/reels' ||
+      pathname === '/(tabs)/reels' ||
+      pathname.endsWith('/reels')
+    );
+  }, [pathname]);
 
   useEffect(() => {
     if (!isReels && wasOnReels.current) restoreNavBar();
@@ -233,7 +314,10 @@ function NavBarWrapper() {
   }
 
   return (
-    <Animated.View style={[lay.nav, { opacity: navBarOpacity }]} pointerEvents="box-none">
+    <Animated.View
+      style={[lay.nav, { opacity: navBarOpacity }]}
+      pointerEvents={uiVisible ? 'box-none' : 'none'}
+    >
       <CustomNavBar />
     </Animated.View>
   );
@@ -245,15 +329,33 @@ function NavBarWrapper() {
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const screenshotVisible = useAntiScreenshot();
+
   useAuthGuard(ready);
 
   useEffect(() => {
-    supabase.auth.getSession()
-      .then(() => { setReady(true); SplashScreen.hideAsync().catch(() => {}); })
-      .catch(() => { setReady(true); SplashScreen.hideAsync().catch(() => {}); });
+    let alive = true;
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {});
-    return () => subscription.unsubscribe();
+    supabase.auth
+      .getSession()
+      .then(() => {
+        if (!alive) return;
+        setReady(true);
+        SplashScreen.hideAsync().catch(() => {});
+      })
+      .catch(() => {
+        if (!alive) return;
+        setReady(true);
+        SplashScreen.hideAsync().catch(() => {});
+      });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {});
+
+    return () => {
+      alive = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
   if (!ready) return null;

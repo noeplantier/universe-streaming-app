@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getDeviceId } from '../services/api';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:8000';
 const TOKEN_TTL_MS = 3.5 * 60 * 60 * 1000; // refresh at 3.5h (token expires at 4h)
@@ -18,22 +18,26 @@ export interface QualityLevel {
   playlistUrl: string;
 }
 
-async function getAuthToken(): Promise<string> {
-  const stored = await AsyncStorage.getItem('access_token');
-  return stored ?? '';
-}
-
+// Backend (Pydantic) renvoie du snake_case — on remappe explicitement plutôt
+// que de faire confiance au cast TS, sinon expiresAt vaut `undefined` et le
+// timer de refresh se redéclenche en boucle quasi immédiate (setTimeout(NaN)).
 async function fetchStreamToken(filmId: string): Promise<StreamToken> {
-  const auth = await getAuthToken();
+  const deviceId = await getDeviceId();
   const res = await fetch(`${BACKEND_URL}/api/stream/${filmId}/token`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${auth}`,
+      'X-Device-Id': deviceId,
       'Content-Type': 'application/json',
     },
   });
   if (!res.ok) throw new Error(`Token fetch failed: ${res.status}`);
-  return res.json();
+  const raw = await res.json();
+  return {
+    token:      raw.token,
+    signedUrl:  raw.signed_url,
+    expiresAt:  raw.expires_at,
+    qualities:  raw.qualities ?? [],
+  };
 }
 
 export function useStreamingToken(filmId: string | null) {

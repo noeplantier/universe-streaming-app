@@ -23,7 +23,7 @@ import { StatusBar }      from 'expo-status-bar';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { supabase }     from '@/lib/supabase';
-import GalaxyBackground from '@/components/social/GalaxyBackground';
+import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import { getDeviceId }  from '@/services/api'; // ★ UUID device — zero auth
 
 const { width: W, height: H } = Dimensions.get('window');

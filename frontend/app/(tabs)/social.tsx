@@ -25,7 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView }       from 'expo-blur';
 import { supabase }       from '@/lib/supabase';
 import { getDeviceId }    from '@/services/api';
-import GalaxyBackground   from '@/components/social/GalaxyBackground';
+import GalaxyBackground   from '@/components/shared/GalaxyBackground';
 import IndustrieScreen    from '@/components/social/IndustrieScreen';
 
 let _Haptics: any = null;

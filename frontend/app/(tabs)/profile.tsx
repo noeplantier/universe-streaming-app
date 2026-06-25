@@ -21,7 +21,7 @@ import { Ionicons }                    from '@expo/vector-icons';
 import { useRouter, useFocusEffect }   from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar }                   from 'expo-status-bar';
-import GalaxyBackground                from '@/components/social/GalaxyBackground';
+import GalaxyBackground                from '@/components/shared/GalaxyBackground';
 import { supabase }                    from '@/lib/supabase';
 import { getDeviceId }                 from '@/services/api';
 import {

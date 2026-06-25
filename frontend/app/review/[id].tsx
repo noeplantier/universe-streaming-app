@@ -29,6 +29,7 @@ import { SafeAreaView }     from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics         from 'expo-haptics';
 import { supabase }         from '@/lib/supabase';
+import GalaxyBackground     from '@/components/shared/GalaxyBackground';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -54,71 +55,9 @@ const C = {
   success:   '#22C55E',
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GALAXY BACKGROUND (identique à l'app)
-// ─────────────────────────────────────────────────────────────────────────────
-const rnd  = (a:number,b:number) => a + Math.random()*(b-a);
-const pick = (arr:string[]) => arr[Math.floor(Math.random()*arr.length)];
-const STAR_COLS = ['#F3EDFF','#B2CCFF','#FFE270','rgba(255,255,255,0.55)'];
-
-interface StarPt { id:number; x:number; y:number; sz:number; col:string; del:number; dur:number }
-interface Met    { id:number; sx:number; sy:number; ang:number; len:number }
-
-const STARS: StarPt[] = Array.from({length:45},(_,i)=>({
-  id:i, x:rnd(0,W), y:rnd(0,H), sz:rnd(1,2.2),
-  col:pick(STAR_COLS), del:rnd(0,4000), dur:rnd(2000,5000),
-}));
-
-const StarDot = memo(({p}:{p:StarPt}) => {
-  const op = useRef(new Animated.Value(0.2)).current;
-  useEffect(()=>{
-    Animated.loop(Animated.sequence([
-      Animated.delay(p.del%p.dur),
-      Animated.timing(op,{toValue:0.85,duration:p.dur*0.5,useNativeDriver:true}),
-      Animated.timing(op,{toValue:0.2, duration:p.dur*0.5,useNativeDriver:true}),
-    ])).start();
-  },[]);
-  return <Animated.View style={{position:'absolute',left:p.x,top:p.y,width:p.sz,height:p.sz,borderRadius:p.sz/2,backgroundColor:p.col,opacity:op}}/>;
-});
-
-const ShootingStar = memo(({m,onDone}:{m:Met;onDone:()=>void}) => {
-  const prog=useRef(new Animated.Value(0)).current;
-  const op  =useRef(new Animated.Value(0)).current;
-  useEffect(()=>{
-    Animated.parallel([
-      Animated.sequence([
-        Animated.timing(op,{toValue:1,duration:100,useNativeDriver:true}),
-        Animated.timing(op,{toValue:0,duration:500,delay:200,useNativeDriver:true}),
-      ]),
-      Animated.timing(prog,{toValue:1,duration:800,easing:Easing.out(Easing.quad),useNativeDriver:true}),
-    ]).start(onDone);
-  },[]);
-  const tx=prog.interpolate({inputRange:[0,1],outputRange:[0,Math.cos(m.ang*Math.PI/180)*200]});
-  const ty=prog.interpolate({inputRange:[0,1],outputRange:[0,Math.sin(m.ang*Math.PI/180)*200]});
-  return(
-    <Animated.View style={{position:'absolute',left:m.sx,top:m.sy,opacity:op,transform:[{translateX:tx},{translateY:ty},{rotate:`${m.ang}deg`}]}}>
-      <LinearGradient colors={['transparent','rgba(255,255,255,0.2)','#fff']} start={{x:0,y:0}} end={{x:1,y:0}} style={{width:m.len,height:1.5,borderRadius:1}}/>
-    </Animated.View>
-  );
-});
-
-const GalaxyBackground = memo(()=>{
-  const [meteors,setMeteors]=useState<Met[]>([]);
-  useEffect(()=>{
-    const i=setInterval(()=>{
-      if(Math.random()>0.7)
-        setMeteors(m=>[...m,{id:Date.now(),sx:rnd(0,W),sy:rnd(0,H*0.4),ang:rnd(20,50),len:rnd(80,150)}]);
-    },2500);
-    return()=>clearInterval(i);
-  },[]);
-  return(
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      <LinearGradient colors={[C.bg,'#060F1E']} style={StyleSheet.absoluteFill}/>
-      {STARS.map(s=><StarDot key={s.id} p={s}/>)}
-      {meteors.map(m=><ShootingStar key={m.id} m={m} onDone={()=>setMeteors(p=>p.filter(x=>x.id!==m.id))}/>)}
-    </View>
-  );
-});
+// GalaxyBackground partagé (Skia) — voir components/shared/GalaxyBackground.tsx.
+// Cet écran avait sa propre 3e réimplémentation locale du champ d'étoiles
+// (palette dorée distincte, Animated.loop sans cleanup) ; consolidée ici.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES

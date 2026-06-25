@@ -16,7 +16,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 
 // Assurez-vous d'adapter ces imports dans votre fichier `lib/supabaseReels`
 import { fetchEpisodeById, updateEpisodeLikes } from '@/lib/supabaseReels';
-import GalaxyBackground from '@/components/social/GalaxyBackground';
+import GalaxyBackground from '@/components/shared/GalaxyBackground';
 
 const { width: W, height: H } = Dimensions.get('window');
 

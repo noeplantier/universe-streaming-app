@@ -22,7 +22,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar }    from 'expo-status-bar';
 import * as Haptics     from 'expo-haptics';
 import { supabase }     from '@/lib/supabase';
-import GalaxyBackground from '@/components/social/GalaxyBackground';
+import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import { getDeviceId }  from '@/services/api';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────

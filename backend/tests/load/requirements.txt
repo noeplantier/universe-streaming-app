@@ -1,0 +1,4 @@
+# Dépendances des scripts de test de charge/stockage — séparées du
+# requirements.txt principal pour ne pas alourdir les images Docker api/transcoder.
+# pip install -r backend/tests/load/requirements.txt
+locust>=2.24.0

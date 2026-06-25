@@ -24,11 +24,12 @@ HLS output structure per video:
 import os
 import subprocess
 import logging
-import tempfile
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
+from database import get_supabase
 from services.video_storage import (
     QUALITY_PROFILES,
     STORAGE_BUCKET,
@@ -38,9 +39,10 @@ from services.video_storage import (
 
 logger = logging.getLogger(__name__)
 
-FFMPEG_PATH   = os.getenv("FFMPEG_PATH", "ffmpeg")
-SEGMENT_SECS  = 6   # HLS segment duration
-HLS_LIST_SIZE = 0   # 0 = keep all segments in playlist
+FFMPEG_PATH        = os.getenv("FFMPEG_PATH", "ffmpeg")
+SEGMENT_SECS       = 6   # HLS segment duration
+HLS_LIST_SIZE      = 0   # 0 = keep all segments in playlist
+UPLOAD_CONCURRENCY = 12  # parallel Supabase Storage uploads per video
 
 
 def _build_ffmpeg_cmd(input_path: str, output_dir: str) -> list[str]:
@@ -88,15 +90,32 @@ def _write_master_playlist(output_dir: str, variant_streams: list[str]):
     return str(master_path)
 
 
-def _upload_hls_to_storage(video_id: str, output_dir: str) -> list[dict]:
-    """Upload all generated HLS files to Supabase Storage and return quality metadata."""
-    from supabase import create_client
-    sb = create_client(
-        os.getenv("SUPABASE_URL", ""),
-        os.getenv("SUPABASE_KEY", ""),
-    )
+def _upload_one(sb, storage_path: str, local_path: Path, content_type: str) -> str:
+    with open(local_path, "rb") as f:
+        sb.storage.from_(STORAGE_BUCKET).upload(
+            storage_path, f.read(),
+            {"content-type": content_type, "upsert": "true"}
+        )
+    return storage_path
+
+
+def _upload_hls_to_storage(
+    video_id: str,
+    output_dir: str,
+    on_progress: Callable[[int], None] | None = None,
+) -> list[dict]:
+    """
+    Upload all generated HLS files to Supabase Storage and return quality metadata.
+    A 25min source × 4 renditions is ~1000 files (6s segments) — uploaded with
+    bounded concurrency instead of one-at-a-time, otherwise this step alone
+    dominates wall-clock time at any real catalog size.
+    """
+    sb = get_supabase()
+    if not sb:
+        raise RuntimeError("Client Supabase non initialisé")
 
     qualities_written = []
+    upload_jobs: list[tuple[str, Path, str]] = []
 
     for q in QUALITY_PROFILES:
         label = q["label"]
@@ -106,23 +125,13 @@ def _upload_hls_to_storage(video_id: str, output_dir: str) -> list[dict]:
             logger.warning(f"Quality dir missing: {quality_dir}")
             continue
 
-        # Upload playlist + all segments
         playlist_path = quality_dir / "playlist.m3u8"
         storage_playlist = f"hls/{video_id}/{label}/playlist.m3u8"
-
-        with open(playlist_path, "rb") as f:
-            sb.storage.from_(STORAGE_BUCKET).upload(
-                storage_playlist, f.read(),
-                {"content-type": "application/vnd.apple.mpegurl", "upsert": "true"}
-            )
+        upload_jobs.append((storage_playlist, playlist_path, "application/vnd.apple.mpegurl"))
 
         for seg in sorted(quality_dir.glob("*.ts")):
             storage_seg = f"hls/{video_id}/{label}/{seg.name}"
-            with open(seg, "rb") as f:
-                sb.storage.from_(STORAGE_BUCKET).upload(
-                    storage_seg, f.read(),
-                    {"content-type": "video/mp2t", "upsert": "true"}
-                )
+            upload_jobs.append((storage_seg, seg, "video/mp2t"))
 
         qualities_written.append({
             "label":         label,
@@ -131,15 +140,22 @@ def _upload_hls_to_storage(video_id: str, output_dir: str) -> list[dict]:
             "playlist_path": storage_playlist,
         })
 
-    # Upload master playlist
     master_path = Path(output_dir) / "master.m3u8"
     if master_path.exists():
-        storage_master = f"hls/{video_id}/master.m3u8"
-        with open(master_path, "rb") as f:
-            sb.storage.from_(STORAGE_BUCKET).upload(
-                storage_master, f.read(),
-                {"content-type": "application/vnd.apple.mpegurl", "upsert": "true"}
-            )
+        upload_jobs.append((f"hls/{video_id}/master.m3u8", master_path, "application/vnd.apple.mpegurl"))
+
+    total = len(upload_jobs) or 1
+    completed = 0
+    with ThreadPoolExecutor(max_workers=UPLOAD_CONCURRENCY) as pool:
+        futures = {
+            pool.submit(_upload_one, sb, storage_path, local_path, content_type): storage_path
+            for storage_path, local_path, content_type in upload_jobs
+        }
+        for future in as_completed(futures):
+            future.result()  # re-raise immediately on first failed upload
+            completed += 1
+            if on_progress and completed % 10 == 0:
+                on_progress(50 + int(40 * completed / total))  # upload = 50-90% band
 
     return qualities_written
 
@@ -160,8 +176,17 @@ def transcode_video(
     for q in QUALITY_PROFILES:
         os.makedirs(f"{output_dir}/{q['label']}", exist_ok=True)
 
+    def _progress(pct: int):
+        if not on_progress:
+            return
+        try:
+            on_progress(pct)
+        except Exception:
+            logger.warning(f"on_progress callback failed for {video_id}", exc_info=True)
+
     try:
         logger.info(f"Starting transcode: video_id={video_id}")
+        _progress(5)
         cmd, variant_streams = _build_ffmpeg_cmd(source_path, output_dir)
 
         proc = subprocess.Popen(
@@ -177,8 +202,9 @@ def transcode_video(
 
         _write_master_playlist(output_dir, variant_streams)
         logger.info(f"FFmpeg done for {video_id}, uploading segments…")
+        _progress(50)
 
-        qualities_written = _upload_hls_to_storage(video_id, output_dir)
+        qualities_written = _upload_hls_to_storage(video_id, output_dir, on_progress=_progress)
         mark_video_ready(video_id, qualities_written)
         logger.info(f"Transcode complete for {video_id}: {len(qualities_written)} qualities")
 

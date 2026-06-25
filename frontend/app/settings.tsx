@@ -31,7 +31,7 @@ import { useRouter }       from 'expo-router';
 import { ScrollView }      from 'react-native';
 
 import { supabase }        from '@/lib/supabase';
-import GalaxyBackground    from '@/components/social/GalaxyBackground';
+import GalaxyBackground    from '@/components/shared/GalaxyBackground';
 
 // ── Tous les imports natifs : require conditionnel → ne crashent pas sur web ──
 let ImagePicker: any = null;

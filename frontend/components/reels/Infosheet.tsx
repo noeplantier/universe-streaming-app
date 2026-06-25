@@ -22,7 +22,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { FeedFilm } from '@/components/reels/types';
 import { C } from '@/components/create/tokens';
-import GalaxyBackground from '../social/GalaxyBackground';
+import GalaxyBackground from '../shared/GalaxyBackground';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🎨 TOKENS

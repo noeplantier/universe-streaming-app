@@ -37,8 +37,13 @@ services:
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      # Substitués dans nginx.conf.template par l'entrypoint officiel nginx
+      # (envsubst-on-templates) au démarrage — voir commentaire dans le template.
+      - SUPABASE_URL=${SUPABASE_URL}
+      - VIDEO_BUCKET=${VIDEO_BUCKET}
     volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
       - ./ssl:/etc/nginx/ssl:ro         # mount Let's Encrypt certs
     depends_on:
       - api

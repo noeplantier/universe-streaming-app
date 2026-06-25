@@ -23,7 +23,7 @@ import { LinearGradient }    from 'expo-linear-gradient';
 import { useRouter }         from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase }          from '@/lib/supabase';
-import GalaxyBackground      from '@/components/social/GalaxyBackground';
+import GalaxyBackground      from '@/components/shared/GalaxyBackground';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -452,18 +452,21 @@ export const LevelUpCelebration = memo(function LevelUpCelebration({
   const accentColor = level >= 9 ? C.gold : level >= 7 ? C.purple : level >= 5 ? C.orange : C.blue;
 
   useEffect(()=>{
-    if(visible){
-      numScale.setValue(0.4); numOp.setValue(0); textOp.setValue(0); setBurst(0);
-      Animated.sequence([
-        Animated.parallel([
-          Animated.spring(numScale,{toValue:1.1,tension:120,friction:6,useNativeDriver:true}),
-          Animated.timing(numOp,{toValue:1,duration:300,useNativeDriver:true}),
-        ]),
-        Animated.spring(numScale,{toValue:1,tension:200,friction:8,useNativeDriver:true}),
-        Animated.timing(textOp,{toValue:1,duration:400,useNativeDriver:true}),
-      ]).start(()=>setBurst(v=>v+1));
-      Animated.loop(Animated.timing(rayRot,{toValue:1,duration:8000,easing:Easing.linear,useNativeDriver:true})).start();
-    }
+    if(!visible) return;
+    numScale.setValue(0.4); numOp.setValue(0); textOp.setValue(0); setBurst(0);
+    Animated.sequence([
+      Animated.parallel([
+        Animated.spring(numScale,{toValue:1.1,tension:120,friction:6,useNativeDriver:true}),
+        Animated.timing(numOp,{toValue:1,duration:300,useNativeDriver:true}),
+      ]),
+      Animated.spring(numScale,{toValue:1,tension:200,friction:8,useNativeDriver:true}),
+      Animated.timing(textOp,{toValue:1,duration:400,useNativeDriver:true}),
+    ]).start(()=>setBurst(v=>v+1));
+    const rayLoop = Animated.loop(Animated.timing(rayRot,{toValue:1,duration:8000,easing:Easing.linear,useNativeDriver:true}));
+    rayLoop.start();
+    // Sans ce cleanup, fermer/rouvrir la modale empile une nouvelle boucle
+    // infinie sur rayRot à chaque fois sans jamais arrêter les précédentes.
+    return ()=>rayLoop.stop();
   },[visible]);
 
   if(!visible)return null;
@@ -591,11 +594,19 @@ export const GameHUD = memo(function GameHUD({
 
   useEffect(()=>{
     Animated.timing(prog,{toValue:profile.pct,duration:900,useNativeDriver:false}).start();
-    Animated.loop(Animated.sequence([
+  },[profile.pct]);
+
+  // Pulsation ambiante du glow : indépendante de profile.pct — sinon chaque
+  // gain d'XP empilait une nouvelle boucle infinie sans jamais arrêter les
+  // précédentes (autant de boucles concurrentes que de variations d'XP).
+  useEffect(()=>{
+    const glowLoop = Animated.loop(Animated.sequence([
       Animated.timing(glowAnim,{toValue:1,duration:1800,useNativeDriver:true}),
       Animated.timing(glowAnim,{toValue:0.4,duration:1800,useNativeDriver:true}),
-    ])).start();
-  },[profile.pct]);
+    ]));
+    glowLoop.start();
+    return ()=>glowLoop.stop();
+  },[]);
 
   const barW       = prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
   const levelStr   = `LV.${profile.level}`;
@@ -670,8 +681,13 @@ export const XPBar = memo(function XPBar({profile,compact=false}:{profile:GamiPr
   const glow=useRef(new Animated.Value(0.4)).current;
   useEffect(()=>{
     Animated.timing(prog,{toValue:profile.pct,duration:1100,useNativeDriver:false}).start();
-    Animated.loop(Animated.sequence([Animated.timing(glow,{toValue:1,duration:2200,useNativeDriver:true}),Animated.timing(glow,{toValue:0.4,duration:2200,useNativeDriver:true})])).start();
   },[profile.pct]);
+
+  useEffect(()=>{
+    const glowLoop=Animated.loop(Animated.sequence([Animated.timing(glow,{toValue:1,duration:2200,useNativeDriver:true}),Animated.timing(glow,{toValue:0.4,duration:2200,useNativeDriver:true})]));
+    glowLoop.start();
+    return ()=>glowLoop.stop();
+  },[]);
   const barW=prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
   const levelStr=`Niveau ${profile.level}`,xpInStr=`${profile.xpInLevel} XP`,xpNextStr=`${profile.xpToNext} → niv. ${profile.level+1}`;
 

@@ -12,6 +12,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from database import get_supabase
+
 logger = logging.getLogger(__name__)
 
 SUPABASE_URL       = os.getenv("SUPABASE_URL", "")
@@ -29,9 +31,15 @@ QUALITY_PROFILES = [
 ]
 
 
-def _supabase():
-    from supabase import create_client
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+def _sb():
+    """
+    Client Supabase partagé (singleton paresseux de database.py) au lieu d'en
+    recréer un (et son pool de connexions httpx sous-jacent) à chaque appel.
+    """
+    sb = get_supabase()
+    if not sb:
+        raise RuntimeError("Client Supabase non initialisé")
+    return sb
 
 
 def create_video_record(
@@ -45,7 +53,7 @@ def create_video_record(
     video_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 
-    sb = _supabase()
+    sb = _sb()
     sb.table("videos").insert({
         "id":               video_id,
         "title":            title,
@@ -66,7 +74,7 @@ def get_presigned_upload_url(video_id: str, filename: str) -> str:
     Return a Supabase presigned URL for direct upload from client.
     The client PUTs the file directly to storage — backend never touches the bytes.
     """
-    sb = _supabase()
+    sb = _sb()
     path = f"originals/{video_id}/{filename}"
     response = sb.storage.from_(STORAGE_BUCKET).create_signed_upload_url(path)
     return response.get("signedURL", "")
@@ -77,7 +85,7 @@ def get_signed_stream_urls(video_id: str) -> list[dict]:
     Return signed streaming URLs for all available quality levels.
     Raises if video not yet transcoded.
     """
-    sb = _supabase()
+    sb = _sb()
     result = sb.table("videos").select("status, qualities").eq("id", video_id).single().execute()
     video = result.data
 
@@ -109,17 +117,18 @@ def get_signed_stream_urls(video_id: str) -> list[dict]:
 
 def mark_video_ready(video_id: str, qualities_written: list[dict]):
     """Called by transcoding worker when all quality levels are encoded."""
-    sb = _supabase()
+    sb = _sb()
     sb.table("videos").update({
-        "status":     "ready",
-        "qualities":  qualities_written,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "status":             "ready",
+        "qualities":          qualities_written,
+        "transcode_progress": 100,
+        "updated_at":         datetime.now(timezone.utc).isoformat(),
     }).eq("id", video_id).execute()
     logger.info(f"Video {video_id} marked ready with {len(qualities_written)} quality levels")
 
 
 def mark_video_failed(video_id: str, reason: str):
-    sb = _supabase()
+    sb = _sb()
     sb.table("videos").update({
         "status":           "failed",
         "transcode_error":  reason[:500],
@@ -127,7 +136,16 @@ def mark_video_failed(video_id: str, reason: str):
     }).eq("id", video_id).execute()
 
 
+def update_transcode_progress(video_id: str, pct: int):
+    """Jalon grossier de progression (0-100), affiché par le polling /upload/{id}/status."""
+    sb = _sb()
+    sb.table("videos").update({
+        "transcode_progress": max(0, min(100, pct)),
+        "updated_at":          datetime.now(timezone.utc).isoformat(),
+    }).eq("id", video_id).execute()
+
+
 def get_video_status(video_id: str) -> dict:
-    sb = _supabase()
+    sb = _sb()
     r = sb.table("videos").select("id, status, transcode_progress, qualities").eq("id", video_id).single().execute()
     return r.data or {}

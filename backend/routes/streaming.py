@@ -6,27 +6,14 @@ Streaming routes:
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from services.drm_service   import create_stream_token, verify_stream_token
 from services.video_storage import get_signed_stream_urls, get_video_status
+from services.auth_helpers  import get_device_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-security = HTTPBearer()
-
-
-# ── Auth helper (re-uses main JWT logic) ────────────────────────
-def _get_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    import jwt, os
-    secret = os.getenv("JWT_SECRET", "universe_secret_key_change_me")
-    try:
-        return jwt.decode(credentials.credentials, secret, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "Token expiré")
-    except jwt.InvalidTokenError:
-        raise HTTPException(401, "Token invalide")
 
 
 class StreamTokenResponse(BaseModel):
@@ -41,9 +28,8 @@ class StreamTokenResponse(BaseModel):
 async def issue_stream_token(
     film_id: str,
     request: Request,
-    user: dict = Depends(_get_user),
+    device_id: str = Depends(get_device_id),
 ):
-    user_id = user.get("sub", "")
     ip_hint = request.client.host if request.client else ""
 
     # Fetch signed stream URLs for all quality levels
@@ -56,7 +42,7 @@ async def issue_stream_token(
         raise HTTPException(500, "Erreur interne du service de streaming")
 
     token_data = create_stream_token(
-        user_id=user_id,
+        user_id=device_id,
         film_id=film_id,
         ip_hint=ip_hint,
         qualities=qualities,
@@ -75,7 +61,7 @@ async def issue_stream_token(
 
 # ── Video processing status ─────────────────────────────────────
 @router.get("/{film_id}/status")
-async def film_status(film_id: str, user: dict = Depends(_get_user)):
+async def film_status(film_id: str, device_id: str = Depends(get_device_id)):
     status = get_video_status(film_id)
     if not status:
         raise HTTPException(404, "Film introuvable")

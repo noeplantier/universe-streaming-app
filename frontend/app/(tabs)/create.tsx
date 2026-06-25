@@ -12,7 +12,7 @@ import { Ionicons }      from '@expo/vector-icons';
 import * as Haptics      from 'expo-haptics';
 import { StatusBar }     from 'expo-status-bar';
 
-import GalaxyBackground from '@/components/social/GalaxyBackground';
+import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import VideoTab         from '@/components/create/VideoTab';
 import CritiqueTab      from '@/components/create/CritiqueTab';
 

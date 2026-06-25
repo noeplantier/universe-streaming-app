@@ -5,30 +5,18 @@ Video upload routes:
   GET  /api/upload/{video_id}/status — polling endpoint for transcoding progress
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from services.video_storage     import create_video_record, get_presigned_upload_url, get_video_status
-from services.transcoding_service import transcode_video
+from services.video_storage       import create_video_record, get_presigned_upload_url, get_video_status
+from services.auth_helpers        import get_device_id
+from worker.tasks                 import transcode_task
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-security = HTTPBearer()
 
 MAX_UPLOAD_SIZE_GB = 10  # guard at API level
-
-
-def _get_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    import jwt, os
-    secret = os.getenv("JWT_SECRET", "universe_secret_key_change_me")
-    try:
-        return jwt.decode(credentials.credentials, secret, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(401, "Token expiré")
-    except jwt.InvalidTokenError:
-        raise HTTPException(401, "Token invalide")
 
 
 # ── Schemas ──────────────────────────────────────────────────────
@@ -54,7 +42,7 @@ class StartTranscodeRequest(BaseModel):
 # ── Routes ──────────────────────────────────────────────────────
 
 @router.post("/init", response_model=InitUploadResponse)
-async def init_upload(body: InitUploadRequest, user: dict = Depends(_get_user)):
+async def init_upload(body: InitUploadRequest, device_id: str = Depends(get_device_id)):
     """
     Step 1: Register video in DB and get a presigned upload URL.
     The client PUT the file directly to Supabase Storage.
@@ -63,7 +51,7 @@ async def init_upload(body: InitUploadRequest, user: dict = Depends(_get_user)):
         record = create_video_record(
             title=body.title,
             description=body.description or "",
-            director_id=user["sub"],
+            director_id=device_id,
             genre=body.genre,
             duration_seconds=body.duration_seconds,
         )
@@ -82,12 +70,14 @@ async def init_upload(body: InitUploadRequest, user: dict = Depends(_get_user)):
 async def start_transcode(
     video_id: str,
     body: StartTranscodeRequest,
-    background_tasks: BackgroundTasks,
-    user: dict = Depends(_get_user),
+    device_id: str = Depends(get_device_id),
 ):
     """
     Step 2: Client tells us upload is done → enqueue transcoding.
-    Transcoding runs in background; client polls /status.
+    Dispatched to the Celery transcoder fleet (worker/tasks.py); client polls /status.
+    Requires Redis + at least one `celery -A worker.celery_app worker -Q transcode`
+    process running (see infrastructure/docker-compose.yml "transcoder" service) —
+    otherwise the task queues silently with no progress.
     """
     status = get_video_status(video_id)
     if not status:
@@ -95,8 +85,7 @@ async def start_transcode(
     if status.get("status") not in ("pending_upload", "failed"):
         raise HTTPException(409, f"État invalide pour transcodage: {status.get('status')}")
 
-    background_tasks.add_task(
-        transcode_video,
+    transcode_task.delay(
         video_id=video_id,
         source_path=body.source_storage_path,
     )
@@ -104,7 +93,7 @@ async def start_transcode(
 
 
 @router.get("/{video_id}/status")
-async def upload_status(video_id: str, user: dict = Depends(_get_user)):
+async def upload_status(video_id: str, device_id: str = Depends(get_device_id)):
     """Step 3: Poll transcoding progress."""
     status = get_video_status(video_id)
     if not status:

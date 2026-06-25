@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Image, StyleSheet, View } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Image, type ImageContentFit } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { G, W } from './theme';
@@ -10,6 +11,12 @@ interface Props {
   resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
   fallbackColors?: readonly [string, string];
 }
+
+// expo-image utilise contentFit (pas resizeMode) — mapping direct depuis
+// l'ancienne API react-native Image pour ne rien changer côté appelants.
+const CONTENT_FIT: Record<NonNullable<Props['resizeMode']>, ImageContentFit> = {
+  cover: 'cover', contain: 'contain', stretch: 'fill', center: 'none',
+};
 
 export const ImageWithFallback = memo(function ImageWithFallback({
   uri,
@@ -48,7 +55,8 @@ export const ImageWithFallback = memo(function ImageWithFallback({
         <Image
           source={{ uri }}
           style={[StyleSheet.absoluteFillObject, { opacity: state === 'loaded' ? 1 : 0 }]}
-          resizeMode={resizeMode}
+          contentFit={CONTENT_FIT[resizeMode]}
+          cachePolicy="memory-disk"
           onLoad={() => setState('loaded')}
           onError={handleError}
         />

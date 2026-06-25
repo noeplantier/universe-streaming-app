@@ -19,7 +19,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics     from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase }     from '@/lib/supabase';
-import GalaxyBackground from '@/components/social/GalaxyBackground';
+import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import { getDeviceId }  from '@/services/api';
 
 // SecureStore — natif seulement
