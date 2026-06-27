@@ -199,18 +199,21 @@ export const FALLBACK_CHALLENGE:WeeklyChallenge={
 // ═════════════════════════════════════════════════════════════════════════════
 // HOOKS
 // ═════════════════════════════════════════════════════════════════════════════
-export function useGamification(userId:string, works:Work[]=[]): GamiState {
+export function useGamification(userId:string, works:Work[]=[], opts?:{skipBadges?:boolean}): GamiState {
   const[profile,setProfile]=useState<GamiProfile>({xp:0,level:1,title:TITLES[0],streak_days:0,xpToNext:100,xpInLevel:0,pct:0,contribution_score:0});
   const[badges,setBadges]=useState<GamiBadge[]>([]);
   const[loading,setLoading]=useState(true);
+  const skipBadges=!!opts?.skipBadges;
 
   useEffect(()=>{
     if(!isValidUUID(userId)){setLoading(false);return;}
     let dead=false;
+    // ★ skipBadges — évite 2 requêtes (badges, user_badges) pour les écrans
+    // qui n'affichent que xp/niveau/titre (ex: edit.tsx) sans liste de badges.
     Promise.all([
       supabase.from('cinephile_profiles').select('xp,level,title,streak_days,contribution_score').eq('user_id',userId).maybeSingle(),
-      supabase.from('badges').select('id,label,description,icon,rarity,xp_reward,is_hidden').eq('is_hidden',false),
-      supabase.from('user_badges').select('badge_id,earned_at').eq('user_id',userId),
+      skipBadges?Promise.resolve({data:null}):supabase.from('badges').select('id,label,description,icon,rarity,xp_reward,is_hidden').eq('is_hidden',false),
+      skipBadges?Promise.resolve({data:null}):supabase.from('user_badges').select('badge_id,earned_at').eq('user_id',userId),
     ]).then(([profR,badgesR,earnedR])=>{
       if(dead)return;
       if(profR.data){
@@ -218,16 +221,18 @@ export function useGamification(userId:string, works:Work[]=[]): GamiState {
         const lvl=xpToLevel(xp);
         setProfile({xp,level:level??lvl.level,title:title??TITLES[lvl.level-1],streak_days,contribution_score:contribution_score??0,...lvl});
       } else {
-        supabase.from('cinephile_profiles').upsert({user_id:userId,xp:0},{onConflict:'user_id'}).catch(()=>{});
+        supabase.from('cinephile_profiles').upsert({user_id:userId,xp:0},{onConflict:'user_id'}).then(()=>{},()=>{});
       }
-      const earnedMap=new Map<string,string>((earnedR.data??[]).map((r:any)=>[r.badge_id,r.earned_at]));
-      const dbBadges=(badgesR.data??[]).map((b:any)=>({...b,earned:earnedMap.has(b.id),earned_at:earnedMap.get(b.id)??undefined})) as GamiBadge[];
-      const merged=dbBadges.length>0?dbBadges:CINEPHILE_BADGES_CATALOG.map(b=>({...b,earned:earnedMap.has(b.id),earned_at:earnedMap.get(b.id)})) as GamiBadge[];
-      setBadges(merged);
+      if(!skipBadges){
+        const earnedMap=new Map<string,string>((earnedR.data??[]).map((r:any)=>[r.badge_id,r.earned_at]));
+        const dbBadges=(badgesR.data??[]).map((b:any)=>({...b,earned:earnedMap.has(b.id),earned_at:earnedMap.get(b.id)??undefined})) as GamiBadge[];
+        const merged=dbBadges.length>0?dbBadges:CINEPHILE_BADGES_CATALOG.map(b=>({...b,earned:earnedMap.has(b.id),earned_at:earnedMap.get(b.id)})) as GamiBadge[];
+        setBadges(merged);
+      }
       setLoading(false);
     }).catch(()=>{if(!dead)setLoading(false);});
     return()=>{dead=true;};
-  },[userId]);
+  },[userId,skipBadges]);
 
   const earnedBadges  = useMemo(()=>badges.filter(b=>b.earned),[badges]);
   const pendingBadges = useMemo(()=>badges.filter(b=>!b.earned),[badges]);
@@ -661,7 +666,6 @@ export const XPBar = memo(function XPBar({profile,compact=false}:{profile:GamiPr
     <View style={xb.wrap}>
       <BlurView intensity={Platform.OS==='ios'?14:10} tint="dark" style={StyleSheet.absoluteFillObject}/>
       <View style={{flexDirection:'row',alignItems:'center',gap:14}}>
-        <Animated.View style={[xb.glowRing,{opacity:glow}]}/>
         <View style={xb.circle}><Text style={xb.lvlBig}>{profile.level}</Text><Text style={xb.lvlLbl}>NIV</Text></View>
         <View style={{flex:1,gap:7}}>
           <View style={{flexDirection:'row',alignItems:'center',gap:8}}>

@@ -27,7 +27,8 @@ import { BlurView }      from 'expo-blur';
 import { Ionicons }      from '@expo/vector-icons';
 import * as ImagePicker  from 'expo-image-picker';
 import * as Haptics      from 'expo-haptics';
-import { supabase }      from '@/lib/supabase';
+import { supabase, SUPABASE_ANON } from '@/lib/supabase';
+import { getDeviceId }   from '@/services/api';
 
 // ─── expo-video-thumbnails : bonus non-bloquant ───────────────────────────────
 let VideoThumbnails: any = null;
@@ -42,6 +43,10 @@ const BUCKET       = 'community-images';
 const SUPABASE_URL = 'https://knrzbdqfflobfjdmqyte.supabase.co';
 const BANNER_TTL   = 7_000;
 const MAX_DUR_S    = 180;
+// Au-delà, l'endpoint d'upload standard Supabase (non-resumable) rejette la
+// requête — limite plateforme, pas configurable depuis le frontend. Mieux
+// vaut prévenir avant un upload voué à échouer que laisser un 400 muet.
+const MAX_FILE_MB  = 90;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -94,6 +99,10 @@ interface VideoAsset {
   fileSize?: number | null;
   duration?: number | null;   // ms (expo-image-picker)
   mimeType?: string | null;
+  // ★ Web uniquement — le File réel, gardé tel quel (déjà un Blob) pour
+  // l'upload. Évite tout re-fetch('blob:…') qui peut échouer en silence
+  // selon le navigateur (cf. l'erreur FileReader historique de ce flux).
+  webBlob?:  Blob | null;
 }
 interface Form {
   title:    string;
@@ -116,19 +125,51 @@ const fmtDur = (ms?: number | null) => {
   return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
 };
 
+// ★ Fallback MIME par extension — file.type est souvent vide pour .mov côté
+// navigateur (aucune entrée native dans la table de types web).
+const VIDEO_MIME_BY_EXT: Record<string,string> = {
+  mp4:'video/mp4', mov:'video/quicktime', webm:'video/webm',
+  mkv:'video/x-matroska', avi:'video/x-msvideo', m4v:'video/x-m4v',
+};
+const mimeFromExt = (fileName: string) =>
+  VIDEO_MIME_BY_EXT[fileName.split('.').pop()?.toLowerCase() ?? ''] ?? 'video/mp4';
+
+const oversizeMsg = (bytes?: number | null) =>
+  bytes != null && bytes > MAX_FILE_MB * 1_000_000
+    ? `Vidéo trop volumineuse (${(bytes/1e6).toFixed(0)} Mo) — ${MAX_FILE_MB} Mo maximum. Réduis la résolution ou la durée et réessaie.`
+    : null;
+
+// Fallback uniquement pour les URI natives (file://) — jamais utilisé sur web
+// quand un Blob a déjà été capturé à la sélection.
+async function resolveBlob(uri: string): Promise<Blob> {
+  const r = await fetch(uri);
+  return r.blob();
+}
+
 async function uploadXHR(
   path: string, blob: Blob, mime: string,
   onProgress: (p: number) => void,
 ): Promise<void> {
-  const { data:{ session } } = await supabase.auth.getSession();
+  // ★ ZERO supabase.auth.* — la clé anon (RLS-protégée côté storage, déjà
+  // utilisée avec succès par ComposeModal::uploadImage sur ce même bucket
+  // community-images) sert de Bearer, jamais un token de session inexistant.
   return new Promise((res, rej) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`);
-    xhr.setRequestHeader('Authorization', `Bearer ${session?.access_token ?? ''}`);
+    xhr.setRequestHeader('apikey', SUPABASE_ANON);
+    xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_ANON}`);
     xhr.setRequestHeader('Content-Type', mime);
     xhr.setRequestHeader('x-upsert', 'true');
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total * 100); };
-    xhr.onload  = () => xhr.status < 300 ? res() : rej(new Error(`HTTP ${xhr.status}`));
+    // ★ Le message exact de Supabase (ex: "exceeded the maximum allowed size",
+    // "mime type not supported", policy RLS…) est dans le corps de la réponse,
+    // jamais dans le seul status code — sans ça, tout échec reste un 400 muet.
+    xhr.onload  = () => {
+      if (xhr.status < 300) { res(); return; }
+      let detail = xhr.responseText || `HTTP ${xhr.status}`;
+      try { detail = JSON.parse(xhr.responseText)?.message ?? detail; } catch {}
+      rej(new Error(detail));
+    };
     xhr.onerror = () => rej(new Error('Erreur réseau'));
     xhr.send(blob);
   });
@@ -367,6 +408,7 @@ const VideoTab = memo(function VideoTab() {
   // ── State ─────────────────────────────────────────────────────────────────
   const [video,       setVideo]       = useState<VideoAsset | null>(null);
   const [thumbUri,    setThumbUri]    = useState<string | null>(null);
+  const [thumbBlob,   setThumbBlob]   = useState<Blob | null>(null); // web uniquement
   const [autoLoading, setAutoLoading] = useState(false);
   const [form,        setForm]        = useState<Form>(EMPTY);
   const [uploading,   setUploading]   = useState(false);
@@ -395,7 +437,7 @@ const VideoTab = memo(function VideoTab() {
 
   // ── Reset ─────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
-    setVideo(null); setThumbUri(null); setForm(EMPTY);
+    setVideo(null); setThumbUri(null); setThumbBlob(null); setForm(EMPTY);
     setError(null); setPhase(''); progAnim.setValue(0);
     scrollRef.current?.scrollTo({ y:0, animated:true });
   }, [progAnim]);
@@ -431,6 +473,23 @@ const VideoTab = memo(function VideoTab() {
   // ★ SÉLECTION MINIATURE DEPUIS LA GALERIE (toujours opérationnelle)
   // ─────────────────────────────────────────────────────────────────────────
   const pickThumbnail = useCallback(async () => {
+    // ★ FIX FileReader — expo-image-picker passe par FileReader.readAsDataURL()
+    // sur web, qui échoue de façon imprévisible sur certains fichiers (HEIC,
+    // photos iCloud non téléchargées localement…) avec "Failed to read the
+    // selected media". Même bypass que app/(tabs)/edit.tsx::handlePickAvatar —
+    // <input type="file"> + URL.createObjectURL(), jamais de FileReader.
+    if (Platform.OS === 'web') {
+      if (typeof document === 'undefined') return;
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*';
+      input.onchange = (e: any) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        setThumbUri(URL.createObjectURL(file));
+        setThumbBlob(file); // ★ Blob réel gardé — jamais de re-fetch('blob:…') au submit
+      };
+      input.click();
+      return;
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission requise', 'Active l\'accès à la galerie dans les réglages.');
@@ -444,13 +503,48 @@ const VideoTab = memo(function VideoTab() {
     });
     if (result.canceled || !result.assets?.[0]) return;
     setThumbUri(result.assets[0].uri);
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{});
+    setThumbBlob(null); // natif — pas de Blob web, submit() refera un fetch(file://…)
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{});
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
   // SÉLECTION VIDÉO — galerie
   // ─────────────────────────────────────────────────────────────────────────
   const pickGallery = useCallback(async () => {
+    // ★ FIX FileReader — même bypass que pickThumbnail/edit.tsx : ImagePicker
+    // sur web lit le fichier via FileReader.readAsDataURL(), qui échoue
+    // ("Failed to read the selected media") sur des vidéos volumineuses ou
+    // certains formats. Un <input type="file"> + URL.createObjectURL() lit
+    // le fichier directement, sans jamais passer par FileReader.
+    if (Platform.OS === 'web') {
+      if (typeof document === 'undefined') return;
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'video/*';
+      input.onchange = (e: any) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        const sizeErr = oversizeMsg(file.size);
+        if (sizeErr) { setError(sizeErr); return; }
+        const uri = URL.createObjectURL(file);
+        const fileName = file.name || 'video.mp4';
+        const asset: VideoAsset = {
+          uri,
+          fileName,
+          fileSize: file.size,
+          duration: null,
+          // ★ file.type est souvent vide pour .mov dans les navigateurs (pas de
+          // mapping MIME natif) — sans fallback par extension, le Content-Type
+          // envoyé au storage ne correspond plus au fichier réel et le bucket
+          // rejette l'upload avec un 400.
+          mimeType: file.type || mimeFromExt(fileName),
+          webBlob: file, // ★ Blob réel gardé — jamais de re-fetch('blob:…') au submit
+        };
+        setVideo(asset); setError(null);
+        tryAutoThumb(uri, null);
+        setTimeout(() => scrollRef.current?.scrollTo({ y:280, animated:true }), 350);
+      };
+      input.click();
+      return;
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permission requise', 'Active la galerie dans les réglages.'); return;
@@ -464,6 +558,8 @@ const VideoTab = memo(function VideoTab() {
     });
     if (result.canceled || !result.assets?.[0]) return;
     const a = result.assets[0];
+    const sizeErr = oversizeMsg(a.fileSize);
+    if (sizeErr) { setError(sizeErr); return; }
     const asset: VideoAsset = {
       uri:      a.uri,
       fileName: a.fileName ?? a.uri.split('/').pop() ?? 'video.mp4',
@@ -494,6 +590,8 @@ const VideoTab = memo(function VideoTab() {
       });
       if (result.canceled || !result.assets?.[0]) return;
       const a = result.assets[0];
+      const sizeErr = oversizeMsg(a.fileSize);
+      if (sizeErr) { setError(sizeErr); return; }
       const asset: VideoAsset = {
         uri:      a.uri,
         fileName: a.fileName ?? `record_${Date.now()}.mp4`,
@@ -528,30 +626,39 @@ const VideoTab = memo(function VideoTab() {
     if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{});
 
     try {
-      // Auth
-      const { data:{ user }, error:authErr } = await supabase.auth.getUser();
-      if (authErr || !user) throw new Error('Non connecté. Reconnecte-toi et réessaie.');
+      // ★ ZERO supabase.auth.* — identité via getDeviceId(), comme partout
+      // ailleurs dans l'app (CritiqueTab, profile, edit…). L'import vidéo ne
+      // doit jamais exiger une connexion.
+      const userId = await getDeviceId();
 
       const ts       = Date.now();
       const ext      = (video.fileName ?? 'video.mp4').split('.').pop() ?? 'mp4';
-      const vidPath  = `reels/${user.id}/${ts}.${ext}`;
-      const thPath   = `reels/${user.id}/${ts}_thumb.jpg`;
+      // ★ Préfixe "posts/" — c'est le seul préfixe de community-images confirmé
+      // accepter des écritures anonymes (ComposeModal::uploadImage l'utilise
+      // avec succès, zéro session). "reels/" exigeait jusqu'ici une vraie
+      // session (supabase.auth.getUser()) — la policy storage associée n'a
+      // probablement jamais été ouverte à l'anon, d'où le 400 systématique
+      // une fois l'auth retirée côté frontend.
+      const vidPath  = `posts/${userId}_reel_${ts}.${ext}`;
+      const thPath   = `posts/${userId}_reel_${ts}_thumb.jpg`;
 
       // ── A. Upload miniature (~8 % de la progression) ───────────────────
+      // ★ Préfère le Blob déjà en main (web) — un fetch('blob:…') peut être
+      // lu en interne via FileReader selon le runtime et échouer en silence.
       setPhase('Miniature…');
-      const thResp = await fetch(thumbUri);
-      const thBlob = await thResp.blob();
-      await uploadXHR(thPath, thBlob, 'image/jpeg', p => animProg(2 + p * 0.06));
+      const thBlob = thumbBlob ?? await resolveBlob(thumbUri);
+      await uploadXHR(thPath, thBlob, thBlob.type || 'image/jpeg', p => animProg(2 + p * 0.06));
 
       const { data:thUrl } = supabase.storage.from(BUCKET).getPublicUrl(thPath);
       if (!thUrl?.publicUrl) throw new Error('URL miniature introuvable — vérifie que le bucket est public.');
       animProg(10);
 
       // ── B. Upload vidéo (10 → 90 %) ────────────────────────────────────
+      // ★ Même principe que la miniature — Blob déjà en main sur web, jamais
+      // de re-fetch('blob:…') qui peut déclencher l'erreur FileReader.
       setPhase('Vidéo en cours…');
-      const vidResp = await fetch(video.uri);
-      const vidBlob = await vidResp.blob();
-      await uploadXHR(vidPath, vidBlob, video.mimeType ?? 'video/mp4', p => animProg(10 + p * 0.80));
+      const vidBlob = video.webBlob ?? await resolveBlob(video.uri);
+      await uploadXHR(vidPath, vidBlob, video.mimeType || mimeFromExt(vidPath), p => animProg(10 + p * 0.80));
 
       animProg(92);
       setPhase('Enregistrement…');
@@ -563,7 +670,7 @@ const VideoTab = memo(function VideoTab() {
       // Les triggers tg_notif_reel_submitted et tg_reel_pending se déclenchent
       // automatiquement et notifient le backoffice universe-admin.
       const { error:insErr } = await supabase.from('reels').insert({
-        user_id:       user.id,
+        user_id:       userId,
         video_url:     vidUrl.publicUrl,
         thumbnail_url: thUrl.publicUrl,
         title:         form.title.trim()    || null,
@@ -592,7 +699,7 @@ const VideoTab = memo(function VideoTab() {
     } finally {
       setUploading(false);
     }
-  }, [video, thumbUri, form, animProg, triggerBanner, reset]);
+  }, [video, thumbUri, thumbBlob, form, animProg, triggerBanner, reset]);
 
   // ── Booleans dérivés ──────────────────────────────────────────────────────
   const canSubmit = useMemo(

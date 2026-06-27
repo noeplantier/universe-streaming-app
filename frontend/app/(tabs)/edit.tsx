@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase }     from '@/lib/supabase';
 import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import { getDeviceId }  from '@/services/api';
+import { useGamification, type GamiProfile } from '@/contexts/GamificationSystem';
 
 // SecureStore — natif seulement
 const SecureStore: any = Platform.select({
@@ -60,52 +61,24 @@ const ROLES = [
 ];
 const GENRES    = ['Drame','Thriller','Science-Fiction','Documentaire','Animation','Court-métrage','Expérimental','Biopic','Horreur','Comédie','Romance','Action','Fantastique','Policier','Musical','Essai'];
 const COLLABS   = ['Co-réalisation','Casting','Co-production','Scénarisation','Montage','Composition musicale','Direction photo','Distribution','Mentorat','Projection festival','Écriture'];
-const FESTIVALS = ['Cannes','Sundance','Berlin','Tribeca','SXSW','Toronto (TIFF)','Venise','Annecy','Hot Docs','Clermont-Ferrand','Rotterdam (IFFR)','AFI Fest','New York (NYFF)','Sarajevo'];
-const PROFILE_SELECT = 'display_name,username,bio,role,location,equipment,specialties,open_to,festivals,notable_works,is_industry_contact,is_pro,contact_email,website,social_instagram,social_vimeo,social_youtube,social_imdb,avatar_url';
+const PROFILE_SELECT = 'display_name,username,bio,role,location,equipment,specialties,open_to,notable_works,is_industry_contact,is_pro,contact_email,website,social_instagram,social_vimeo,social_youtube,social_imdb,avatar_url';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface NotableWork { id:string; title:string; year:string; role:string; url:string }
 interface ProfileForm {
   display_name:string; username:string; bio:string; role:string; location:string;
-  equipment:string; specialties:string[]; open_to:string[]; festivals:string[];
+  equipment:string; specialties:string[]; open_to:string[];
   notable_works:NotableWork[]; is_industry_contact:boolean; is_pro:boolean;
   contact_email:string; website:string; social_instagram:string;
   social_vimeo:string; social_youtube:string; social_imdb:string;
 }
 const EMPTY: ProfileForm = {
-  display_name:'', username:'', bio:'', role:'creator', location:'',
-  equipment:'', specialties:[], open_to:[], festivals:[], notable_works:[],
+  display_name:'', username:'', bio:'', role:'', location:'',
+  equipment:'', specialties:[], open_to:[], notable_works:[],
   is_industry_contact:false, is_pro:false, contact_email:'', website:'',
   social_instagram:'', social_vimeo:'', social_youtube:'', social_imdb:'',
 };
 type Section = 'identity'|'cinema'|'network';
-
-// ─── Gamification ─────────────────────────────────────────────────────────────
-function cinephileLevel(s:number):{n:number;label:string;pct:number;nextAt:number} {
-  const L = [
-    {at:0,  n:1, l:'Spectateur curieux'  },
-    {at:50, n:2, l:'Explorateur indé'    },
-    {at:150,n:3, l:'Critique amateur'    },
-    {at:400,n:4, l:'Curateur underground'},
-    {at:900,n:5, l:'Ambassadeur cinéma'  },
-  ];
-  const cur = [...L].reverse().find(x => s >= x.at) ?? L[0];
-  const ni  = L.findIndex(x => x.n === cur.n) + 1;
-  const nxt = L[ni] ?? L[L.length-1];
-  return { n:cur.n, label:cur.l, pct:cur.n===5?1:Math.min(1,(s-cur.at)/(nxt.at-cur.at)), nextAt:nxt.at };
-}
-function useGamification(uid:string) {
-  const [sc, setSc] = useState(0);
-  useEffect(() => {
-    if (!uid) return;
-    Promise.all([
-      supabase.from('user_history').select('work_id',{count:'exact',head:true}).eq('user_id',uid),
-      supabase.from('critiques').select('id',{count:'exact',head:true}).eq('user_id',uid),
-      supabase.from('user_favorites').select('work_id',{count:'exact',head:true}).eq('user_id',uid),
-    ]).then(([h,c,f]) => setSc((h.count??0)*3+(c.count??0)*8+(f.count??0)*2)).catch(()=>{});
-  }, [uid]);
-  return { score:sc, level:cinephileLevel(sc) };
-}
 
 // ─── DB ───────────────────────────────────────────────────────────────────────
 const genId      = () => Math.random().toString(36).slice(2,9);
@@ -280,8 +253,8 @@ const Toggle = memo(function Toggle({label,subtitle,value,onChange}:{label:strin
   );
 });
 
-const Chips = memo(({items,selected,onToggle}:{items:string[];selected:string[];onToggle:(v:string)=>void}) => (
-  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,paddingHorizontal:PAD}}>
+const Chips = memo(({items,selected,onToggle,px=PAD}:{items:string[];selected:string[];onToggle:(v:string)=>void;px?:number}) => (
+  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,paddingHorizontal:px}}>
     {items.map(item => {
       const on = selected.includes(item);
       return (
@@ -291,6 +264,7 @@ const Chips = memo(({items,selected,onToggle}:{items:string[];selected:string[];
         </TouchableOpacity>
       );
     })}
+    {items.length===0 && <Text style={{color:C.muted,fontSize:11,paddingVertical:6}}>Aucun résultat</Text>}
   </View>
 ));
 const chp = StyleSheet.create({
@@ -298,6 +272,60 @@ const chp = StyleSheet.create({
   pillOn:{backgroundColor:C.white,borderColor:C.white},
   txt:   {color:C.muted,fontSize:12,fontWeight:'500'},
   txtOn: {color:C.bg,fontWeight:'700'},
+});
+
+// ─── Smart Select — liste déroulante au click, recherche si liste longue ──────
+const SmartSelect = memo(function SmartSelect({label,items,selected,onToggle,required,error}:{
+  label:string; items:string[]; selected:string[]; onToggle:(v:string)=>void;
+  required?:boolean; error?:string|null;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q,    setQ]    = useState('');
+  const rot = useRef(new Animated.Value(0)).current;
+  const toggleOpen = () => {
+    Animated.spring(rot,{toValue:open?0:1,tension:80,friction:10,useNativeDriver:true}).start();
+    if (open) setQ('');
+    setOpen(v=>!v);
+  };
+  const filtered = useMemo(() => q.trim() ? items.filter(i=>i.toLowerCase().includes(q.trim().toLowerCase())) : items, [items,q]);
+  const summary  = selected.length===0 ? 'Aucun sélectionné'
+    : selected.length<=2 ? selected.join(', ')
+    : `${selected[0]}, ${selected[1]} +${selected.length-2}`;
+  const borderColor = error ? C.error : open ? C.borderHi : C.border;
+  return (
+    <View style={{marginHorizontal:PAD,marginBottom:14,borderRadius:14,borderWidth:StyleSheet.hairlineWidth,borderColor,backgroundColor:C.glass,overflow:'hidden'}}>
+      <TouchableOpacity onPress={toggleOpen} activeOpacity={0.80} style={{flexDirection:'row',alignItems:'center',gap:11,padding:14}}>
+        <View style={{flex:1,gap:3}}>
+          <View style={{flexDirection:'row',alignItems:'center',gap:5}}>
+            <Text style={{color:C.white,fontSize:11,fontWeight:'700',letterSpacing:1.2,textTransform:'uppercase'}}>{label}</Text>
+            {!!required && <Text style={{color:C.error,fontSize:12,fontWeight:'700'}}>*</Text>}
+          </View>
+          <Text style={{color:selected.length?C.offWhite:C.muted,fontSize:12.5}} numberOfLines={1}>{summary}</Text>
+        </View>
+        {selected.length>0 && (
+          <View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.glassHi,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}>
+            <Text style={{color:C.muted,fontSize:10,fontWeight:'700'}}>{selected.length}</Text>
+          </View>
+        )}
+        <Animated.View style={{transform:[{rotate:rot.interpolate({inputRange:[0,1],outputRange:['0deg','180deg']})}]}}>
+          <Ionicons name="chevron-down" size={15} color={C.muted}/>
+        </Animated.View>
+      </TouchableOpacity>
+      {open && (
+        <View style={{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.border,paddingTop:12,paddingBottom:6}}>
+          {items.length>8 && (
+            <View style={{flexDirection:'row',alignItems:'center',gap:8,marginHorizontal:12,marginBottom:10,paddingHorizontal:11,height:36,borderRadius:10,backgroundColor:'rgba(255,255,255,0.04)',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}>
+              <Ionicons name="search-outline" size={12} color={C.muted}/>
+              <TextInput style={{flex:1,color:C.white,fontSize:12}} value={q} onChangeText={setQ} placeholder="Filtrer…" placeholderTextColor="rgba(255,255,255,0.20)" autoCorrect={false} autoCapitalize="none"/>
+              {q.length>0 && <TouchableOpacity onPress={()=>setQ('')}><Ionicons name="close-circle" size={13} color={C.muted}/></TouchableOpacity>}
+            </View>
+          )}
+          <Chips items={filtered} selected={selected} onToggle={onToggle} px={12}/>
+        </View>
+      )}
+      {!!error && <Text style={{color:C.error,fontSize:11,paddingHorizontal:14,paddingBottom:12}}>{error}</Text>}
+    </View>
+  );
 });
 
 const RoleGrid = memo(({selected,onChange}:{selected:string;onChange:(v:string)=>void}) => (
@@ -373,7 +401,7 @@ const TabNav = memo(({active,onChange}:{active:Section;onChange:(s:Section)=>voi
 });
 
 // ─── Avatar Preview ───────────────────────────────────────────────────────────
-const AvatarPreview = memo(({name,url,level,isPro,loading,onPress}:{name:string;url:string;level:number;isPro:boolean;loading:boolean;onPress:()=>void}) => {
+const AvatarPreview = memo(({name,url,isPro,loading,onPress}:{name:string;url:string;isPro:boolean;loading:boolean;onPress:()=>void}) => {
   const init = useMemo(() => (name||'?').trim().split(/\s+/).map(n=>n[0]).join('').toUpperCase().slice(0,2),[name]);
   const [err,setErr] = useState(false);
   useEffect(() => setErr(false),[url]);
@@ -381,7 +409,6 @@ const AvatarPreview = memo(({name,url,level,isPro,loading,onPress}:{name:string;
   // ★ Textes définis avant le JSX — pas de mixing dans View
   const photoLabel  = hasAvatar ? 'Photo de profil active' : 'Monogramme — ajoutez une photo';
   const actionLabel = hasAvatar ? 'Changer la photo' : 'Ajouter une photo';
-  const levelStr    = String(level);
   return (
     <View style={{flexDirection:'row',alignItems:'center',gap:20,paddingHorizontal:PAD,paddingVertical:22}}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={{position:'relative'}}>
@@ -390,9 +417,6 @@ const AvatarPreview = memo(({name,url,level,isPro,loading,onPress}:{name:string;
             ? <Image source={{uri:url}} style={{width:80,height:80}} resizeMode="cover" onError={()=>setErr(true)}/>
             : <View style={{flex:1,alignItems:'center',justifyContent:'center'}}><Text style={{color:C.white,fontSize:26,fontWeight:'900',letterSpacing:-0.5}}>{init}</Text></View>
           }
-        </View>
-        <View style={{position:'absolute',top:-4,right:-4,width:22,height:22,borderRadius:11,backgroundColor:C.navyMid,borderWidth:1.5,borderColor:C.border,alignItems:'center',justifyContent:'center'}}>
-          <Text style={{color:C.white,fontSize:9,fontWeight:'900'}}>{levelStr}</Text>
         </View>
         {isPro && (
           <View style={{position:'absolute',bottom:0,right:0,width:20,height:20,borderRadius:10,backgroundColor:C.navyMid,borderWidth:1.5,borderColor:'rgba(255,255,255,0.28)',alignItems:'center',justifyContent:'center'}}>
@@ -417,40 +441,24 @@ const AvatarPreview = memo(({name,url,level,isPro,loading,onPress}:{name:string;
   );
 });
 
-// ─── Gamification Banner ──────────────────────────────────────────────────────
-const GamiBanner = memo(({level,score}:{level:{n:number;label:string;pct:number;nextAt:number};score:number}) => {
+// ─── Level Preview — lecture seule, intrinsèquement liée à GamificationSystem ─
+const LevelPreview = memo(({profile}:{profile:GamiProfile}) => {
   const prog = useRef(new Animated.Value(0)).current;
-  useEffect(()=>{Animated.timing(prog,{toValue:level.pct,duration:900,useNativeDriver:false}).start();},[level.pct]);
+  useEffect(()=>{Animated.timing(prog,{toValue:profile.pct,duration:900,useNativeDriver:false}).start();},[profile.pct]);
   const barWidth = prog.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
-  // ★ Toutes les valeurs numériques pré-calculées comme strings (fix text node)
-  const levelStr   = `Niveau ${level.n}`;
-  const scoreStr   = `${score} pts`;
-  const ptsToNext  = Math.max(0, level.nextAt - score);
-  const nextLabel  = `${ptsToNext} pts pour le niveau suivant`;
+  const levelStr = `Niveau ${profile.level}`;
   return (
-    <View style={{marginHorizontal:PAD,marginBottom:20,padding:14,borderRadius:14,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.glass}}>
-      <View style={{flexDirection:'row',alignItems:'center',gap:12}}>
-        <View style={{width:42,height:42,borderRadius:21,borderWidth:1.5,borderColor:C.border,backgroundColor:C.navyMid,alignItems:'center',justifyContent:'center'}}>
-          <Text style={{color:C.white,fontSize:14,fontWeight:'900'}}>{level.n}</Text>
-        </View>
-        <View style={{flex:1,gap:5}}>
-          <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
-            <Text style={{color:C.white,fontSize:12,fontWeight:'700',flex:1}}>{level.label}</Text>
-            <View style={{paddingHorizontal:8,paddingVertical:2,borderRadius:8,backgroundColor:C.glass,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}>
-              <Text style={{color:C.muted,fontSize:10,fontWeight:'700'}}>{scoreStr}</Text>
-            </View>
-          </View>
-          <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
-            <Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{levelStr}</Text>
-          </View>
-          <View style={{height:3,borderRadius:2,backgroundColor:'rgba(255,255,255,0.07)',overflow:'hidden'}}>
-            <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:C.white,width:barWidth}}/>
-          </View>
-          {level.n < 5 && (
-            <Text style={{color:C.muted,fontSize:10}}>{nextLabel}</Text>
-          )}
+    <View style={{flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:PAD,paddingVertical:14}}>
+      <View style={{width:38,height:38,borderRadius:19,borderWidth:1.5,borderColor:C.border,backgroundColor:C.navyMid,alignItems:'center',justifyContent:'center'}}>
+        <Text style={{color:C.white,fontSize:13,fontWeight:'900'}}>{profile.level}</Text>
+      </View>
+      <View style={{flex:1,gap:4}}>
+        <Text style={{color:C.white,fontSize:12,fontWeight:'700'}} numberOfLines={1}>{profile.title}</Text>
+        <View style={{height:3,borderRadius:2,backgroundColor:'rgba(255,255,255,0.07)',overflow:'hidden'}}>
+          <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:C.white,width:barWidth}}/>
         </View>
       </View>
+      <Text style={{color:C.muted,fontSize:9,fontWeight:'700'}}>{levelStr}</Text>
     </View>
   );
 });
@@ -467,6 +475,7 @@ export default function EditProfileScreen() {
   const [errors,     setErrors]   = useState<Partial<Record<keyof ProfileForm,string>>>({});
   const [section,    setSection]  = useState<Section>('identity');
   const [savedOk,    setSavedOk]  = useState(false);
+  const [showLevelOnProfile, setShowLevelOnProfile] = useState(true);
 
   const shakeX      = useRef(new Animated.Value(0)).current;
   const successFade = useRef(new Animated.Value(0)).current;
@@ -477,7 +486,8 @@ export default function EditProfileScreen() {
   formRef.current   = form;
   uidRef.current    = userId;
 
-  const { score, level } = useGamification(userId);
+  // ★ Niveau réel — intrinsèquement lié à GamificationSystem (cinephile_profiles)
+  const { profile: gamiProfile } = useGamification(userId, [], { skipBadges:true });
 
   // ── Init UUID device ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -500,6 +510,28 @@ export default function EditProfileScreen() {
     return () => { alive = false; };
   }, [userId]);
 
+  // ── Préférence "Afficher mon niveau sur mon profil" ──────────────────────
+  useEffect(() => {
+    if (!userId) return;
+    supabase.from('user_preferences').select('show_level_on_profile').eq('user_id',userId).maybeSingle()
+      .then(
+        ({data,error}) => {
+          if (error) { console.error('[edit] lecture show_level_on_profile:', error.message); return; }
+          setShowLevelOnProfile(data?.show_level_on_profile ?? true);
+        },
+        (e) => console.error('[edit] lecture show_level_on_profile:', e),
+      );
+  }, [userId]);
+
+  const toggleShowLevel = useCallback((v:boolean) => {
+    setShowLevelOnProfile(v);
+    if (!userId) return;
+    supabase.from('user_preferences').upsert({user_id:userId, show_level_on_profile:v}, {onConflict:'user_id'}).then(
+      ({error}) => { if (error) console.error('[edit] écriture show_level_on_profile:', error.message); },
+      (e) => console.error('[edit] écriture show_level_on_profile:', e),
+    );
+  }, [userId]);
+
   // ── Auto-save ─────────────────────────────────────────────────────────────
   const autoSave = useCallback(() => {
     clearTimeout(debounce.current);
@@ -515,7 +547,7 @@ export default function EditProfileScreen() {
     autoSave();
   }, [autoSave]);
 
-  const toggleArr = useCallback((key:'specialties'|'open_to'|'festivals', item:string) => {
+  const toggleArr = useCallback((key:'specialties'|'open_to', item:string) => {
     setForm(p => { const arr=p[key] as string[]; return {...p,[key]:arr.includes(item)?arr.filter(x=>x!==item):[...arr,item]}; });
     autoSave();
   }, [autoSave]);
@@ -569,10 +601,13 @@ export default function EditProfileScreen() {
   const validate = useCallback(():boolean => {
     const e:Partial<Record<keyof ProfileForm,string>> = {};
     const ue = validateUsername(form.username); if (ue) e.username=ue;
-    if (!validUrl(form.website))       e.website='URL invalide (https://…)';
+    if (!form.role)                      e.role='Choisissez votre rôle principal';
+    if (form.specialties.length===0)     e.specialties='Sélectionnez au moins un genre';
+    if (!validUrl(form.website))         e.website='URL invalide (https://…)';
     if (!validEmail(form.contact_email)) e.contact_email='Email invalide';
     setErrors(e);
-    if (e.username||e.display_name)   setSection('identity');
+    if (e.username||e.role)              setSection('identity');
+    else if (e.specialties)              setSection('cinema');
     else if (e.website||e.contact_email) setSection('network');
     return Object.keys(e).length===0;
   }, [form]);
@@ -593,6 +628,8 @@ export default function EditProfileScreen() {
     setSavedOk(false);
     try {
       clearTimeout(debounce.current);
+      const{error:prefErr}=await supabase.from('user_preferences').upsert({user_id:userId,show_level_on_profile:showLevelOnProfile},{onConflict:'user_id'});
+      if (prefErr) console.error('[edit] sauvegarde show_level_on_profile:', prefErr.message);
       await persistProfile(userId, form);
       if (Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
       setSavedOk(true);
@@ -607,26 +644,26 @@ export default function EditProfileScreen() {
         `${e?.message ?? 'Erreur inconnue'}\n\nAssurez-vous d'avoir exécuté universe_setup.sql dans Supabase SQL Editor.`
       );
     } finally { setSaving(false); }
-  }, [userId,form,validate,saving,shakeX,successFade,router]);
+  }, [userId,form,validate,saving,shakeX,successFade,router,showLevelOnProfile]);
 
   // ── Sections ──────────────────────────────────────────────────────────────
   // Labels pré-calculés comme strings (évite mixing JSX number+text dans View)
   const roleLabel   = ROLES.find(r=>r.key===form.role)?.label;
-  const specBadge   = form.specialties.length > 0    ? `${form.specialties.length}` : undefined;
-  const festBadge   = form.festivals.length > 0      ? `${form.festivals.length}` : undefined;
   const worksBadge  = form.notable_works.length > 0  ? `${form.notable_works.length}` : undefined;
-  const openToBadge = form.open_to.length > 0        ? `${form.open_to.length}` : undefined;
 
   const renderIdentity = () => (
     <View>
-      <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} level={level.n} isPro={form.is_pro} loading={avLoading} onPress={handlePickAvatar}/>
-      <GamiBanner level={level} score={score}/>
+      <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} isPro={form.is_pro} loading={avLoading} onPress={handlePickAvatar}/>
+      <LevelPreview profile={gamiProfile}/>
+      <Toggle label="Afficher mon niveau sur mon profil" subtitle="Visible publiquement sur votre profil, sinon réservé à vous" value={showLevelOnProfile} onChange={toggleShowLevel}/>
+      <Divider/>
       <Field label="Nom d'affichage"   value={form.display_name}     onChange={v=>patch('display_name',v)}       placeholder="Cinéaste Anonyme"          maxLength={60}  icon="person-outline"/>
       <Field label="Nom d'utilisateur" value={form.username}         onChange={v=>patch('username',v.toLowerCase().replace(/[^a-z0-9._-]/g,''))} placeholder="monprofil" maxLength={30} icon="at-outline" error={errors.username} hint="Lettres, chiffres, . _ -"/>
       <Field label="Biographie"        value={form.bio}              onChange={v=>patch('bio',v)}                placeholder="Votre démarche artistique…" maxLength={300} icon="create-outline" multiline/>
       <Divider/>
-      <SHead label="Rôle principal" badge={roleLabel}/>
+      <SHead label="Rôle principal *" badge={roleLabel}/>
       <RoleGrid selected={form.role} onChange={v=>patch('role',v)}/>
+      {!!errors.role && <Text style={{color:C.error,fontSize:11,marginTop:8,marginHorizontal:PAD}}>{errors.role}</Text>}
       <Divider/>
       <Field label="Localisation" value={form.location} onChange={v=>patch('location',v)} placeholder="Paris, France" icon="location-outline"/>
     </View>
@@ -634,13 +671,8 @@ export default function EditProfileScreen() {
 
   const renderCinema = () => (
     <View>
-      <SHead label="Genres maîtrisés" badge={specBadge}/>
-      <Chips items={GENRES} selected={form.specialties} onToggle={item=>toggleArr('specialties',item)}/>
-      <Divider/>
+      <SmartSelect label="Genres maîtrisés *" items={GENRES} selected={form.specialties} onToggle={item=>toggleArr('specialties',item)} required error={errors.specialties}/>
       <Field label="Équipement & outils" value={form.equipment} onChange={v=>patch('equipment',v)} placeholder="Sony FX6, DaVinci Resolve…" multiline maxLength={220} icon="camera-outline"/>
-      <Divider/>
-      <SHead label="Festivals" badge={festBadge}/>
-      <Chips items={FESTIVALS} selected={form.festivals} onToggle={item=>toggleArr('festivals',item)}/>
       <Divider/>
       <SHead label="Œuvres notables" badge={worksBadge}/>
       {form.notable_works.map(w => <WorkCard key={w.id} work={w} onUpdate={updateWork} onDelete={deleteWork}/>)}
@@ -649,9 +681,8 @@ export default function EditProfileScreen() {
         <Text style={{color:C.muted,fontSize:12,fontWeight:'600'}}>Ajouter une œuvre</Text>
       </TouchableOpacity>
       <Divider/>
-      <SHead label="Disponibilités" badge={openToBadge}/>
-      <Chips items={COLLABS} selected={form.open_to} onToggle={item=>toggleArr('open_to',item)}/>
-      <Divider mt={24} mb={0}/>
+      <SmartSelect label="Disponibilités" items={COLLABS} selected={form.open_to} onToggle={item=>toggleArr('open_to',item)}/>
+      <Divider mt={16} mb={0}/>
       <Toggle label="Professionnel du secteur" subtitle="Activité dans l'industrie cinématographique" value={form.is_pro} onChange={v=>patch('is_pro',v)}/>
       <Toggle label="Contact professionnel" subtitle="Visible par vos connexions Universe" value={form.is_industry_contact} onChange={v=>patch('is_industry_contact',v)}/>
       {form.is_industry_contact && (

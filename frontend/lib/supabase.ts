@@ -6,8 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 // commandes `expo`) plante au démarrage avec "supabaseKey is required.".
 // C'est la clé anon (publique, protégée par RLS), pas un secret — même niveau
 // de sensibilité que l'URL déjà en dur juste au-dessus.
-const SUPABASE_URL  = process.env.EXPO_PUBLIC_SUPABASE_URL  ?? 'https://knrzbdqfflobfjdmqyte.supabase.co';
-const SUPABASE_ANON = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+export const SUPABASE_URL  = process.env.EXPO_PUBLIC_SUPABASE_URL  ?? 'https://knrzbdqfflobfjdmqyte.supabase.co';
+export const SUPABASE_ANON = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
   ?? 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtucnpiZHFmZmxvYmZqZG1xeXRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxOTIyMzgsImV4cCI6MjA5MDc2ODIzOH0.YWgxA9JKukqsBfuy0VXX4Ku_CHF3U6Wlh9t6qnOrRrg';
 
 // ─────────────────────────────────────────────────────────────────────────────
