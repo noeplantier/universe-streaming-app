@@ -24,6 +24,9 @@ import { useRouter }         from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase }          from '@/lib/supabase';
 import GalaxyBackground      from '@/components/shared/GalaxyBackground';
+import { ParticleBurst }     from '@/components/shared/ParticleBurst';
+import { GlowAccentCard }    from '@/components/shared/GlowAccentCard';
+import { SpringToast }       from '@/components/shared/SpringToast';
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -354,88 +357,40 @@ export const XPFloat = memo(function XPFloat({amount,visible,onDone}:{amount:num
 });
 
 // ─── ★ PARTICLE BURST — étoiles qui explosent ────────────────────────────────
-const PARTICLE_ANGLES = [0,45,90,135,180,225,270,315];
-export const ParticleBurst = memo(function ParticleBurst({trigger,color=C.gold}:{trigger:number;color?:string}){
-  const anims = useRef(PARTICLE_ANGLES.map(()=>new Animated.Value(0))).current;
-  const opacs = useRef(PARTICLE_ANGLES.map(()=>new Animated.Value(0))).current;
-  useEffect(()=>{
-    if(trigger===0)return;
-    anims.forEach(a=>a.setValue(0));
-    opacs.forEach(o=>o.setValue(1));
-    Animated.stagger(15,[
-      ...PARTICLE_ANGLES.map((_,i)=>Animated.parallel([
-        Animated.timing(anims[i],{toValue:1,duration:600,easing:Easing.out(Easing.cubic),useNativeDriver:true}),
-        Animated.sequence([Animated.delay(300),Animated.timing(opacs[i],{toValue:0,duration:300,useNativeDriver:true})]),
-      ])),
-    ]).start();
-  },[trigger]);
-  return(
-    <View style={{position:'absolute',width:0,height:0,alignSelf:'center',top:'50%'}} pointerEvents="none">
-      {PARTICLE_ANGLES.map((angle,i)=>{
-        const rad=(angle*Math.PI)/180;
-        const tx=anims[i].interpolate({inputRange:[0,1],outputRange:[0,Math.cos(rad)*36]});
-        const ty=anims[i].interpolate({inputRange:[0,1],outputRange:[0,Math.sin(rad)*36]});
-        return(
-          <Animated.View key={i} style={{position:'absolute',width:5,height:5,borderRadius:2.5,backgroundColor:color,transform:[{translateX:tx},{translateY:ty}],opacity:opacs[i]}}/>
-        );
-      })}
-    </View>
-  );
-});
+// Extrait vers components/shared/ParticleBurst.tsx (réutilisé hors gamification,
+// avec un garde anti-empilement pour les cibles à taps fréquents) — réimporté
+// ci-dessus et ré-exporté ici pour ne rien casser côté appelants existants.
+export { ParticleBurst };
 
-// ─── ★ BADGE UNLOCK TOAST ─────────────────────────────────────────────────────
+// ─── ★ BADGE UNLOCK TOAST — wrapper fin autour de SpringToast partagé ────────
 export const BadgeUnlockedToast = memo(function BadgeUnlockedToast({
   badge, visible, onDone,
 }:{badge:GamiBadge|null;visible:boolean;onDone:()=>void}){
-  const slideY = useRef(new Animated.Value(-120)).current;
-  const [burst,setBurst] = useState(0);
-
-  useEffect(()=>{
-    if(visible&&badge){
-      setBurst(0);
-      Animated.spring(slideY,{toValue:0,tension:65,friction:10,useNativeDriver:true}).start(()=>setBurst(v=>v+1));
-      const t=setTimeout(()=>{
-        Animated.timing(slideY,{toValue:-140,duration:300,useNativeDriver:true}).start(onDone);
-      },3200);
-      return()=>clearTimeout(t);
-    }
-  },[visible,badge]);
-
-  if(!badge||!visible)return null;
+  if(!badge) return null;
   const col = RARITY_COL[badge.rarity] ?? C.muted;
   const glow= RARITY_GLOW[badge.rarity] ?? C.faint;
-  const xpStr = `+${badge.xp_reward} XP`;
   return(
-    <Animated.View style={[but.wrap,{backgroundColor:glow,borderColor:`${col}45`,transform:[{translateY:slideY}]}]}>
-      <BlurView intensity={Platform.OS==='ios'?28:16} tint="dark" style={StyleSheet.absoluteFillObject}/>
-      <View style={{position:'relative',alignItems:'center',justifyContent:'center'}}>
-        <ParticleBurst trigger={burst} color={col}/>
-        <View style={[but.iconWrap,{backgroundColor:`${col}18`,borderColor:`${col}35`}]}>
-          <Ionicons name={badge.icon} size={22} color={col}/>
+    <SpringToast
+      visible={visible}
+      onDone={onDone}
+      accentColor={col}
+      glowColor={glow}
+      icon={badge.icon}
+      eyebrow={`BADGE DÉBLOQUÉ · ${RARITY_LBL[badge.rarity]}`}
+      eyebrowExtra={
+        <View style={but.xpPill}>
+          <Ionicons name="flash" size={8} color={C.gold}/>
+          <Text style={but.xpTxt}>+{badge.xp_reward} XP</Text>
         </View>
-      </View>
-      <View style={{flex:1,gap:3}}>
-        <View style={{flexDirection:'row',alignItems:'center',gap:7}}>
-          <Text style={[but.rarity,{color:col}]}>BADGE DÉBLOQUÉ · {RARITY_LBL[badge.rarity]}</Text>
-          <View style={[but.xpPill,{backgroundColor:`${C.gold}15`,borderColor:`${C.gold}30`}]}>
-            <Ionicons name="flash" size={8} color={C.gold}/>
-            <Text style={but.xpTxt}>{xpStr}</Text>
-          </View>
-        </View>
-        <Text style={but.title}>{badge.label}</Text>
-        <Text style={but.desc} numberOfLines={2}>{BADGE_IMPACT[badge.id]??badge.description}</Text>
-      </View>
-    </Animated.View>
+      }
+      title={badge.label}
+      description={BADGE_IMPACT[badge.id]??badge.description}
+    />
   );
 });
 const but = StyleSheet.create({
-  wrap:    {position:'absolute',top:0,left:16,right:16,zIndex:9999,flexDirection:'row',alignItems:'center',gap:13,padding:14,borderRadius:18,overflow:'hidden',borderWidth:1},
-  iconWrap:{width:46,height:46,borderRadius:13,borderWidth:1,alignItems:'center',justifyContent:'center'},
-  rarity:  {fontSize:7.5,fontWeight:'900',letterSpacing:1.2},
-  xpPill:  {flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:6,paddingVertical:2,borderRadius:7,borderWidth:StyleSheet.hairlineWidth},
-  xpTxt:   {color:C.gold,fontSize:8,fontWeight:'800'},
-  title:   {color:C.white,fontSize:14,fontWeight:'900',letterSpacing:-0.2},
-  desc:    {color:'rgba(255,255,255,0.60)',fontSize:11,lineHeight:15},
+  xpPill: {flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:6,paddingVertical:2,borderRadius:7,borderWidth:StyleSheet.hairlineWidth,backgroundColor:`${C.gold}15`,borderColor:`${C.gold}30`},
+  xpTxt:  {color:C.gold,fontSize:8,fontWeight:'800'},
 });
 
 // ─── ★ LEVEL-UP CELEBRATION MODAL ────────────────────────────────────────────
@@ -748,48 +703,34 @@ const xb=StyleSheet.create({
 // ─── ★ BADGE CHIP interactif ──────────────────────────────────────────────────
 export const BadgeChip = memo(function BadgeChip({b,size='normal'}:{b:GamiBadge;size?:'normal'|'small'}){
   const[open,setOpen]=useState(false);
-  const sc  = useRef(new Animated.Value(1)).current;
-  const glow= useRef(new Animated.Value(0)).current;
   const col = RARITY_COL[b.rarity]??C.muted;
   const bg  = RARITY_GLOW[b.rarity]??C.faint;
   const isSmall=size==='small';
   const ptsStr=`+${b.xp_reward} XP`;
   const impactText = BADGE_IMPACT[b.id] ?? b.description;
 
-  const press=()=>{
-    Animated.sequence([
-      Animated.spring(sc,{toValue:0.88,tension:350,friction:7,useNativeDriver:true}),
-      Animated.spring(sc,{toValue:1,tension:200,friction:8,useNativeDriver:true}),
-    ]).start();
-    if(b.earned){
-      glow.setValue(1);
-      Animated.timing(glow,{toValue:0,duration:1200,useNativeDriver:false}).start();
-    }
-    setOpen(v=>!v);
-  };
-
-  const borderColor = glow.interpolate({inputRange:[0,1],outputRange:[`${col}35`,col]});
-
   return(
-    <Animated.View style={{transform:[{scale:sc}]}}>
-      <TouchableOpacity onPress={press} activeOpacity={0.85}>
-        <Animated.View style={[bc.wrap,b.earned&&{opacity:1,backgroundColor:bg},isSmall&&bc.wrapSmall,{borderColor:b.earned?borderColor:C.border}] as any}>
-          <View style={[bc.icon,b.earned&&{borderColor:`${col}35`,backgroundColor:`${col}14`},isSmall&&bc.iconSmall]}>
-            <Ionicons name={b.icon} size={isSmall?12:17} color={b.earned?col:C.muted}/>
-          </View>
-          {b.earned&&<View style={[bc.rarity,{backgroundColor:`${col}14`,borderColor:`${col}30`}]}><Text style={[bc.rarityTxt,{color:col}]}>{RARITY_LBL[b.rarity]}</Text></View>}
-          <Text style={[bc.label,b.earned&&{color:C.offWhite}]} numberOfLines={open?undefined:2}>{b.label}</Text>
-          {b.earned&&<Text style={bc.xp}>{ptsStr}</Text>}
-          {!b.earned&&<View style={{position:'absolute',top:7,right:7}}><Ionicons name="lock-closed" size={8} color={C.muted}/></View>}
-          {open&&<Text style={bc.desc}>{impactText}</Text>}
-        </Animated.View>
-      </TouchableOpacity>
-    </Animated.View>
+    <GlowAccentCard
+      accentColor={col}
+      active={b.earned}
+      borderRadius={13}
+      onPress={()=>setOpen(v=>!v)}
+      style={[bc.wrap,b.earned&&{opacity:1,backgroundColor:bg},isSmall&&bc.wrapSmall]}
+    >
+      <View style={[bc.icon,b.earned&&{borderColor:`${col}35`,backgroundColor:`${col}14`},isSmall&&bc.iconSmall]}>
+        <Ionicons name={b.icon} size={isSmall?12:17} color={b.earned?col:C.muted}/>
+      </View>
+      {b.earned&&<View style={[bc.rarity,{backgroundColor:`${col}14`,borderColor:`${col}30`}]}><Text style={[bc.rarityTxt,{color:col}]}>{RARITY_LBL[b.rarity]}</Text></View>}
+      <Text style={[bc.label,b.earned&&{color:C.offWhite}]} numberOfLines={open?undefined:2}>{b.label}</Text>
+      {b.earned&&<Text style={bc.xp}>{ptsStr}</Text>}
+      {!b.earned&&<View style={{position:'absolute',top:7,right:7}}><Ionicons name="lock-closed" size={8} color={C.muted}/></View>}
+      {open&&<Text style={bc.desc}>{impactText}</Text>}
+    </GlowAccentCard>
   );
 });
 BadgeChip.displayName='BadgeChip';
 const bc=StyleSheet.create({
-  wrap:     {alignItems:'center',gap:5,padding:11,borderRadius:13,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.faint,width:88,opacity:0.52,minHeight:100},
+  wrap:     {alignItems:'center',gap:5,padding:11,backgroundColor:C.faint,width:88,opacity:0.52,minHeight:100},
   wrapSmall:{width:68,padding:8,minHeight:76},
   icon:     {width:40,height:40,borderRadius:20,backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center'},
   iconSmall:{width:28,height:28,borderRadius:14},

@@ -82,7 +82,7 @@ const ROLE_LABELS: Record<string,string> = {
 interface LocalWork { id:number;title:string;category:string;genre:string;year:number;likes:number;image:string|null;is_original:boolean;duration:number|null;director:string|null }
 interface UserReel { id:string;video_url:string;thumbnail_url:string|null;title:string|null;genre:string|null;duration:number|null;status:'pending'|'approved'|'rejected';likes_count:number;views_count:number;created_at:string }
 interface ReviewItem { id:string;content:string;rating:number;likes:number;film:{id:string;title:string;genre:string} }
-interface ProfileData { display_name:string;username:string;bio:string;role:string;location:string;avatar_url:string;website:string;is_pro:boolean;is_industry_contact:boolean;specialties:string[];festivals:string[];open_to:string[];notable_works:any[];equipment:string;social_instagram:string;social_vimeo:string;social_youtube:string;social_imdb:string }
+interface ProfileData { display_name:string;username:string;bio:string;role:string;location:string;avatar_url:string;website:string;is_pro:boolean;is_industry_contact:boolean;specialties:string[];festivals:string[];open_to:string[];notable_works:any[];equipment:string;social_instagram:string;social_vimeo:string;social_youtube:string;social_imdb:string;films_seen_count:number;following_count:number }
 interface Badge { id:string;label:string;icon:keyof typeof Ionicons.glyphMap;earned:boolean;pts:number;desc:string }
 interface GamiStats { watchCount:number;critiqueCount:number;favCount:number;isNight:boolean;streak:number }
 type GridTab   = 0|1|2;
@@ -92,6 +92,7 @@ const EMPTY_PROFILE: ProfileData = {
   display_name:'',username:'',bio:'',role:'creator',location:'',avatar_url:'',website:'',
   is_pro:false,is_industry_contact:false,specialties:[],festivals:[],open_to:[],
   notable_works:[],equipment:'',social_instagram:'',social_vimeo:'',social_youtube:'',social_imdb:'',
+  films_seen_count:0,following_count:0,
 };
 
 // ─── MAPPERS ──────────────────────────────────────────────────────────────────
@@ -103,6 +104,7 @@ const mapProfile = (r:any): ProfileData => ({
   open_to:Array.isArray(r?.open_to)?r.open_to:[],notable_works:Array.isArray(r?.notable_works)?r.notable_works:[],
   equipment:r?.equipment??'',social_instagram:r?.social_instagram??'',
   social_vimeo:r?.social_vimeo??'',social_youtube:r?.social_youtube??'',social_imdb:r?.social_imdb??'',
+  films_seen_count:Number(r?.films_seen_count)||0,following_count:Number(r?.following_count)||0,
 });
 const mapWork   = (r:any): LocalWork => ({
   id:Number(r?.id)||0,title:r?.title??'',category:r?.category??'',genre:r?.genre??'',
@@ -244,12 +246,12 @@ const RING_SIZE   = AVATAR_SIZE
 
 const ProfileHeader = memo(function ProfileHeader({
   profile, filmCount, critiqueCount, reelCount,
-  gamiProfile,
+  gamiProfile, showLevel,
   unreadNotifs, streak,
   onAvatarEdit, onAdmin, onNotifs, onSettings,
 }:{
   profile:ProfileData; filmCount:number; critiqueCount:number; reelCount:number;
-  gamiProfile:GamiProfile;
+  gamiProfile:GamiProfile; showLevel:boolean;
   unreadNotifs:number; streak:number;
   onAvatarEdit:()=>void; onAdmin:()=>void; onNotifs:()=>void; onSettings:()=>void;
 }) {
@@ -381,7 +383,15 @@ const ProfileHeader = memo(function ProfileHeader({
             <Text style={ph.sub} numberOfLines={1}>{[profile.username&&`@${profile.username}`,profile.location].filter(Boolean).join(' · ')}</Text>
           </View>}
 
+          {/* ── Stats : Films vus · Abonnements ── */}
+          <View style={{flexDirection:'row',alignItems:'center',gap:8,marginBottom:8}}>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.films_seen_count}</Text> Films</Text>
+            <Text style={ph.statTxt}>·</Text>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.following_count}</Text> Abonnements</Text>
+          </View>
+
           {/* ── Niveau + barre XP (GamificationSystem) ── */}
+          {showLevel&&(
           <View style={{gap:5,marginTop:2}}>
             <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
               <View style={{paddingHorizontal:7,paddingVertical:2.5,borderRadius:7,borderWidth:StyleSheet.hairlineWidth,borderColor:`${levelColor}45`,backgroundColor:`${levelColor}12`}}>
@@ -398,6 +408,7 @@ const ProfileHeader = memo(function ProfileHeader({
             </View>
             {gamiProfile.level<10&&<Text style={ph.xpNext}>{nextStr}</Text>}
           </View>
+          )}
         </View>
       </View>
 
@@ -460,6 +471,8 @@ const ph = StyleSheet.create({
   indTxt:     {color:C.muted,fontSize:7,fontWeight:'800',letterSpacing:0.5},
   streakBadge:{flexDirection:'row',alignItems:'center',gap:2,paddingHorizontal:6,paddingVertical:2,borderRadius:5,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(245,200,66,0.28)',backgroundColor:'rgba(245,200,66,0.07)'},
   sub:        {color:C.muted,fontSize:10.5,fontWeight:'500'},
+  statTxt:    {color:C.muted,fontSize:10.5,fontWeight:'500'},
+  statNum:    {color:C.white,fontSize:10.5,fontWeight:'800'},
   // Level card (zone niveau depuis GamificationSystem)
   levelCard:  {borderRadius:14,borderWidth:StyleSheet.hairlineWidth,backgroundColor:'rgba(255,255,255,0.025)',padding:12,gap:0},
   levelCircle:{width:44,height:44,borderRadius:12,borderWidth:1,alignItems:'center',justifyContent:'center'},
@@ -663,6 +676,7 @@ export default function ProfileScreen() {
   const [streak,       setStreak]  = useState(0);
   // ★ Gamification réelle depuis GamificationSystem (cinephile_profiles)
   const [gamiProfile, setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
+  const [showLevel,   setShowLevel]  = useState(true);
 
   const { score, level, badges } = useLocalGamification(uid);
   const isFirstLoad = useRef(false);
@@ -698,6 +712,7 @@ export default function ProfileScreen() {
       loadUnread(deviceId);
       loadStreak(deviceId);
       loadGami(deviceId);
+      loadShowLevel(deviceId);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
@@ -707,6 +722,7 @@ export default function ProfileScreen() {
     loadAll(uid);
     loadUnread(uid);
     loadGami(uid); // ★ rafraîchit le niveau à chaque retour sur l'onglet
+    loadShowLevel(uid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[uid]));
 
@@ -716,6 +732,10 @@ export default function ProfileScreen() {
 
   const loadStreak = useCallback(async(userId:string)=>{
     try{const{data}=await supabase.from('user_history').select('watched_at').eq('user_id',userId).order('watched_at',{ascending:false}).limit(30);const rows=data??[];if(!rows.length)return;let s=1;for(let i=1;i<rows.length;i++){const g=new Date(rows[i-1].watched_at).getTime()-new Date(rows[i].watched_at).getTime();if(g<=86400000*2)s++;else break;}setStreak(s);}catch{}
+  },[]);
+
+  const loadShowLevel = useCallback(async(userId:string)=>{
+    try{const{data}=await supabase.from('user_preferences').select('show_level_on_profile').eq('user_id',userId).maybeSingle();setShowLevel(data?.show_level_on_profile??true);}catch{}
   },[]);
 
   const loadAll = useCallback(async(userId:string)=>{
@@ -871,7 +891,7 @@ export default function ProfileScreen() {
       <StatusBar style="light"/>
       <GalaxyBackground/>
       <ScrollView showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadUnread(uid);loadGami(uid);}}} tintColor={C.mid}/>}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadUnread(uid);loadGami(uid);loadShowLevel(uid);}}} tintColor={C.mid}/>}>
         <SafeAreaView edges={['top']}>
           {/* ★ Header branché sur gamiProfile (GamificationSystem) */}
           <ProfileHeader
@@ -880,6 +900,7 @@ export default function ProfileScreen() {
             critiqueCount={reviews.length}
             reelCount={reels.length}
             gamiProfile={gamiProfile}
+            showLevel={showLevel}
             unreadNotifs={unreadNotifs}
             streak={streak}
             onAvatarEdit={nav.avatarEdit}

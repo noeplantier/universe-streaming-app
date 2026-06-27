@@ -525,15 +525,11 @@ export default function EditProfileScreen() {
   const deleteWork = useCallback((id:string)=>setForm(p=>({...p,notable_works:p.notable_works.filter(x=>x.id!==id)})),[]);
 
   // ── Avatar ────────────────────────────────────────────────────────────────
-  const handlePickAvatar = useCallback(async () => {
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) { Alert.alert('Permission requise',"Autorisez l'accès à votre galerie."); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({mediaTypes:ImagePicker.MediaTypeOptions.Images,quality:0.88,allowsEditing:true,aspect:[1,1]});
-    if (res.canceled||!res.assets?.[0]) return;
+  const finishAvatarUpload = useCallback(async (uri: string) => {
     setAVL(true);
     if (Platform.OS!=='web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{});
     try {
-      const url = await uploadAvatar(res.assets[0].uri, userId);
+      const url = await uploadAvatar(uri, userId);
       if (!url) {
         Alert.alert('Erreur upload',"Exécutez universe_setup.sql dans Supabase SQL Editor d'abord.");
         return;
@@ -544,6 +540,30 @@ export default function EditProfileScreen() {
     } catch { Alert.alert('Erreur',"Impossible d'uploader la photo."); }
     finally { setAVL(false); }
   }, [userId]);
+
+  const handlePickAvatar = useCallback(async () => {
+    // expo-image-picker passe par FileReader.readAsDataURL() sur web, qui
+    // échoue sans message exploitable sur certains fichiers (ex: photos
+    // iCloud non encore téléchargées en local, HEIC). On bypass entièrement
+    // ImagePicker sur web — même <input type="file"> + blob: URI que
+    // app/settings.tsx, qui n'a jamais ce problème.
+    if (Platform.OS === 'web') {
+      if (typeof document === 'undefined') return;
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*';
+      input.onchange = (e: any) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        finishAvatarUpload(URL.createObjectURL(file));
+      };
+      input.click();
+      return;
+    }
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) { Alert.alert('Permission requise',"Autorisez l'accès à votre galerie."); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({mediaTypes:ImagePicker.MediaTypeOptions.Images,quality:0.88,allowsEditing:true,aspect:[1,1]});
+    if (res.canceled||!res.assets?.[0]) return;
+    await finishAvatarUpload(res.assets[0].uri);
+  }, [finishAvatarUpload]);
 
   // ── Validation ────────────────────────────────────────────────────────────
   const validate = useCallback(():boolean => {

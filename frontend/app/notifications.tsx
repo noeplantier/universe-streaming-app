@@ -23,6 +23,7 @@ import { StatusBar }    from 'expo-status-bar';
 import * as Haptics     from 'expo-haptics';
 import { supabase }     from '@/lib/supabase';
 import GalaxyBackground from '@/components/shared/GalaxyBackground';
+import { GlowAccentCard } from '@/components/shared/GlowAccentCard';
 import { getDeviceId }  from '@/services/api';
 
 // ─── Palette ──────────────────────────────────────────────────────────────────
@@ -202,13 +203,19 @@ const NotifCard = memo(function NotifCard({
 
   return (
     <Animated.View style={{transform:[{translateX:slideX}],opacity}}>
-      {/* ★ cardUnread : fond accentué (×2.8), sans point blanc */}
+      {/* ★ cardUnread : fond accentué (×2.8) + glow subtil, sans point blanc */}
       <TouchableOpacity
-        style={[nc.card, !notif.read && nc.cardUnread]}
         onPress={()=>onPress(notif)}
         onLongPress={handleDelete}
         activeOpacity={0.85}
         delayLongPress={500}
+      >
+      <GlowAccentCard
+        accentColor={cfg.color}
+        tier="subtle"
+        active={!notif.read}
+        borderRadius={10}
+        style={[nc.card, !notif.read && nc.cardUnread]}
       >
         {/* Icône / avatar */}
         <View style={nc.iconWrap}>
@@ -237,6 +244,7 @@ const NotifCard = memo(function NotifCard({
           </View>
         </View>
         <Ionicons name="chevron-forward" size={13} color={C.border} style={{alignSelf:'center'}}/>
+      </GlowAccentCard>
       </TouchableOpacity>
     </Animated.View>
   );

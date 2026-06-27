@@ -524,7 +524,7 @@ export default function FilmDetailScreen() {
           <View style={s.topRight}>
             <TouchableOpacity style={s.blurCircle} onPress={handleSave}>
               <BlurView intensity={Platform.OS==='ios'?28:16} tint="dark" style={StyleSheet.absoluteFillObject}/>
-              <Ionicons name={saved?'star':'star-outline'} size={18} color={saved?C.gold:C.white}/>
+              <Ionicons name={saved?'bookmark':'bookmark-outline'} size={18} color={C.white}/>
             </TouchableOpacity>
             <TouchableOpacity style={s.blurCircle} onPress={handleShare} hitSlop={8}>
               <BlurView intensity={Platform.OS==='ios'?28:16} tint="dark" style={StyleSheet.absoluteFillObject}/>

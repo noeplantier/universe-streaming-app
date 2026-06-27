@@ -210,7 +210,7 @@ const PostCard = memo(function PostCard({
               <Ionicons
                 name={isSaved ? 'bookmark' : 'bookmark-outline'}
                 size={18}
-                color={isSaved ? C.gold : C.textSec}
+                color="#fff"
               />
             </Animated.View>
           </TouchableOpacity>

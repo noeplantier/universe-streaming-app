@@ -333,7 +333,7 @@ import React, {
           {/* ── ACTIONS ─────────────────────────────────────────────────── */}
           <View style={sb.actions}>
             <ActionBtn icon="heart-outline"        iconOn="heart"          active={liked} color={P.red}   onPress={wrap(onLike)}/>
-            <ActionBtn icon="star-outline"          iconOn="star"           active={saved} color={P.gold}  onPress={wrap(onSave)}/>
+            <ActionBtn icon="bookmark-outline"       iconOn="bookmark"       active={saved} color="#fff"   onPress={wrap(onSave)}/>
             <ActionBtn icon="volume-high-outline"   iconOn="volume-mute"    active={muted} color="rgba(255,255,255,0.90)" onPress={wrap(onMute)}/>
             {onShare && <ActionBtn icon="share-outline" iconOn="share" active={false} color={P.blue} onPress={wrap(onShare)}/>}
             {onInfo  && <ActionBtn icon="list-outline"  iconOn="list"  active={false} color={P.muted} onPress={wrap(onInfo)}/>}

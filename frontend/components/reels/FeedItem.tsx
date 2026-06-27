@@ -412,7 +412,7 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
           </TouchableOpacity>
           <TouchableOpacity style={fi.sBtn} onPress={handleSideSave}>
             <View style={[fi.sIcon,saved&&fi.sIconOn]}>
-              <Ionicons name={saved?'star':'star-outline'} size={23} color={saved?P.gold:'#fff'}/>
+              <Ionicons name={saved?'bookmark':'bookmark-outline'} size={23} color="#fff"/>
             </View>
           </TouchableOpacity>
           {onInfoPress&&(
