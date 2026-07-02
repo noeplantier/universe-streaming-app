@@ -85,3 +85,4 @@ yarn-error.*
 *.tsbuildinfo
 
 # @end expo-cli
+03_seed_team_members.sql
