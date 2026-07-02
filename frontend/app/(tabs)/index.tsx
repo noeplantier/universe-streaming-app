@@ -88,36 +88,19 @@ const COLS =
   'id,created_at,user_id,video_url,title,genre,director,' +
   'year,synopsis,duration,likes_count,views_count,status';
 
-async function fetchApprovedReels(): Promise<SupabaseReel[]> {
-  const { count, error: cErr } = await supabase
+const PAGE_SIZE = 20;
+
+async function fetchApprovedPage(page: number): Promise<SupabaseReel[]> {
+  const from = page * PAGE_SIZE;
+  const { data, error } = await supabase
     .from('reels')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'approved');
-
-  if (cErr) {
-    const { data } = await supabase
-      .from('reels').select(COLS)
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .limit(100);
-    return (data ?? []) as SupabaseReel[];
-  }
-
-  const total = count ?? 0;
-  if (total === 0) return [];
-
-  const pages = await Promise.all(
-    Array.from({ length: Math.max(1, Math.ceil(total / 100)) }, (_, i) =>
-      supabase.from('reels').select(COLS)
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false })
-        .range(i * 100, i * 100 + 99)
-        .then(({ data, error }) =>
-          error ? [] : (data ?? []) as SupabaseReel[],
-        ),
-    ),
-  );
-  return pages.flat();
+    .select(COLS)
+    .eq('status', 'approved')
+    .order('created_at', { ascending: false })
+    .range(from, from + PAGE_SIZE - 1)
+    .returns<SupabaseReel[]>();
+  if (error) throw error;
+  return data ?? [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -127,13 +110,21 @@ function useReelsFeed(feedKey: MenuKey) {
   const [films,   setFilms]   = useState<FeedFilm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
+  const pageRef     = useRef(0);
+  const hasMoreRef  = useRef(true);
+  const loadingMore = useRef(false);
 
   useEffect(() => {
     let dead = false;
     setLoading(true); setError(null);
-    fetchApprovedReels()
+    pageRef.current = 0; hasMoreRef.current = true; loadingMore.current = false;
+    fetchApprovedPage(0)
       .then(rows => {
-        if (!dead) { setFilms(rows.map(mapReel)); setLoading(false); }
+        if (!dead) {
+          setFilms(rows.map(mapReel));
+          hasMoreRef.current = rows.length === PAGE_SIZE;
+          setLoading(false);
+        }
       })
       .catch(e => {
         if (!dead) {
@@ -144,6 +135,22 @@ function useReelsFeed(feedKey: MenuKey) {
       });
     return () => { dead = true; };
   }, [feedKey]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore.current || !hasMoreRef.current) return;
+    loadingMore.current = true;
+    const next = pageRef.current + 1;
+    try {
+      const rows = await fetchApprovedPage(next);
+      setFilms(prev => [...prev, ...rows.map(mapReel)]);
+      pageRef.current = next;
+      hasMoreRef.current = rows.length === PAGE_SIZE;
+    } catch (e) {
+      console.error('[reels:loadMore]', e);
+    } finally {
+      loadingMore.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     const ch = supabase
@@ -186,7 +193,7 @@ function useReelsFeed(feedKey: MenuKey) {
       .then(() => {});
   }, []);
 
-  return { films, loading, error, toggleLike, incrementViews };
+  return { films, loading, error, loadMore, toggleLike, incrementViews };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,7 +219,7 @@ function ReelsScreenInner() {
   const activeIdxRef = useRef(0);
   const snapTimer    = useRef<ReturnType<typeof setTimeout>>();
 
-  const { films, loading, error, toggleLike, incrementViews } =
+  const { films, loading, error, loadMore, toggleLike, incrementViews } =
     useReelsFeed(feedKey);
 
   const filmsRef = useRef(films);
@@ -355,11 +362,13 @@ function ReelsScreenInner() {
         onScrollToIndexFailed={onScrollToIndexFailed}
         onScroll={onScroll}
         scrollEventThrottle={16}
-        windowSize={9}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.5}
+        windowSize={3}
         maxToRenderPerBatch={3}
         initialNumToRender={3}
-        updateCellsBatchingPeriod={50}
-        removeClippedSubviews={false}
+        updateCellsBatchingPeriod={100}
+        removeClippedSubviews={Platform.OS !== 'web'}
         overScrollMode="never"
         bounces={false}
         showsVerticalScrollIndicator={false}

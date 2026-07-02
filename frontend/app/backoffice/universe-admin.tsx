@@ -2,7 +2,7 @@ import React, {
     memo, useCallback, useEffect, useMemo, useRef, useState,
   } from 'react';
   import {
-      ActivityIndicator,
+      ActivityIndicator, Alert,
     Animated, FlatList, Keyboard, KeyboardAvoidingView,
     Modal, Platform, Pressable, ScrollView, SectionList,
     StyleSheet, Text, TextInput, TouchableOpacity, View,
@@ -281,10 +281,11 @@ import React, {
   
   async function moderateReel(params:{
     id:string; status:Status; category?:RejCategory|null;
-    reason?:string|null; moderatorId:string;
+    reason?:string|null;
   }): Promise<void> {
     const payload:any = {
-      status:params.status, moderated_by:params.moderatorId,
+      // moderated_by toujours null — colonne uuid FK vers auth.users, aucune session réelle
+      status:params.status, moderated_by: null,
       moderated_at:new Date().toISOString(),
     };
     if (params.status==='rejected') {
@@ -1291,7 +1292,6 @@ import React, {
   export default function UniverseAdminScreen() {
     const router = useRouter();
   
-    const [moderatorId, setModeratorId] = useState('');
     const [activeTab,   setActiveTab]   = useState<Status>('pending');
     const [reels,       setReels]       = useState<AdminReel[]>([]);
     const [loading,     setLoading]     = useState(false);
@@ -1312,10 +1312,6 @@ import React, {
       return result;
     },[safetyCache]);
   
-    // ── Auth ──────────────────────────────────────────────────────────────────
-    useEffect(()=>{
-      supabase.auth.getUser().then(({data:{user}})=>{ if(user) setModeratorId(user.id); });
-    },[]);
   
     // ── Fetch + counts ────────────────────────────────────────────────────────
     const load = useCallback(async(tab:Status)=>{
@@ -1373,36 +1369,44 @@ import React, {
     },[refreshCounts]);
   
     const handleApprove = useCallback(async(id:string)=>{
-      try{ await moderateReel({id,status:'approved',moderatorId}); removeFromList([id]); }
-      catch(e:any){ console.error(e.message); }
-    },[moderatorId,removeFromList]);
-  
+      try{ await moderateReel({id,status:'approved'}); removeFromList([id]); }
+      catch(e:any){ console.error(e.message); Alert.alert('Validation impossible',e?.message??'Erreur inconnue.'); }
+    },[removeFromList]);
+
     const openRejectModal = useCallback((id:string)=>setRejTarget(id),[]);
-  
+
     const confirmReject = useCallback(async(id:string, cat:RejCategory, reason:string)=>{
       setRejTarget(null);
-      try{ await moderateReel({id,status:'rejected',category:cat,reason,moderatorId}); removeFromList([id]); }
-      catch(e:any){ console.error(e.message); }
-    },[moderatorId,removeFromList]);
-  
+      try{ await moderateReel({id,status:'rejected',category:cat,reason}); removeFromList([id]); }
+      catch(e:any){ console.error(e.message); Alert.alert('Rejet impossible',e?.message??'Erreur inconnue.'); }
+    },[removeFromList]);
+
     const handleReapprove = useCallback(async(id:string)=>{
       if(Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
-      try{ await moderateReel({id,status:'approved',moderatorId}); removeFromList([id]); }
-      catch(e:any){ console.error(e.message); }
-    },[moderatorId,removeFromList]);
-  
-    // Bulk actions
+      try{ await moderateReel({id,status:'approved'}); removeFromList([id]); }
+      catch(e:any){ console.error(e.message); Alert.alert('Validation impossible',e?.message??'Erreur inconnue.'); }
+    },[removeFromList]);
+
+    // Bulk actions — ne retire de la liste que les ids réellement modérés avec
+    // succès ; sinon un échec total laissait croire l'action faite alors que
+    // les lignes restaient 'pending' en base (UI et DB désynchronisées).
     const handleBulkApprove = useCallback(async()=>{
       const ids=[...selected];
-      await Promise.allSettled(ids.map(id=>moderateReel({id,status:'approved',moderatorId})));
-      removeFromList(ids);
-    },[selected,moderatorId,removeFromList]);
-  
+      const results=await Promise.allSettled(ids.map(id=>moderateReel({id,status:'approved'})));
+      const okIds=ids.filter((_,i)=>results[i].status==='fulfilled');
+      removeFromList(okIds);
+      const failCount=ids.length-okIds.length;
+      if(failCount>0) Alert.alert('Validation partielle',`${failCount} vidéo${failCount>1?'s':''} sur ${ids.length} n'${failCount>1?'ont':'a'} pas pu être validée${failCount>1?'s':''}.`);
+    },[selected,removeFromList]);
+
     const handleBulkReject = useCallback(async()=>{
       const ids=[...selected];
-      await Promise.allSettled(ids.map(id=>moderateReel({id,status:'rejected',category:'other',reason:'Rejet groupé',moderatorId})));
-      removeFromList(ids);
-    },[selected,moderatorId,removeFromList]);
+      const results=await Promise.allSettled(ids.map(id=>moderateReel({id,status:'rejected',category:'other',reason:'Rejet groupé'})));
+      const okIds=ids.filter((_,i)=>results[i].status==='fulfilled');
+      removeFromList(okIds);
+      const failCount=ids.length-okIds.length;
+      if(failCount>0) Alert.alert('Rejet partiel',`${failCount} vidéo${failCount>1?'s':''} sur ${ids.length} n'${failCount>1?'ont':'a'} pas pu être rejetée${failCount>1?'s':''}.`);
+    },[selected,removeFromList]);
   
     const toggleSelect = useCallback((id:string)=>{
       setSelected(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;});

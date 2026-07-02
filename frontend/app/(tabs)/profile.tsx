@@ -12,11 +12,10 @@ import React, {
 } from 'react';
 import {
   Animated, Dimensions, Easing, Image, Linking, Modal, Platform,
-  Pressable, RefreshControl, ScrollView, StyleSheet,
+  RefreshControl, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View, FlatList,
 } from 'react-native';
 import { LinearGradient }              from 'expo-linear-gradient';
-import { BlurView }                    from 'expo-blur';
 import { Ionicons }                    from '@expo/vector-icons';
 import { useRouter, useFocusEffect }   from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,7 +81,7 @@ const ROLE_LABELS: Record<string,string> = {
 interface LocalWork { id:number;title:string;category:string;genre:string;year:number;likes:number;image:string|null;is_original:boolean;duration:number|null;director:string|null }
 interface UserReel { id:string;video_url:string;thumbnail_url:string|null;title:string|null;genre:string|null;duration:number|null;status:'pending'|'approved'|'rejected';likes_count:number;views_count:number;created_at:string }
 interface ReviewItem { id:string;content:string;rating:number;likes:number;film:{id:string;title:string;genre:string} }
-interface ProfileData { display_name:string;username:string;bio:string;role:string;location:string;avatar_url:string;website:string;is_pro:boolean;is_industry_contact:boolean;specialties:string[];festivals:string[];open_to:string[];notable_works:any[];equipment:string;social_instagram:string;social_vimeo:string;social_youtube:string;social_imdb:string }
+interface ProfileData { display_name:string;username:string;bio:string;role:string;location:string;avatar_url:string;website:string;is_pro:boolean;is_industry_contact:boolean;specialties:string[];open_to:string[];notable_works:any[];equipment:string;social_instagram:string;social_vimeo:string;social_youtube:string;social_imdb:string;films_seen_count:number;following_count:number }
 interface Badge { id:string;label:string;icon:keyof typeof Ionicons.glyphMap;earned:boolean;pts:number;desc:string }
 interface GamiStats { watchCount:number;critiqueCount:number;favCount:number;isNight:boolean;streak:number }
 type GridTab   = 0|1|2;
@@ -90,8 +89,9 @@ type ModalType = 'favorites'|'reviews'|'watched'|'recs'|'creations';
 
 const EMPTY_PROFILE: ProfileData = {
   display_name:'',username:'',bio:'',role:'creator',location:'',avatar_url:'',website:'',
-  is_pro:false,is_industry_contact:false,specialties:[],festivals:[],open_to:[],
+  is_pro:false,is_industry_contact:false,specialties:[],open_to:[],
   notable_works:[],equipment:'',social_instagram:'',social_vimeo:'',social_youtube:'',social_imdb:'',
+  films_seen_count:0,following_count:0,
 };
 
 // ─── MAPPERS ──────────────────────────────────────────────────────────────────
@@ -99,10 +99,11 @@ const mapProfile = (r:any): ProfileData => ({
   display_name:r?.display_name??'',username:r?.username??'',bio:r?.bio??'',role:r?.role??'creator',
   location:r?.location??'',avatar_url:r?.avatar_url??'',website:r?.website??'',
   is_pro:r?.is_pro??false,is_industry_contact:r?.is_industry_contact??false,
-  specialties:Array.isArray(r?.specialties)?r.specialties:[],festivals:Array.isArray(r?.festivals)?r.festivals:[],
+  specialties:Array.isArray(r?.specialties)?r.specialties:[],
   open_to:Array.isArray(r?.open_to)?r.open_to:[],notable_works:Array.isArray(r?.notable_works)?r.notable_works:[],
   equipment:r?.equipment??'',social_instagram:r?.social_instagram??'',
   social_vimeo:r?.social_vimeo??'',social_youtube:r?.social_youtube??'',social_imdb:r?.social_imdb??'',
+  films_seen_count:Number(r?.films_seen_count)||0,following_count:Number(r?.following_count)||0,
 });
 const mapWork   = (r:any): LocalWork => ({
   id:Number(r?.id)||0,title:r?.title??'',category:r?.category??'',genre:r?.genre??'',
@@ -197,11 +198,6 @@ function useGalaxyTap() {
   const fire=useCallback(()=>{ring.setValue(0.25);ringOp.setValue(0.85);glow.setValue(1);Animated.parallel([Animated.timing(ring,{toValue:2.4,duration:500,easing:Easing.out(Easing.cubic),useNativeDriver:true}),Animated.timing(ringOp,{toValue:0,duration:500,useNativeDriver:true}),Animated.timing(glow,{toValue:0,duration:600,useNativeDriver:false})]).start();},[]);
   return{fire,ring,ringOp,glow};
 }
-function useMeteorTap() {
-  const prog=useRef(new Animated.Value(0)).current,op=useRef(new Animated.Value(0)).current;
-  const fire=useCallback(()=>{prog.setValue(0);op.setValue(1);Animated.parallel([Animated.timing(prog,{toValue:1,duration:480,easing:Easing.out(Easing.quad),useNativeDriver:true}),Animated.sequence([Animated.delay(280),Animated.timing(op,{toValue:0,duration:200,useNativeDriver:true})])]).start();},[]);
-  return{fire,prog,op};
-}
 
 // ─── MICRO UI ─────────────────────────────────────────────────────────────────
 const Shimmer = memo(({w,h,r=8}:{w:number;h:number;r?:number}) => {
@@ -240,31 +236,24 @@ const Empty = memo(({icon,text,sub}:{icon:keyof typeof Ionicons.glyphMap;text:st
 //   Avatar tap → édition implicite (pas de bouton edit dans la top bar)
 // ════════════════════════════════════════════════════════════════════════════
 const AVATAR_SIZE = 90;
-const RING_SIZE   = AVATAR_SIZE 
+const RING_SIZE   = AVATAR_SIZE;
 
 const ProfileHeader = memo(function ProfileHeader({
   profile, filmCount, critiqueCount, reelCount,
-  gamiProfile,
-  unreadNotifs, streak,
-  onAvatarEdit, onAdmin, onNotifs, onSettings,
+  gamiProfile, showLevel,
+  streak,
+  onAvatarEdit, onAdmin, onSettings,
 }:{
   profile:ProfileData; filmCount:number; critiqueCount:number; reelCount:number;
-  gamiProfile:GamiProfile;
-  unreadNotifs:number; streak:number;
-  onAvatarEdit:()=>void; onAdmin:()=>void; onNotifs:()=>void; onSettings:()=>void;
+  gamiProfile:GamiProfile; showLevel:boolean;
+  streak:number;
+  onAvatarEdit:()=>void; onAdmin:()=>void; onSettings:()=>void;
 }) {
-  const [imgErr,  setImgErr]  = useState(false);
-  const [bioOpen, setBioOpen] = useState(false);
-  const barAnim   = useRef(new Animated.Value(0)).current;
-  const glowAnim  = useRef(new Animated.Value(0.30)).current;
-  const ringAnim  = useRef(new Animated.Value(1)).current;
+  const [imgErr, setImgErr] = useState(false);
+  const glowAnim = useRef(new Animated.Value(0.30)).current;
+  const ringAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(()=>setImgErr(false),[profile.avatar_url]);
-
-  // Barre XP → animée à chaque mise à jour gamiProfile
-  useEffect(()=>{
-    Animated.timing(barAnim,{toValue:gamiProfile.pct,duration:1200,useNativeDriver:false,easing:Easing.out(Easing.exp)}).start();
-  },[gamiProfile.pct]);
 
   useEffect(()=>{
     const gl = Animated.loop(Animated.sequence([
@@ -289,11 +278,9 @@ const ProfileHeader = memo(function ProfileHeader({
     {k:'ws',icon:'globe-outline' as const,url:profile.website,label:'Portfolio'},
   ].filter(l=>!!l.url),[profile.social_instagram,profile.social_vimeo,profile.social_youtube,profile.website]);
 
-  // Interpolations
-  const barW      = barAnim.interpolate({inputRange:[0,1],outputRange:['0%','100%']});
   const ringScale = ringAnim;
 
-  // Couleur accent par niveau
+  // Couleur accent par niveau (GamificationSystem)
   const levelColor = useMemo(()=>{
     const l = gamiProfile.level;
     if(l>=9)return C.gold;
@@ -302,14 +289,12 @@ const ProfileHeader = memo(function ProfileHeader({
     return C.mid;
   },[gamiProfile.level]);
 
-  const notifBadge = unreadNotifs > 9 ? '9+' : String(unreadNotifs);
-  const lvlStr     = String(gamiProfile.level);
-  const xpStr      = gamiProfile.xp.toLocaleString('fr-FR');
-  const nextStr    = `encore ${gamiProfile.xpToNext.toLocaleString('fr-FR')} XP → Niv.${gamiProfile.level + 1}`;
+  const lvlStr = String(gamiProfile.level);
+  const subLine = [profile.username&&`@${profile.username}`,profile.location].filter(Boolean).join(' · ');
 
   return (
-    <View>
-      {/* ── Top bar : UNIVERSE · role · [admin | notifs | settings] ── */}
+    <View style={ph.root}>
+      {/* ── Top bar : UNIVERSE · role · [backoffice | settings] ── */}
       <View style={ph.topBar}>
         <View style={ph.topLeft}>
           <Text style={ph.brand}>UNIVERSE</Text>
@@ -317,56 +302,39 @@ const ProfileHeader = memo(function ProfileHeader({
           <Text style={ph.roleChip}>{ROLE_LABELS[profile.role] ?? 'Cinéaste'}</Text>
         </View>
         <View style={ph.actions}>
-          <TouchableOpacity style={ph.btn} onPress={onAdmin}>
-            <Ionicons name="eye-outline" size={16} color={C.offWhite}/>
+          <TouchableOpacity style={ph.btnBackoffice} onPress={onAdmin} activeOpacity={0.80}>
+            <Ionicons name="shield-checkmark-outline" size={16} color={C.blue}/>
           </TouchableOpacity>
-          <TouchableOpacity style={ph.btn} onPress={onNotifs}>
-            <Ionicons name="notifications-outline" size={17} color={C.offWhite}/>
-            {unreadNotifs>0&&<View style={ph.notifDot}><Text style={ph.notifTxt}>{notifBadge}</Text></View>}
-          </TouchableOpacity>
-          <TouchableOpacity style={ph.btn} onPress={onSettings}>
-            <Ionicons name="settings-outline" size={16} color={C.offWhite}/>
+          <TouchableOpacity style={ph.btn} onPress={onSettings} activeOpacity={0.80}>
+            <Ionicons name="settings-outline" size={16} color={C.mid}/>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* ── Identité : avatar + infos ── */}
+      {/* ── Identité : avatar + infos principales — hauteur fixe ── */}
       <View style={ph.identRow}>
         {/* Avatar — tap implicite → édition */}
         <TouchableOpacity onPress={onAvatarEdit} activeOpacity={0.82} style={{flexShrink:0}}>
           <View style={{position:'relative',width:RING_SIZE,height:RING_SIZE,alignItems:'center',justifyContent:'center'}}>
-        {/* Ring pulsant */}
-        <Animated.View style={[ph.ring,{
-          borderColor:`${levelColor}55`,
-          transform:[{scale:ringScale}],
-          opacity:glowAnim,
-        }]}/>
-        {/* Avatar image / fallback */}
-        {profile.avatar_url&&!imgErr
-          ? <Image
-          source={{uri:profile.avatar_url}}
-          style={ph.avatar}
-          resizeMode="cover"
-          onError={()=>setImgErr(true)}
-            />
-          : <View style={[ph.avatar,ph.avatarFb]}>
-          <Text style={ph.avatarInit}>{init}</Text>
-            </View>
-        }
-          
-            {/* Badge niveau réel */}
-            <View style={[ph.lvlBadge,{borderColor:`${levelColor}60`,backgroundColor:C.navyDark}]}>
-              <Text style={[ph.lvlTxt,{color:levelColor}]}>{lvlStr}</Text>
-            </View>
-            {/* Badge PRO */}
+            {/* Ring pulsant */}
+            <Animated.View style={[ph.ring,{
+              borderColor:`${levelColor}55`,
+              transform:[{scale:ringScale}],
+              opacity:glowAnim,
+            }]}/>
+            {/* Avatar image / fallback */}
+            {profile.avatar_url&&!imgErr
+              ? <Image source={{uri:profile.avatar_url}} style={ph.avatar} resizeMode="cover" onError={()=>setImgErr(true)}/>
+              : <View style={[ph.avatar,ph.avatarFb]}><Text style={ph.avatarInit}>{init}</Text></View>
+            }
+            {/* Badge PRO — seul badge sur l'avatar désormais */}
             {profile.is_pro&&<View style={ph.proBadge}><Text style={ph.proBadgeTxt}>PRO</Text></View>}
           </View>
         </TouchableOpacity>
 
-        {/* Infos identité */}
+        {/* Infos identité — chaque ligne réserve une hauteur fixe, qu'elle ait du contenu ou non */}
         <View style={ph.infoCol}>
-          {/* Nom */}
-          <View style={{flexDirection:'row',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:2}}>
+          <View style={ph.nameRow}>
             <Text style={ph.name} numberOfLines={1}>{dn}</Text>
             {profile.is_industry_contact&&<View style={ph.indBadge}><Text style={ph.indTxt}>INDUSTRIE</Text></View>}
             {streak>=3&&<View style={ph.streakBadge}>
@@ -375,108 +343,79 @@ const ProfileHeader = memo(function ProfileHeader({
             </View>}
           </View>
 
-          {/* Username + location */}
-          {(profile.username||profile.location)&&<View style={{flexDirection:'row',alignItems:'center',gap:4,marginBottom:8}}>
-            {profile.location&&<Ionicons name="location-outline" size={10} color={C.muted}/>}
-            <Text style={ph.sub} numberOfLines={1}>{[profile.username&&`@${profile.username}`,profile.location].filter(Boolean).join(' · ')}</Text>
-          </View>}
+          <View style={ph.subLine}>
+            {!!subLine&&<Text style={ph.sub} numberOfLines={1}>{subLine}</Text>}
+          </View>
 
-          {/* ── Niveau + barre XP (GamificationSystem) ── */}
-          <View style={{gap:5,marginTop:2}}>
-            <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
-              <View style={{paddingHorizontal:7,paddingVertical:2.5,borderRadius:7,borderWidth:StyleSheet.hairlineWidth,borderColor:`${levelColor}45`,backgroundColor:`${levelColor}12`}}>
-                <Text style={{color:levelColor,fontSize:10,fontWeight:'800',letterSpacing:0.3}}>NIV.{lvlStr}</Text>
+          {/* Stats principales + réseaux (icônes fixes) sur une seule ligne */}
+          <View style={ph.statsRow}>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.films_seen_count}</Text> Films</Text>
+            <Text style={ph.statTxt}>·</Text>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.following_count}</Text> Abonnements</Text>
+            {links.length>0&&(
+              <View style={ph.socialRow}>
+                {links.map(l=>(
+                  <TouchableOpacity key={l.k} style={ph.socialIcon} onPress={()=>Linking.openURL(l.url!).catch(()=>{})} activeOpacity={0.78}>
+                    <Ionicons name={l.icon} size={11} color={C.mid}/>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <Text style={{color:C.offWhite,fontSize:11,fontWeight:'700',flex:1,letterSpacing:-0.2}} numberOfLines={1}>{gamiProfile.title}</Text>
-              <View style={{flexDirection:'row',alignItems:'center',gap:2}}>
-                <Ionicons name="flash" size={9} color={C.gold}/>
-                <Text style={{color:C.muted,fontSize:9,fontWeight:'600'}}>{xpStr}</Text>
-              </View>
-            </View>
-            <View style={ph.xpTrack}>
-              <Animated.View style={[ph.xpFill,{width:barW,backgroundColor:levelColor}]}/>
-            </View>
-            {gamiProfile.level<10&&<Text style={ph.xpNext}>{nextStr}</Text>}
+            )}
+          </View>
+
+          <View style={ph.bioLine}>
+            {!!profile.bio&&<Text style={ph.bio} numberOfLines={1}>{profile.bio}</Text>}
           </View>
         </View>
+
+     
       </View>
-
-      {/* ── Bio ── */}
-      {!!profile.bio&&(
-        <Pressable onPress={()=>setBioOpen(v=>!v)} style={{paddingHorizontal:H_PAD,marginBottom:10}}>
-          <Text style={ph.bio} numberOfLines={bioOpen?undefined:2}>{profile.bio}</Text>
-          {profile.bio.length>90&&<Text style={ph.bioMore}>{bioOpen?'Moins ↑':'Suite ↓'}</Text>}
-        </Pressable>
-      )}
-
-      {/* ── Socials ── */}
-      {links.length>0&&(
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{paddingHorizontal:H_PAD,gap:7,paddingBottom:14}}>
-          {links.map(l=>(
-            <TouchableOpacity key={l.k} style={ph.socialBtn} onPress={()=>Linking.openURL(l.url!).catch(()=>{})} activeOpacity={0.78}>
-              <BlurView intensity={Platform.OS==='ios'?12:8} tint="dark" style={StyleSheet.absoluteFill}/>
-              <Ionicons name={l.icon} size={13} color={C.offWhite}/>
-              <Text style={ph.socialTxt}>{l.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
     </View>
   );
 });
 
 const ph = StyleSheet.create({
-  // Top bar
+  root:       {position:'relative'},
+  // Top bar — UX/UI identique aux icônes pro/notifications de social.tsx
   topBar:     {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:6,paddingBottom:12},
   topLeft:    {flexDirection:'row',alignItems:'center',gap:5},
   brand:      {color:C.muted,fontSize:8,fontWeight:'900',letterSpacing:2.5,textTransform:'uppercase'},
   dot:        {width:2,height:8,backgroundColor:C.faint,borderRadius:1},
   roleChip:   {color:C.muted,fontSize:9,fontWeight:'600',letterSpacing:0.3},
-  actions:    {flexDirection:'row',gap:5},
-  btn:        {width:32,height:32,borderRadius:16,alignItems:'center',justifyContent:'center',backgroundColor:C.navyLow,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
-  notifDot:   {position:'absolute',top:3,right:3,minWidth:12,height:12,borderRadius:6,backgroundColor:C.white,alignItems:'center',justifyContent:'center',paddingHorizontal:2},
-  notifTxt:   {color:C.navyDark,fontSize:6.5,fontWeight:'900'},
-  // Identity row
-  identRow:   {flexDirection:'row',alignItems:'flex-start',paddingHorizontal:H_PAD,marginBottom:16,gap:16},
+  actions:    {flexDirection:'row',gap:7},
+  btn:        {width:36,height:36,borderRadius:18,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center',position:'relative'},
+  btnBackoffice:{width:36,height:36,borderRadius:18,backgroundColor:'rgba(90,150,230,0.10)',borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(90,150,230,0.25)',alignItems:'center',justifyContent:'center',position:'relative'},
+  // Identity row — hauteur fixe (gouvernée par l'avatar 90px), relative pour ancrer le badge niveau
+  identRow:   {position:'relative',flexDirection:'row',alignItems:'flex-start',paddingHorizontal:H_PAD,marginBottom:14,gap:16},
   // Avatar
   ring:       {position:'absolute',top:0,left:0,right:0,bottom:0,width:RING_SIZE,height:RING_SIZE,borderRadius:RING_SIZE/2,borderWidth:1.5},
   avatar:     {width:AVATAR_SIZE,height:AVATAR_SIZE,borderRadius:AVATAR_SIZE/2,backgroundColor:C.navyMid},
   avatarFb:   {alignItems:'center',justifyContent:'center'},
   avatarInit: {color:C.white,fontSize:26,fontWeight:'900'},
-  editOverlay:{position:'absolute',bottom:0,left:0,right:0,height:'35%',
-    borderBottomLeftRadius:AVATAR_SIZE/2,borderBottomRightRadius:AVATAR_SIZE/2,
-    backgroundColor:'rgba(0,0,0,0.42)',alignItems:'center',justifyContent:'flex-end',paddingBottom:6},
-  lvlBadge:   {position:'absolute',top:-2,right:-2,minWidth:22,height:22,borderRadius:11,
-    borderWidth:1.5,alignItems:'center',justifyContent:'center',paddingHorizontal:5},
-  lvlTxt:     {fontSize:9,fontWeight:'900'},
   proBadge:   {position:'absolute',bottom:2,right:-4,paddingHorizontal:5,paddingVertical:2,borderRadius:4,
     backgroundColor:C.navyDark,borderWidth:1,borderColor:C.borderHi},
   proBadgeTxt:{color:C.offWhite,fontSize:6.5,fontWeight:'900',letterSpacing:0.6},
-  // Info column
-  infoCol:    {flex:1,gap:0,paddingTop:2},
+  // Info column — chaque ligne a une hauteur fixe réservée ; paddingRight constant
+  // (que showLevel soit actif ou non) pour que le badge niveau n'empiète jamais
+  // sur le nom et ne fasse varier aucune mise en page au toggle.
+  infoCol:    {flex:1,paddingTop:2,paddingRight:56},
+  nameRow:    {height:24,flexDirection:'row',alignItems:'center',gap:6},
   name:       {color:C.white,fontSize:18,fontWeight:'900',letterSpacing:-0.4,flexShrink:1},
   indBadge:   {paddingHorizontal:6,paddingVertical:2,borderRadius:5,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,backgroundColor:C.navyMid},
   indTxt:     {color:C.muted,fontSize:7,fontWeight:'800',letterSpacing:0.5},
   streakBadge:{flexDirection:'row',alignItems:'center',gap:2,paddingHorizontal:6,paddingVertical:2,borderRadius:5,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(245,200,66,0.28)',backgroundColor:'rgba(245,200,66,0.07)'},
+  subLine:    {height:15,justifyContent:'center'},
   sub:        {color:C.muted,fontSize:10.5,fontWeight:'500'},
-  // Level card (zone niveau depuis GamificationSystem)
-  levelCard:  {borderRadius:14,borderWidth:StyleSheet.hairlineWidth,backgroundColor:'rgba(255,255,255,0.025)',padding:12,gap:0},
-  levelCircle:{width:44,height:44,borderRadius:12,borderWidth:1,alignItems:'center',justifyContent:'center'},
-  levelLbl:   {fontSize:7,fontWeight:'900',letterSpacing:1.2,lineHeight:9},
-  levelNum:   {fontSize:18,fontWeight:'900',letterSpacing:-0.8,lineHeight:20},
-  levelTitle: {color:C.white,fontSize:13,fontWeight:'800',letterSpacing:-0.2},
-  xpCount:    {color:C.muted,fontSize:10,fontWeight:'700'},
-  contribPill:{flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:7,paddingVertical:3,borderRadius:8,backgroundColor:C.goldDim,borderWidth:StyleSheet.hairlineWidth,borderColor:C.goldBd},
-  contribTxt: {color:C.gold,fontSize:9,fontWeight:'700'},
-  xpTrack:    {height:4,borderRadius:2,backgroundColor:C.faint,overflow:'hidden',marginTop:8,marginBottom:6},
-  xpFill:     {height:'100%',borderRadius:2},
-  xpNext:     {color:C.muted,fontSize:9,fontWeight:'600'},
-  // Bio + socials
-  bio:        {color:C.mid,fontSize:12.5,lineHeight:18},
-  bioMore:    {color:C.offWhite,fontSize:11,fontWeight:'700',marginTop:3},
-  socialBtn:  {flexDirection:'row',alignItems:'center',gap:5,paddingHorizontal:11,paddingVertical:7,borderRadius:10,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
-  socialTxt:  {color:C.offWhite,fontSize:10,fontWeight:'600'},
+  statsRow:   {height:20,flexDirection:'row',alignItems:'center',gap:8},
+  statTxt:    {color:C.muted,fontSize:10.5,fontWeight:'500'},
+  statNum:    {color:C.white,fontSize:10.5,fontWeight:'800'},
+  socialRow:  {flexDirection:'row',alignItems:'center',gap:6,marginLeft:2},
+  socialIcon: {width:20,height:20,borderRadius:10,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center'},
+  bioLine:    {height:17,justifyContent:'center',marginTop:2},
+  bio:        {color:C.mid,fontSize:12,lineHeight:16},
+  // Niveau discreet — ancré à identRow (loin des icônes du haut), jamais la hauteur ne varie
+  levelAbs:   {position:'absolute',top:0,right:0,flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:7,paddingVertical:3,borderRadius:8,borderWidth:StyleSheet.hairlineWidth},
+  levelAbsTxt:{fontSize:9,fontWeight:'800',letterSpacing:0.3},
 });
 
 // ─── ★ SCORE STRIP ────────────────────────────────────────────────────────────
@@ -497,7 +436,7 @@ const ScoreStrip = memo(function ScoreStrip({
         <Text style={ss.scoreNum}>{fmt(score)}</Text>
         <Text style={ss.scoreLbl}>PTS</Text>
       </View>
-      <View style={{flex:1,gap:5}}>
+      <View style={{flex:1,gap:0}}>
         <View style={{flexDirection:'row',alignItems:'center',gap:8}}>
           <Text style={ss.levelTxt}>Activité Niv.{level.n}</Text>
           <View style={ss.levelPill}><Text style={ss.levelPillTxt}>{level.label}</Text></View>
@@ -616,13 +555,6 @@ const GenreRowGalaxy=memo(function GenreRowGalaxy({genre,count,max}:{genre:strin
   const rowBg=glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.09)']});
   return(<TouchableOpacity onPress={handleTap} activeOpacity={0.80}><Animated.View style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:7,paddingHorizontal:8,borderRadius:10,backgroundColor:rowBg}}><Animated.View style={{transform:[{scale:iconScale}]}  }><Ionicons name={icon} size={13} color={color}/></Animated.View><Text style={{width:108,color:C.mid,fontSize:11,fontWeight:'600'}}>{genre}</Text><AnimBar value={count} max={max} color={color}/><Text style={{color:C.muted,fontSize:10,fontWeight:'700',width:22,textAlign:'right'}}>{count}</Text></Animated.View>{detail&&<View style={{paddingLeft:34,paddingRight:8,paddingBottom:6}}><Text style={{color:C.muted,fontSize:9,lineHeight:13}}>{count} film{count>1?'s':''} · {pct}% de ta filmothèque</Text></View>}</TouchableOpacity>);
 });
-const FestivalRowGalaxy=memo(function FestivalRowGalaxy({name,rank,isLast}:{name:string;rank:number;isLast:boolean}){
-  const{fire:fireMeteor,prog:meteorProg,op:meteorOp}=useMeteorTap();const{fire:fireGlow,glow}=useGalaxyTap();const trophyScale=useRef(new Animated.Value(1)).current;
-  const handleTap=()=>{fireMeteor();fireGlow();Animated.sequence([Animated.spring(trophyScale,{toValue:1.3,tension:350,friction:6,useNativeDriver:true}),Animated.spring(trophyScale,{toValue:1,tension:200,friction:8,useNativeDriver:true})]).start();};
-  const rowBg=glow.interpolate({inputRange:[0,1],outputRange:['rgba(255,255,255,0)','rgba(245,200,66,0.10)']});
-  const meteorTx=meteorProg.interpolate({inputRange:[0,1],outputRange:[0,120]});
-  return(<TouchableOpacity onPress={handleTap} activeOpacity={0.80}><Animated.View style={{flexDirection:'row',alignItems:'center',gap:10,paddingVertical:9,paddingHorizontal:6,borderRadius:9,borderBottomWidth:isLast?0:StyleSheet.hairlineWidth,borderBottomColor:C.border,backgroundColor:rowBg,overflow:'hidden'}}><Animated.View style={{position:'absolute',top:0,bottom:0,left:0,opacity:meteorOp,transform:[{translateX:meteorTx}],justifyContent:'center'}} pointerEvents="none"><LinearGradient colors={['transparent','rgba(245,200,66,0.30)','transparent']} start={{x:0,y:0}} end={{x:1,y:0}} style={{width:80,height:1.5,borderRadius:1}}/></Animated.View><Animated.View style={{width:28,height:28,borderRadius:8,backgroundColor:C.goldDim,borderWidth:StyleSheet.hairlineWidth,borderColor:C.gold,alignItems:'center',justifyContent:'center',transform:[{scale:trophyScale}]}}><Ionicons name="trophy-outline" size={13} color={C.gold}/></Animated.View><Text style={{color:C.offWhite,fontSize:13,fontWeight:'600',flex:1}}>{name}</Text><Text style={{color:C.muted,fontSize:10}}>#{rank+1}</Text></Animated.View></TouchableOpacity>);
-});
 const NotableWorkGalaxy=memo(function NotableWorkGalaxy({w,isLast}:{w:any;isLast:boolean}){
   const{fire,ring,ringOp,glow}=useGalaxyTap();const yearStr=w.year?.slice(-2)??'—';
   const handleTap=()=>{fire();if(w.url)Linking.openURL(w.url).catch(()=>{});};
@@ -659,10 +591,10 @@ export default function ProfileScreen() {
   const [fetchError,   setFErr]    = useState(false);
   const [activeTab,    setTab]     = useState<GridTab>(0);
   const [modal,        setModal]   = useState<ModalType|null>(null);
-  const [unreadNotifs, setUnread]  = useState(0);
   const [streak,       setStreak]  = useState(0);
   // ★ Gamification réelle depuis GamificationSystem (cinephile_profiles)
   const [gamiProfile, setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
+  const [showLevel,   setShowLevel]  = useState(true);
 
   const { score, level, badges } = useLocalGamification(uid);
   const isFirstLoad = useRef(false);
@@ -695,9 +627,9 @@ export default function ProfileScreen() {
       setUid(deviceId);
       isFirstLoad.current=true;
       loadAll(deviceId);
-      loadUnread(deviceId);
       loadStreak(deviceId);
       loadGami(deviceId);
+      loadShowLevel(deviceId);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
@@ -705,17 +637,21 @@ export default function ProfileScreen() {
   useFocusEffect(useCallback(()=>{
     if(!uid||!isFirstLoad.current)return;
     loadAll(uid);
-    loadUnread(uid);
     loadGami(uid); // ★ rafraîchit le niveau à chaque retour sur l'onglet
+    loadShowLevel(uid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[uid]));
 
-  const loadUnread = useCallback(async(userId:string)=>{
-    try{const{count}=await supabase.from('notifications').select('id',{count:'exact',head:true}).eq('user_id',userId).eq('read',false);setUnread(count??0);}catch{}
-  },[]);
-
   const loadStreak = useCallback(async(userId:string)=>{
     try{const{data}=await supabase.from('user_history').select('watched_at').eq('user_id',userId).order('watched_at',{ascending:false}).limit(30);const rows=data??[];if(!rows.length)return;let s=1;for(let i=1;i<rows.length;i++){const g=new Date(rows[i-1].watched_at).getTime()-new Date(rows[i].watched_at).getTime();if(g<=86400000*2)s++;else break;}setStreak(s);}catch{}
+  },[]);
+
+  const loadShowLevel = useCallback(async(userId:string)=>{
+    try{
+      const{data,error}=await supabase.from('user_preferences').select('show_level_on_profile').eq('user_id',userId).maybeSingle();
+      if(error){console.error('[profile] lecture show_level_on_profile:',error.message);return;}
+      setShowLevel(data?.show_level_on_profile??true);
+    }catch(e){console.error('[profile] lecture show_level_on_profile:',e);}
   },[]);
 
   const loadAll = useCallback(async(userId:string)=>{
@@ -767,7 +703,6 @@ export default function ProfileScreen() {
   const avgRating  = useMemo(()=>reviews.length?(reviews.reduce((s,r)=>s+r.rating,0)/reviews.length).toFixed(1):'—',[reviews]);
 
   const nav = useMemo(()=>({
-    notifs:   () => { setUnread(0); router.push('/notifications' as any); },
     settings: () => router.push('/settings' as any),
     admin:    () => router.push('/backoffice/universe-admin' as any),
     avatarEdit: () => router.push('/edit' as any), // ★ avatar tap → edit
@@ -830,9 +765,6 @@ export default function ProfileScreen() {
         <CinemaAccordion icon="star-outline" title="Notes & avis" count={reviews.length}>
           {reviews.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Aucune critique publiée</Text>:<View style={{gap:4}}>{[5,4,3,2,1].map(s=><StarRatingRowGalaxy key={s} rating={s} count={ratingDist[s]??0} max={maxRating}/>)}<Text style={{color:C.muted,fontSize:10,textAlign:'center',marginTop:6}}>Note moyenne : {avgRating} / 5</Text></View>}
         </CinemaAccordion>
-        <CinemaAccordion icon="trophy-outline" title="Palmarès & Festivals" count={profile.festivals.length}>
-          {profile.festivals.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Ajoutez vos festivals depuis "Modifier le profil"</Text>:profile.festivals.map((f,i)=><FestivalRowGalaxy key={f} name={f} rank={i} isLast={i===profile.festivals.length-1}/>)}
-        </CinemaAccordion>
         {profile.notable_works.length>0&&<CinemaAccordion icon="film-outline" title="Œuvres notables" count={profile.notable_works.length}>{profile.notable_works.map((w:any,i:number)=><NotableWorkGalaxy key={w.id??i} w={w} isLast={i===profile.notable_works.length-1}/>)}</CinemaAccordion>}
         <View style={{height:110}}/>
       </View>
@@ -871,7 +803,7 @@ export default function ProfileScreen() {
       <StatusBar style="light"/>
       <GalaxyBackground/>
       <ScrollView showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadUnread(uid);loadGami(uid);}}} tintColor={C.mid}/>}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadGami(uid);loadShowLevel(uid);}}} tintColor={C.mid}/>}>
         <SafeAreaView edges={['top']}>
           {/* ★ Header branché sur gamiProfile (GamificationSystem) */}
           <ProfileHeader
@@ -880,11 +812,10 @@ export default function ProfileScreen() {
             critiqueCount={reviews.length}
             reelCount={reels.length}
             gamiProfile={gamiProfile}
-            unreadNotifs={unreadNotifs}
+            showLevel={showLevel}
             streak={streak}
             onAvatarEdit={nav.avatarEdit}
             onAdmin={nav.admin}
-            onNotifs={nav.notifs}
             onSettings={nav.settings}
           />
         </SafeAreaView>

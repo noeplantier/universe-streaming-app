@@ -97,7 +97,7 @@ interface Prefs {
   notif_connections:boolean;
   private_profile:boolean;   public_watchlist:boolean;
   show_seen_films:boolean;   analytics:boolean;
-  personalization:boolean;
+  personalization:boolean;   show_level_on_profile:boolean;
   reduced_motion:boolean;    subtitles:boolean;
 }
 const PREFS_DEFAULT: Prefs = {
@@ -105,7 +105,7 @@ const PREFS_DEFAULT: Prefs = {
   notif_releases:true,   notif_social:true,       notif_festivals:false, notif_moderation:true,
   notif_connections:true,
   private_profile:false, public_watchlist:true,   show_seen_films:true,  analytics:true,
-  personalization:true,
+  personalization:true,  show_level_on_profile:true,
   reduced_motion:false,  subtitles:false,
 };
 
@@ -556,7 +556,8 @@ export default function SettingsScreen() {
           <ToggleRow icon="bookmark-outline"   title="Watchlist publique"     subtitle="Visible par votre communauté"            value={prefs.public_watchlist} onChange={v=>setPref('public_watchlist',v)} saving={!!V.public_watchlist}/>
           <ToggleRow icon="eye-outline"        title="Historique visible"     subtitle="Vos films vus affichés sur le profil"    value={prefs.show_seen_films}  onChange={v=>setPref('show_seen_films',v)}  saving={!!V.show_seen_films}/>
           <ToggleRow icon="bar-chart-outline"  title="Analytics"              subtitle="Aide à améliorer Universe"               value={prefs.analytics}        onChange={v=>setPref('analytics',v)}        saving={!!V.analytics}/>
-          <ToggleRow icon="sparkles-outline"   title="Personnalisation"       subtitle="Recommandations selon vos goûts"         value={prefs.personalization}  onChange={v=>setPref('personalization',v)}  saving={!!V.personalization} last/>
+          <ToggleRow icon="sparkles-outline"   title="Personnalisation"       subtitle="Recommandations selon vos goûts"         value={prefs.personalization}  onChange={v=>setPref('personalization',v)}  saving={!!V.personalization}/>
+          <ToggleRow icon="ribbon-outline"     title="Niveau sur le profil"   subtitle="Affiche votre niveau et barre XP publiquement" value={prefs.show_level_on_profile} onChange={v=>setPref('show_level_on_profile',v)} saving={!!V.show_level_on_profile} last/>
         </Group>
 
         {/* ── ACCESSIBILITÉ ── */}

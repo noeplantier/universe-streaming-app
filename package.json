@@ -34,7 +34,7 @@
     "react-native-screens": "3.31.1",
     "react-native-slider": "^0.11.0",
     "react-native-web": "~0.19.10",
-    "supabase": "^2.84.8"
+    "supabase": "^2.108.0"
   },
   "overrides": {
     "metro": "0.80.9",
@@ -42,8 +42,8 @@
     "metro-resolver": "0.80.9"
   },
   "devDependencies": {
-    "typescript": "^4.5.4",
-    "@babel/core": "^7.20.0"
+    "@babel/core": "^7.20.0",
+    "typescript": "^4.5.4"
   },
   "private": true
 }
