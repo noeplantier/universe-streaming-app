@@ -34,9 +34,9 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { supabase } from '@/lib/supabase';
 import CustomNavBar from '@/components/CustomNavBar';
 import { ReelsUIProvider, useReelsUI } from '@/contexts/ReelsUIContext';
+import { PinAuthProvider, usePinAuth } from '@/contexts/PinAuthContext';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -266,26 +266,24 @@ const ov = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Auth guard
+// PIN auth guard — routes vers /(auth)/login si la session PIN est invalide
 // ─────────────────────────────────────────────────────────────────────────────
-function useAuthGuard(ready: boolean) {
-  const router = useRouter();
+function usePinAuthGuard(ready: boolean) {
+  const router   = useRouter();
   const segments = useSegments();
+  const { isAuthenticated, isLoading } = usePinAuth();
 
   useEffect(() => {
-    if (!ready) return;
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const inAuth = segments[0] === '(auth)' || segments[0] === 'login';
-      if (!session && !inAuth) {
-        // router.replace('/login');
-      }
-    });
-  }, [ready, segments, router]);
+    if (!ready || isLoading) return;
+    const inAuth = segments[0] === '(auth)';
+    if (!isAuthenticated && !inAuth) router.replace('/(auth)/login');
+    if (isAuthenticated && inAuth)   router.replace('/(tabs)');
+  }, [ready, isLoading, isAuthenticated, segments, router]);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NavBarWrapper — toujours monté, animé uniquement sur /reels
+// Masqué sur les routes (auth) (login sans barre de navigation)
 // ─────────────────────────────────────────────────────────────────────────────
 function NavBarWrapper() {
   const { navBarOpacity, uiVisible, restoreNavBar } = useReelsUI();
@@ -300,10 +298,19 @@ function NavBarWrapper() {
     );
   }, [pathname]);
 
+  // Pas de NavBar sur l'écran de login
+  const isAuth = useMemo(() =>
+    pathname.startsWith('/(auth)') || pathname === '/login',
+  [pathname]);
+
+  // Toujours avant tout return conditionnel (Rules of Hooks)
   useEffect(() => {
+    if (isAuth) return;
     if (!isReels && wasOnReels.current) restoreNavBar();
     wasOnReels.current = isReels;
-  }, [isReels, restoreNavBar]);
+  }, [isAuth, isReels, restoreNavBar]);
+
+  if (isAuth) return null;
 
   if (!isReels) {
     return (
@@ -324,76 +331,74 @@ function NavBarWrapper() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RootLayout
+// AppInner — composant interne qui peut consommer usePinAuth()
+// (PinAuthProvider doit être parent — voir RootLayout ci-dessous)
 // ─────────────────────────────────────────────────────────────────────────────
-export default function RootLayout() {
+function AppInner() {
+  const { isLoading } = usePinAuth();
   const [ready, setReady] = useState(false);
   const screenshotVisible = useAntiScreenshot();
 
-  useAuthGuard(ready);
-
+  // La session PIN est vérifiée par PinAuthProvider au montage.
+  // Dès qu'elle est terminée (isLoading=false) → masquer le splash.
   useEffect(() => {
-    let alive = true;
+    if (!isLoading && !ready) {
+      setReady(true);
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [isLoading, ready]);
 
-    supabase.auth
-      .getSession()
-      .then(() => {
-        if (!alive) return;
-        setReady(true);
-        SplashScreen.hideAsync().catch(() => {});
-      })
-      .catch(() => {
-        if (!alive) return;
-        setReady(true);
-        SplashScreen.hideAsync().catch(() => {});
-      });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {});
-
-    return () => {
-      alive = false;
-      subscription.unsubscribe();
-    };
-  }, []);
+  usePinAuthGuard(ready);
 
   if (!ready) return null;
 
   return (
-    <ReelsUIProvider>
-      <SafeAreaProvider>
-        <StatusBar style="light" />
+    <>
+      <StatusBar style="light" />
 
-        <Stack
-          screenOptions={{
-            headerShown:      false,
-            contentStyle:     { backgroundColor: '#070C17' },
-            animation:        Platform.OS === 'ios' ? 'default' : 'fade',
-            gestureEnabled:   true,
-            gestureDirection: 'horizontal',
-          }}
-        >
-          <Stack.Screen name="(tabs)"    options={{ headerShown: false }} />
-          <Stack.Screen name="film/[id]" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
-          <Stack.Screen name="reel/[id]" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
-          <Stack.Screen name="edit"      options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
-          <Stack.Screen name="review/[id]"            options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
-          <Stack.Screen name="notifications"          options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
-          <Stack.Screen name="settings"               options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
-          <Stack.Screen name="user/[id]"              options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
-          <Stack.Screen name="backoffice/universe-admin" options={{ animation: 'fade_from_bottom' }} />
-          <Stack.Screen name="+not-found" options={{ title: 'Page introuvable' }} />
-        </Stack>
+      <Stack
+        screenOptions={{
+          headerShown:      false,
+          contentStyle:     { backgroundColor: '#070C17' },
+          animation:        Platform.OS === 'ios' ? 'default' : 'fade',
+          gestureEnabled:   true,
+          gestureDirection: 'horizontal',
+        }}
+      >
+        <Stack.Screen name="(auth)"    options={{ headerShown: false, animation: 'fade' }} />
+        <Stack.Screen name="(tabs)"    options={{ headerShown: false }} />
+        <Stack.Screen name="film/[id]" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+        <Stack.Screen name="reel/[id]" options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+        <Stack.Screen name="edit"      options={{ animation: 'slide_from_bottom', gestureDirection: 'vertical' }} />
+        <Stack.Screen name="review/[id]"               options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
+        <Stack.Screen name="notifications"             options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
+        <Stack.Screen name="settings"                  options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
+        <Stack.Screen name="user/[id]"                 options={{ animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom' }} />
+        <Stack.Screen name="backoffice/universe-admin" options={{ animation: 'fade_from_bottom' }} />
+        <Stack.Screen name="+not-found"                options={{ title: 'Page introuvable' }} />
+      </Stack>
 
-        {/* NavBar — toujours visible, animée uniquement sur /reels */}
-        <NavBarWrapper />
+      {/* NavBar — toujours visible, animée uniquement sur /reels, masquée sur (auth) */}
+      <NavBarWrapper />
 
-        {/* Overlay anti-screenshot — natif uniquement, jamais rendu sur web */}
-        <ScreenshotOverlay visible={screenshotVisible} />
+      {/* Overlay anti-screenshot — natif uniquement, jamais rendu sur web */}
+      <ScreenshotOverlay visible={screenshotVisible} />
+    </>
+  );
+}
 
-      </SafeAreaProvider>
-    </ReelsUIProvider>
+// ─────────────────────────────────────────────────────────────────────────────
+// RootLayout
+// ─────────────────────────────────────────────────────────────────────────────
+export default function RootLayout() {
+  return (
+    <PinAuthProvider>
+      <ReelsUIProvider>
+        <SafeAreaProvider>
+          <AppInner />
+        </SafeAreaProvider>
+      </ReelsUIProvider>
+    </PinAuthProvider>
   );
 }
 

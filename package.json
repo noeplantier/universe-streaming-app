@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-native-community/slider": "4.5.2",
     "@shopify/react-native-skia": "0.1.241",
+    "@types/jest": "^30.0.0",
     "@types/react": "~18.2.79",
     "expo": "~51.0.28",
     "expo-constants": "~16.0.2",
@@ -27,6 +28,7 @@
     "ffmpeg-kit-react-native": "^6.0.2",
     "gl-react": "^5.2.0",
     "gl-react-expo": "^5.2.1",
+    "jest-expo": "~51.0.4",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-native": "0.74.5",
