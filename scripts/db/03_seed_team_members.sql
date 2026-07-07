@@ -14,7 +14,6 @@
 --   Chassaing: 963258
 --   BSE      : 178526
 --   Sharl    : 905347
---   Clem     : 263890
 --   Enzo     : 741963
 --   NOX      : 358124
 --   Maxime   : 527046
@@ -33,7 +32,6 @@ DECLARE
     ARRAY['Chassaing', '963258'],
     ARRAY['BSE',       '178526'],
     ARRAY['Sharl',     '905347'],
-    ARRAY['Clem',      '263890'],
     ARRAY['Enzo',      '741963'],
     ARRAY['NOX',       '358124'],
     ARRAY['Maxime',    '527046']
@@ -53,7 +51,7 @@ BEGIN
   END LOOP;
 
   RAISE NOTICE '---';
-  RAISE NOTICE '✅ 8 membres créés. Communiquez les PINs de façon sécurisée';
+  RAISE NOTICE '✅ 7 membres créés. Communiquez les PINs de façon sécurisée';
   RAISE NOTICE '   et demandez à chaque membre de le changer dès la première connexion.';
   RAISE NOTICE '---';
 END $$;

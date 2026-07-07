@@ -83,6 +83,18 @@ const DAILY_POOL = [
   { id:'create',   icon:'videocam-outline'    as const, title:'Studio Ouvert',   desc:"Uploader un nouveau projet ou reel",                      xp:80, total:1, cta:'Publier'    },
   { id:'profile',  icon:'person-outline'      as const, title:'Carte de Visite', desc:"Compléter une section de votre profil créateur",          xp:45, total:1, cta:'Profil'     },
   { id:'share',    icon:'share-outline'       as const, title:'Porte-Voix',      desc:"Partager une œuvre avec votre communauté",                xp:30, total:1, cta:'Partager'   },
+  { id:'streak',   icon:'flame-outline'       as const, title:'Streak du Jour',  desc:"Maintenir votre streak de connexion quotidienne",          xp:25, total:1, cta:'Se Connecter'},
+  { id:'explore',  icon:'compass-outline'    as const, title:'Explorateur',     desc:"Découvrir un nouveau créateur ou film sur la plateforme",  xp:35, total:1, cta:'Explorer'   },
+  { id:'feedback', icon:'megaphone-outline'  as const, title:'Écho du Cinéma',  desc:"Donner votre avis sur une fonctionnalité ou un film",      xp:40, total:1, cta:'Donner Avis'},
+  { id:'event',    icon:'calendar-outline'   as const, title:'Événement',       desc:"Participer à un événement ou challenge spécial du jour",   xp:50, total:1, cta:'Participer'},
+  { id:'collab',   icon:'people-outline'     as const, title:'Collaboration',   desc:"Collaborer avec un autre créateur sur un projet",          xp:70, total:1, cta:'Collaborer'},
+  { id:'tutorial', icon:'school-outline'      as const, title:'Apprentissage',   desc:"Suivre un tutoriel ou guide pour améliorer vos compétences",xp:30, total:1, cta:'Apprendre'  },
+  { id:'challenge', icon:'trophy-outline'     as const, title:'Défi du Jour',    desc:"Relever un défi créatif proposé par la communauté",        xp:60, total:1, cta:'Relever'    },
+  { id:'survey',   icon:'clipboard-outline'  as const, title:'Sondage',         desc:"Répondre à un sondage ou questionnaire sur la plateforme",  xp:25, total:1, cta:'Répondre'  },
+  { id:'donate',   icon:'cash-outline'       as const, title:'Soutien',         desc:"Faire un don ou soutenir un créateur indépendant",          xp:50, total:1, cta:'Soutenir'   },
+  { id:'share_story', icon:'share-social-outline' as const, title:'Partage d\'Histoire', desc:"Partager une histoire ou expérience personnelle liée au cinéma", xp:40, total:1, cta:'Partager' },
+  { id:'review',   icon:'star-half-outline' as const, title:'Critique Étoilée', desc:"Évaluer un film ou une création avec un système d'étoiles", xp:35, total:1, cta:'Évaluer'    },
+  { id:'invite',   icon:'person-add-outline' as const, title:'Inviter un Ami', desc:"Inviter un ami à rejoindre la plateforme et découvrir le cinéma indépendant", xp:30, total:1, cta:'Inviter' },
 ] as const;
 type DailyTpl = typeof DAILY_POOL[number];
 type DailyId  = DailyTpl['id'];
@@ -91,7 +103,7 @@ type DailyId  = DailyTpl['id'];
 function todaysChallenges(): DailyTpl[] {
   const dayIndex = Math.floor(Date.now()/86400000);
   const n = DAILY_POOL.length;
-  return [0,1,2].map(k => DAILY_POOL[(dayIndex*3 + k) % n]);
+  return [0,1,2,3,4,5].map(k => DAILY_POOL[(dayIndex*6 + k) % n]);
 }
 
 // ─── FOMO + EN-TÊTE ROTATIF DU BOUTON ────────────────────────────────────────
@@ -222,15 +234,27 @@ const GalaxyModal=memo(({
   const handleClaim=useCallback((id:DailyId,xp:number)=>{daily.claimChallenge(id,xp);awardXP(xp,`défi_du_jour_${id}`);showBurst(xp);},[daily,awardXP,showBurst]);
 
   const go=useCallback((route:string)=>{onClose();setTimeout(()=>router.push(route as any),320);},[onClose,router]);
-  const dailyActions:Record<DailyId,()=>void>={
-    watch:   ()=>go('/(tabs)'),
-    critique:()=>go('/(tabs)/create?tab=critique'),
-    like:    ()=>go('/(tabs)/social?autoScroll=1'),
-    comment: ()=>go('/(tabs)/social?focusComment=1'),
-    pro:     ()=>go('/(tabs)/professionals?openModal=1'),
-    create:  ()=>go('/(tabs)/create'),
-    profile: ()=>go('/profile'),
-    share:   ()=>go('/(tabs)/social'),
+  const dailyActions:Partial<Record<DailyId,()=>void>>={
+    watch:       ()=>go('/(tabs)'),
+    critique:    ()=>go('/(tabs)/create'),
+    like:        ()=>go('/(tabs)/social'),
+    comment:     ()=>go('/(tabs)/social'),
+    pro:         ()=>go('/(tabs)/social'),
+    create:      ()=>go('/(tabs)/create'),
+    profile:     ()=>go('/(tabs)/profile'),
+    share:       ()=>go('/(tabs)/social'),
+    streak:      ()=>go('/(tabs)'),
+    explore:     ()=>go('/(tabs)/search'),
+    feedback:    ()=>go('/(tabs)/social'),
+    event:       ()=>go('/(tabs)/social'),
+    collab:      ()=>go('/(tabs)/social'),
+    tutorial:    ()=>go('/(tabs)/search'),
+    challenge:   ()=>go('/(tabs)/search'),
+    survey:      ()=>go('/(tabs)/social'),
+    donate:      ()=>go('/(tabs)/social'),
+    share_story: ()=>go('/(tabs)/social'),
+    review:      ()=>go('/(tabs)/create'),
+    invite:      ()=>go('/(tabs)/social'),
   };
 
   if(!visible)return null;
