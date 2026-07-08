@@ -61,6 +61,10 @@ const E = 20;
 const fmtK   = (n:number)=>n>=1e6?`${(n/1e6).toFixed(1)}M`:n>=1e3?`${(n/1e3).toFixed(1)}K`:`${n}`;
 const fmtDur = (m:number|null)=>{ if(!m)return''; if(m>=60)return`${Math.floor(m/60)}h${m%60?` ${m%60}m`:''}`; return`${m}m`; };
 
+// Module-level singleton — survives component remounts and tab switches.
+// Prevents LevelUpCelebration from replaying on Supabase hydration.
+const _lastCelebratedLevel = new Map<string, number>();
+
 // ─── ATOMS ───────────────────────────────────────────────────────────────────
 const Shimmer=memo(({w,h,r=8}:{w:number|string;h:number;r?:number})=>{
   const op=useRef(new Animated.Value(0.15)).current;
@@ -73,38 +77,22 @@ const Shimmer=memo(({w,h,r=8}:{w:number|string;h:number;r?:number})=>{
 const LEVEL_ICONS = ['star-outline','sparkles-outline','flash-outline','rocket-outline','flash-outline','nuclear-outline','infinite-outline','planet-outline','planet-outline','planet-outline'] as const;
 const levelIcon = (level:number) => LEVEL_ICONS[Math.min(Math.max(level,1),10)-1];
 
-// ─── DÉFIS DU JOUR — pool "créateur indépendant", 3 tirés chaque jour ───────
+// ─── DÉFIS DU JOUR — 8 actions ancrées dans les vraies features de l'app ────
 const DAILY_POOL = [
-  { id:'watch',    icon:'play-circle-outline' as const, title:'Scout du Jour',   desc:"Visionner un court métrage indépendant sur les Reels",   xp:40, total:1, cta:'Visionner' },
-  { id:'critique', icon:'create-outline'      as const, title:'Voix du Cosmos',  desc:"Publier une critique argumentée sur une œuvre",          xp:60, total:1, cta:'Rédiger'    },
-  { id:'like',     icon:'heart-outline'       as const, title:'Coup de Cœur',    desc:"Liker la création d'un cinéaste indépendant",            xp:30, total:1, cta:'Découvrir'  },
-  { id:'comment',  icon:'chatbubble-outline'  as const, title:'Retour Créateur', desc:"Commenter le travail d'un autre créateur",                xp:35, total:1, cta:'Commenter'  },
-  { id:'pro',      icon:'briefcase-outline'   as const, title:'Réseau Pro',      desc:"Contacter un professionnel du cinéma",                    xp:50, total:1, cta:'Réseauter'  },
-  { id:'create',   icon:'videocam-outline'    as const, title:'Studio Ouvert',   desc:"Uploader un nouveau projet ou reel",                      xp:80, total:1, cta:'Publier'    },
-  { id:'profile',  icon:'person-outline'      as const, title:'Carte de Visite', desc:"Compléter une section de votre profil créateur",          xp:45, total:1, cta:'Profil'     },
-  { id:'share',    icon:'share-outline'       as const, title:'Porte-Voix',      desc:"Partager une œuvre avec votre communauté",                xp:30, total:1, cta:'Partager'   },
-  { id:'streak',   icon:'flame-outline'       as const, title:'Streak du Jour',  desc:"Maintenir votre streak de connexion quotidienne",          xp:25, total:1, cta:'Se Connecter'},
-  { id:'explore',  icon:'compass-outline'    as const, title:'Explorateur',     desc:"Découvrir un nouveau créateur ou film sur la plateforme",  xp:35, total:1, cta:'Explorer'   },
-  { id:'feedback', icon:'megaphone-outline'  as const, title:'Écho du Cinéma',  desc:"Donner votre avis sur une fonctionnalité ou un film",      xp:40, total:1, cta:'Donner Avis'},
-  { id:'event',    icon:'calendar-outline'   as const, title:'Événement',       desc:"Participer à un événement ou challenge spécial du jour",   xp:50, total:1, cta:'Participer'},
-  { id:'collab',   icon:'people-outline'     as const, title:'Collaboration',   desc:"Collaborer avec un autre créateur sur un projet",          xp:70, total:1, cta:'Collaborer'},
-  { id:'tutorial', icon:'school-outline'      as const, title:'Apprentissage',   desc:"Suivre un tutoriel ou guide pour améliorer vos compétences",xp:30, total:1, cta:'Apprendre'  },
-  { id:'challenge', icon:'trophy-outline'     as const, title:'Défi du Jour',    desc:"Relever un défi créatif proposé par la communauté",        xp:60, total:1, cta:'Relever'    },
-  { id:'survey',   icon:'clipboard-outline'  as const, title:'Sondage',         desc:"Répondre à un sondage ou questionnaire sur la plateforme",  xp:25, total:1, cta:'Répondre'  },
-  { id:'donate',   icon:'cash-outline'       as const, title:'Soutien',         desc:"Faire un don ou soutenir un créateur indépendant",          xp:50, total:1, cta:'Soutenir'   },
-  { id:'share_story', icon:'share-social-outline' as const, title:'Partage d\'Histoire', desc:"Partager une histoire ou expérience personnelle liée au cinéma", xp:40, total:1, cta:'Partager' },
-  { id:'review',   icon:'star-half-outline' as const, title:'Critique Étoilée', desc:"Évaluer un film ou une création avec un système d'étoiles", xp:35, total:1, cta:'Évaluer'    },
-  { id:'invite',   icon:'person-add-outline' as const, title:'Inviter un Ami', desc:"Inviter un ami à rejoindre la plateforme et découvrir le cinéma indépendant", xp:30, total:1, cta:'Inviter' },
+  { id:'upload',     icon:'cloud-upload-outline'  as const, title:'Premier Clap',     desc:"Importer et publier une nouvelle vidéo dans Universe",           xp:80, total:1, cta:'Créer'     },
+  { id:'comment',    icon:'chatbubble-outline'     as const, title:'Retour Créateur',  desc:"Laisser un commentaire sur une critique ou un post",              xp:35, total:1, cta:'Commenter' },
+  { id:'watch',      icon:'play-circle-outline'    as const, title:'Scout du Jour',    desc:"Visionner un reel ou une vidéo sur le feed principal",            xp:30, total:1, cta:'Visionner' },
+  { id:'write_crit', icon:'create-outline'         as const, title:'Plume Critique',   desc:"Rédiger et publier une critique argumentée sur une œuvre",        xp:60, total:1, cta:'Rédiger'   },
+  { id:'like_crit',  icon:'heart-outline'          as const, title:'Coup de Cœur',    desc:"Liker le commentaire ou la critique d'un autre membre",           xp:20, total:1, cta:'Explorer'  },
+  { id:'like_reel',  icon:'thumbs-up-outline'      as const, title:'Applaudissement',  desc:"Liker une vidéo ou un reel dans le feed Reels",                   xp:20, total:1, cta:'Feed'      },
+  { id:'share',      icon:'share-outline'          as const, title:'Porte-Voix',       desc:"Partager une vidéo par mail, message ou WhatsApp",                xp:30, total:1, cta:'Partager'  },
+  { id:'favorite',   icon:'bookmark-outline'       as const, title:'Cinémathèque',     desc:"Mettre une vidéo ou un film en favoris dans ta liste",            xp:25, total:1, cta:'Explorer'  },
 ] as const;
 type DailyTpl = typeof DAILY_POOL[number];
 type DailyId  = DailyTpl['id'];
 
-// 3 défis distincts par jour calendaire, identiques pour tous, renouvelés à minuit
-function todaysChallenges(): DailyTpl[] {
-  const dayIndex = Math.floor(Date.now()/86400000);
-  const n = DAILY_POOL.length;
-  return [0,1,2,3,4,5].map(k => DAILY_POOL[(dayIndex*6 + k) % n]);
-}
+// Tous les défis affichés chaque jour — 8 actions, 1 par feature
+function todaysChallenges(): DailyTpl[] { return [...DAILY_POOL] as DailyTpl[]; }
 
 // ─── FOMO + EN-TÊTE ROTATIF DU BOUTON ────────────────────────────────────────
 const FOMO = [
@@ -177,27 +165,39 @@ const DailyRow=memo(({ch,progress:rawProg,claimed,onClaim,onAction}:{
   ch:DailyTpl;progress:number;claimed:boolean;onClaim:()=>void;onAction:()=>void;
 })=>{
   const p=rawProg/ch.total;
-  const anim=useRef(new Animated.Value(0)).current;
-  useEffect(()=>{Animated.timing(anim,{toValue:p,duration:800,useNativeDriver:false}).start();},[p]);
+  const done=p>=1||claimed;
+  const barAnim=useRef(new Animated.Value(0)).current;
+  useEffect(()=>{Animated.timing(barAnim,{toValue:done?1:p,duration:700,easing:Easing.out(Easing.quad),useNativeDriver:false}).start();},[done,p]);
   return(
-    <View style={{height:78,marginBottom:8,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:p>=1?C.goldBd:C.border}}>
-      <LinearGradient colors={p>=1?['rgba(245,200,66,0.10)','rgba(13,32,64,0.95)']:[C.card,'rgba(4,8,15,0.94)']} style={{flex:1,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:12}}>
-        <View style={{width:38,height:38,borderRadius:11,backgroundColor:p>=1?C.goldFaint:C.faint,borderWidth:1,borderColor:p>=1?C.goldBd:C.border,alignItems:'center',justifyContent:'center',flexShrink:0}}>
-          <Ionicons name={ch.icon} size={17} color={p>=1?C.gold:C.muted}/>
+    <View style={{marginBottom:9,borderRadius:16,overflow:'hidden',borderWidth:1,borderColor:done?C.goldBd:'rgba(255,255,255,0.08)'}}>
+      <LinearGradient
+        colors={done?['rgba(245,200,66,0.11)','rgba(13,26,54,0.97)']:['rgba(13,26,54,0.94)','rgba(4,8,15,0.98)']}
+        start={{x:0,y:0}} end={{x:1,y:1}}
+        style={{paddingHorizontal:14,paddingVertical:13,flexDirection:'row',alignItems:'center',gap:12}}>
+        {/* Icon */}
+        <View style={{width:42,height:42,borderRadius:13,backgroundColor:done?C.goldFaint:'rgba(255,255,255,0.05)',borderWidth:1,borderColor:done?C.goldBd:'rgba(255,255,255,0.09)',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Ionicons name={done?'checkmark-circle':ch.icon} size={done?20:18} color={done?C.gold:C.muted}/>
         </View>
-        <View style={{flex:1,gap:4}}>
-          <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
-            <Text style={{color:C.white,fontSize:12,fontWeight:'800'}} numberOfLines={1}>{ch.title}</Text>
-            <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="flash" size={9} color={C.gold}/><Text style={{color:C.gold,fontSize:11,fontWeight:'700'}}>+{ch.xp}</Text></View>
+        {/* Body */}
+        <View style={{flex:1,gap:5}}>
+          <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
+            <Text style={{color:done?C.gold:C.white,fontSize:12,fontWeight:'800',flex:1}} numberOfLines={1}>{ch.title}</Text>
+            <View style={{flexDirection:'row',alignItems:'center',gap:2}}>
+              <Ionicons name="flash" size={9} color={C.gold}/>
+              <Text style={{color:C.gold,fontSize:11,fontWeight:'800'}}>+{ch.xp}</Text>
+            </View>
           </View>
-          <View style={{height:3,backgroundColor:C.subtle,borderRadius:2,overflow:'hidden'}}>
-            <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:p>=1?C.gold:C.white,width:anim.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/>
+          <View style={{height:2.5,backgroundColor:'rgba(255,255,255,0.07)',borderRadius:2,overflow:'hidden'}}>
+            <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:done?C.gold:'rgba(255,255,255,0.45)',width:barAnim.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/>
           </View>
-          <Text style={{color:C.muted,fontSize:10}} numberOfLines={1}>{ch.desc}</Text>
+          <Text style={{color:C.muted,fontSize:10,lineHeight:14}} numberOfLines={2}>{ch.desc}</Text>
         </View>
-        {claimed&&<View style={{width:28,height:28,borderRadius:14,backgroundColor:C.goldFaint,borderWidth:1,borderColor:C.goldBd,alignItems:'center',justifyContent:'center',flexShrink:0}}><Text style={{color:C.gold,fontSize:12,fontWeight:'900'}}>✓</Text></View>}
-        {!claimed&&p>=1&&<TouchableOpacity onPress={onClaim} style={{backgroundColor:C.gold,borderRadius:10,paddingHorizontal:11,paddingVertical:7,flexShrink:0}}><Text style={{color:C.bg,fontSize:11,fontWeight:'900'}}>CLAIM</Text></TouchableOpacity>}
-        {!claimed&&p<1&&<TouchableOpacity onPress={onAction} style={{borderRadius:10,paddingHorizontal:11,paddingVertical:7,borderWidth:1,borderColor:C.goldBd,backgroundColor:C.goldFaint,flexShrink:0}}><Text style={{color:C.gold,fontSize:11,fontWeight:'700'}}>{ch.cta}</Text></TouchableOpacity>}
+        {/* CTA */}
+        <View style={{flexShrink:0}}>
+          {claimed&&<View style={{width:30,height:30,borderRadius:15,backgroundColor:'rgba(245,200,66,0.12)',borderWidth:1,borderColor:C.goldBd,alignItems:'center',justifyContent:'center'}}><Ionicons name="checkmark" size={14} color={C.gold}/></View>}
+          {!claimed&&done&&<TouchableOpacity onPress={()=>{hL();onClaim();}} style={{backgroundColor:C.gold,borderRadius:11,paddingHorizontal:13,paddingVertical:8}} activeOpacity={0.82}><Text style={{color:C.bg,fontSize:11,fontWeight:'900'}}>CLAIM</Text></TouchableOpacity>}
+          {!claimed&&!done&&<TouchableOpacity onPress={()=>{hL();onAction();}} style={{borderRadius:11,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:C.goldBd,backgroundColor:C.goldFaint}} activeOpacity={0.82}><Text style={{color:C.gold,fontSize:11,fontWeight:'700'}}>{ch.cta}</Text></TouchableOpacity>}
+        </View>
       </LinearGradient>
     </View>
   );
@@ -216,30 +216,36 @@ const XP_TIPS=[
 
 // ─── GALAXY MODAL — Cosmos + Défis du jour ; XP réel via GamificationSystem ──
 const GalaxyModal=memo(({
-  visible,onClose,profile,awardXP,daily,loading,badges,
+  visible,onClose,profile,awardXP,daily,userId,badges,
 }:{
   visible:boolean;onClose:()=>void;
   profile:GamiProfile;
   awardXP:(amount:number,reason:string)=>void;
   daily:ReturnType<typeof useDailyChallenges>;
-  loading:boolean;badges:GamiBadge[];
+  userId:string;badges:GamiBadge[];
 })=>{
   const router=useRouter(),insets=useSafeAreaInsets();
   const slideY=useRef(new Animated.Value(SH)).current;
   const[burst,setBurst]=useState({v:false,n:0});
-  const prevLevel=useRef(profile.level);
-  const initialLoadDone=useRef(false);
   const[levelUp,setLevelUp]=useState<{level:number;title:string}|null>(null);
   const[activeBadge,setActiveBadge]=useState<string|null>(null);
   const[tipsOpen,setTipsOpen]=useState(false);
 
-  // Only fire celebration for real in-session level-ups, never on hydration
+  // Singleton-based guard: only fire for genuine in-session level gains.
+  // Module-level map survives remounts and tab switches — immune to hydration.
   useEffect(()=>{
-    if(loading){prevLevel.current=profile.level;return;}
-    if(!initialLoadDone.current){initialLoadDone.current=true;prevLevel.current=profile.level;return;}
-    if(profile.level>prevLevel.current)setLevelUp({level:profile.level,title:profile.title});
-    prevLevel.current=profile.level;
-  },[profile.level,profile.title,loading]);
+    if(!userId||profile.level===0)return;
+    const last=_lastCelebratedLevel.get(userId);
+    if(last===undefined){
+      // First time we see this user — set baseline, no celebration
+      _lastCelebratedLevel.set(userId,profile.level);
+      return;
+    }
+    if(profile.level>last){
+      setLevelUp({level:profile.level,title:profile.title});
+      _lastCelebratedLevel.set(userId,profile.level);
+    }
+  },[userId,profile.level,profile.title]);
 
   useEffect(()=>{
     if(visible){Animated.spring(slideY,{toValue:0,useNativeDriver:true,tension:62,friction:11}).start();}
@@ -251,16 +257,14 @@ const GalaxyModal=memo(({
   const go=useCallback((route:string)=>{onClose();setTimeout(()=>router.push(route as any),320);},[onClose,router]);
 
   const dailyActions:Partial<Record<DailyId,()=>void>>={
-    watch:()=>go('/(tabs)'),critique:()=>go('/(tabs)/create'),
-    like:()=>go('/(tabs)/social'),comment:()=>go('/(tabs)/social'),
-    pro:()=>go('/(tabs)/social'),create:()=>go('/(tabs)/create'),
-    profile:()=>go('/(tabs)/profile'),share:()=>go('/(tabs)/social'),
-    streak:()=>go('/(tabs)'),explore:()=>go('/(tabs)/search'),
-    feedback:()=>go('/(tabs)/social'),event:()=>go('/(tabs)/social'),
-    collab:()=>go('/(tabs)/social'),tutorial:()=>go('/(tabs)/search'),
-    challenge:()=>go('/(tabs)/search'),survey:()=>go('/(tabs)/social'),
-    donate:()=>go('/(tabs)/social'),share_story:()=>go('/(tabs)/social'),
-    review:()=>go('/(tabs)/create'),invite:()=>go('/(tabs)/social'),
+    upload:     ()=>go('/(tabs)/create'),
+    comment:    ()=>go('/(tabs)/social'),
+    watch:      ()=>go('/(tabs)'),
+    write_crit: ()=>go('/(tabs)/create'),
+    like_crit:  ()=>go('/(tabs)/social'),
+    like_reel:  ()=>go('/(tabs)'),
+    share:      ()=>go('/(tabs)'),
+    favorite:   ()=>go('/(tabs)/search'),
   };
 
   const mult=streakMultiplier(profile.streak_days);
@@ -506,7 +510,7 @@ export default function SearchScreen(){
   const scrollRef=useRef<ScrollView>(null);
 
   // ★ XP/niveau réels — intrinsèquement liés à GamificationSystem (cinephile_profiles)
-  const{profile:gamiProfile,earnedBadges,awardXP,loading:gamiLoading}=useGamification(userId);
+  const{profile:gamiProfile,earnedBadges,awardXP}=useGamification(userId);
   const daily=useDailyChallenges(userId);
 
   useEffect(()=>{getDeviceId().then(id=>setUserId(id));},[]);
@@ -535,7 +539,7 @@ export default function SearchScreen(){
         </TouchableOpacity>
       </Animated.View>
       <SearchOverlay visible={srch} onClose={()=>setSrch(false)} works={works}/>
-      <GalaxyModal visible={galaxy} onClose={()=>setGalaxy(false)} profile={gamiProfile} awardXP={awardXP} daily={daily} loading={gamiLoading} badges={earnedBadges}/>
+      <GalaxyModal visible={galaxy} onClose={()=>setGalaxy(false)} profile={gamiProfile} awardXP={awardXP} daily={daily} userId={userId} badges={earnedBadges}/>
       <Animated.ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom:120}} scrollEventThrottle={16}
         onScroll={Animated.event([{nativeEvent:{contentOffset:{y:scrollY}}}],{useNativeDriver:true})}>
         <HeroBanner works={hero} loading={loading} onFilmPress={item=>router.push(`/film/${item.id}` as any)}/>
