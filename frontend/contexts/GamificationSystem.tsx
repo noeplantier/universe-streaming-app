@@ -633,8 +633,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
         }
 
         setLoading(false);
-      })
-      .catch(() => {
+      }, () => {
         if (!dead) setLoading(false);
       });
 
@@ -693,8 +692,7 @@ export function useWeeklyChallenge(userId: string) {
           subtitle: data.subtitle ?? null,
           reward_label: data.reward_label ?? null,
         } as WeeklyChallenge);
-      })
-      .finally(() => {
+      },() => {
         if (!dead) setLoading(false);
       });
 
@@ -786,8 +784,7 @@ export function useQuests(userId: string) {
         }));
         setQuestProgress(m);
         setLoading(false);
-      })
-      .catch(() => {
+      }, () => {
         if (!dead) setLoading(false);
       });
     return () => { dead = true; };
@@ -867,8 +864,7 @@ export function useContributionScore(userId: string) {
           pepites_detected: data.pepites_detected ?? 0,
         });
         setLoading(false);
-      })
-      .catch(() => {
+      }, () => {
         if (!dead) setLoading(false);
       });
     return () => { dead = true; };
@@ -915,8 +911,7 @@ export function useDailyQuests(userId: string) {
         const s = new Set<string>((data ?? []).filter((r: any) => r.completed).map((r: any) => r.quest_id as string));
         setDone(s);
         setLoading(false);
-      })
-      .catch(() => {
+      }, () => {
         if (!dead) setLoading(false);
       });
     return () => { dead = true; };
@@ -1037,79 +1032,127 @@ export const LevelUpCelebration = memo(function LevelUpCelebration({
   visible: boolean;
   onClose: () => void;
 }) {
-  const numScale = useRef(new Animated.Value(0)).current;
-  const numOp = useRef(new Animated.Value(0)).current;
-  const textOp = useRef(new Animated.Value(0)).current;
-  const rayRot = useRef(new Animated.Value(0)).current;
+  const bgOp      = useRef(new Animated.Value(0)).current;
+  const ringOp    = useRef(new Animated.Value(0)).current;
+  const ringScale = useRef(new Animated.Value(0.5)).current;
+  const numScale  = useRef(new Animated.Value(0.3)).current;
+  const numOp     = useRef(new Animated.Value(0)).current;
+  const textOp    = useRef(new Animated.Value(0)).current;
+  const btnOp     = useRef(new Animated.Value(0)).current;
+  const rayRot    = useRef(new Animated.Value(0)).current;
+  const halo1     = useRef(new Animated.Value(1)).current;
+  const halo2     = useRef(new Animated.Value(1.2)).current;
+  const haloOp    = useRef(new Animated.Value(0.4)).current;
   const [burst, setBurst] = useState(0);
+
   const copy = LEVEL_UP_COPY[level] ?? { headline: 'Nouveau niveau.', body: 'Votre voyage dans le cinéma indépendant continue.' };
-  const accentColor = level >= 9 ? C.gold : level >= 7 ? C.purple : level >= 5 ? C.orange : C.blue;
+  const accent = level >= 9 ? C.gold : level >= 7 ? C.purple : level >= 5 ? C.orange : C.blue;
+  const RAY_ANGLES = [0,20,40,60,80,100,120,140,160,180,200,220,240,260,280,300,320,340];
 
   useEffect(() => {
-    if (!visible) return;
-    numScale.setValue(0.4);
-    numOp.setValue(0);
-    textOp.setValue(0);
+    if (!visible) {
+      [bgOp,ringOp,numOp,textOp,btnOp].forEach(a=>a.setValue(0));
+      ringScale.setValue(0.5); numScale.setValue(0.3); halo1.setValue(1); halo2.setValue(1.2);
+      return;
+    }
     setBurst(0);
     Animated.sequence([
+      Animated.timing(bgOp,   {toValue:1, duration:260, useNativeDriver:true}),
       Animated.parallel([
-        Animated.spring(numScale, { toValue: 1.1, tension: 120, friction: 6, useNativeDriver: true }),
-        Animated.timing(numOp, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.spring(ringScale, {toValue:1, tension:80, friction:8, useNativeDriver:true}),
+        Animated.timing(ringOp,    {toValue:1, duration:400, useNativeDriver:true}),
       ]),
-      Animated.spring(numScale, { toValue: 1, tension: 200, friction: 8, useNativeDriver: true }),
-      Animated.timing(textOp, { toValue: 1, duration: 400, useNativeDriver: true }),
-    ]).start(() => setBurst(v => v + 1));
+      Animated.parallel([
+        Animated.spring(numScale, {toValue:1.1, tension:130, friction:6, useNativeDriver:true}),
+        Animated.timing(numOp,    {toValue:1, duration:280, useNativeDriver:true}),
+      ]),
+      Animated.spring(numScale, {toValue:1, tension:220, friction:9, useNativeDriver:true}),
+      Animated.timing(textOp, {toValue:1, duration:480, useNativeDriver:true}),
+      Animated.timing(btnOp,  {toValue:1, duration:300, useNativeDriver:true}),
+    ]).start(()=>setBurst(v=>v+1));
 
-    const rayLoop = Animated.loop(Animated.timing(rayRot, { toValue: 1, duration: 8000, easing: Easing.linear, useNativeDriver: true }));
+    const rayLoop = Animated.loop(Animated.timing(rayRot, {toValue:1, duration:10000, easing:Easing.linear, useNativeDriver:true}));
     rayLoop.start();
-    return () => rayLoop.stop();
+
+    const haloLoop = Animated.loop(Animated.sequence([
+      Animated.parallel([
+        Animated.timing(halo1,  {toValue:1.35, duration:1300, useNativeDriver:true}),
+        Animated.timing(halo2,  {toValue:1.65, duration:1300, useNativeDriver:true}),
+        Animated.timing(haloOp, {toValue:0.08, duration:1300, useNativeDriver:true}),
+      ]),
+      Animated.parallel([
+        Animated.timing(halo1,  {toValue:1,    duration:1300, useNativeDriver:true}),
+        Animated.timing(halo2,  {toValue:1.2,  duration:1300, useNativeDriver:true}),
+        Animated.timing(haloOp, {toValue:0.4,  duration:1300, useNativeDriver:true}),
+      ]),
+    ]));
+    haloLoop.start();
+
+    return () => { rayLoop.stop(); haloLoop.stop(); };
   }, [visible]);
 
   if (!visible) return null;
 
   return (
-    <Modal visible animationType="fade" onRequestClose={onClose} statusBarTranslucent transparent>
-      <View style={{ flex: 1, backgroundColor: 'rgba(7,12,23,0.92)', alignItems: 'center', justifyContent: 'center' }}>
+    <Modal visible animationType="none" onRequestClose={onClose} statusBarTranslucent transparent>
+      <Animated.View style={{flex:1, backgroundColor:'rgba(3,5,12,0.97)', opacity:bgOp, alignItems:'center', justifyContent:'center'}}>
         <GalaxyBackground />
-        <View style={{ alignItems: 'center', gap: 20, paddingHorizontal: 32 }}>
-          <Animated.View style={{ position: 'absolute', transform: [{ rotate: rayRot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }} pointerEvents="none">
-            {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map(angle => (
-              <View key={angle} style={{ position: 'absolute', width: 2, height: 80, borderRadius: 1, backgroundColor: `${accentColor}25`, transform: [{ rotate: `${angle}deg` }, { translateY: -40 }], top: 0, left: -1 }} />
-            ))}
-          </Animated.View>
 
-          <View style={{ width: 0, height: 0, alignItems: 'center', justifyContent: 'center' }}>
-            <ParticleBurst trigger={burst} color={accentColor} />
-          </View>
+        {/* Rotating rays */}
+        <Animated.View pointerEvents="none" style={{position:'absolute', transform:[{rotate: rayRot.interpolate({inputRange:[0,1], outputRange:['0deg','360deg']})}]}}>
+          {RAY_ANGLES.map(a=>(
+            <View key={a} style={{position:'absolute', width:1.5, height:180, borderRadius:1, backgroundColor:`${accent}16`, transform:[{rotate:`${a}deg`},{translateY:-90}], top:0, left:-0.75}}/>
+          ))}
+        </Animated.View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <View style={{ height: 1, width: 30, backgroundColor: `${accentColor}60` }} />
-            <Text style={{ color: accentColor, fontSize: 9, fontWeight: '900', letterSpacing: 3.5 }}>ASCENSION</Text>
-            <View style={{ height: 1, width: 30, backgroundColor: `${accentColor}60` }} />
-          </View>
+        {/* Pulsing halo rings */}
+        <Animated.View pointerEvents="none" style={{position:'absolute', width:190, height:190, borderRadius:95, borderWidth:1, borderColor:accent, opacity:haloOp, transform:[{scale:halo1}]}}/>
+        <Animated.View pointerEvents="none" style={{position:'absolute', width:190, height:190, borderRadius:95, borderWidth:1, borderColor:accent, opacity:haloOp, transform:[{scale:halo2}]}}/>
 
-          <Animated.View style={{ alignItems: 'center', gap: 6, transform: [{ scale: numScale }], opacity: numOp }}>
-            <View style={{ width: 110, height: 110, borderRadius: 55, borderWidth: 2.5, borderColor: accentColor, backgroundColor: `${accentColor}14`, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: 10, fontWeight: '800', color: accentColor, letterSpacing: 2, marginBottom: -4 }}>NIVEAU</Text>
-              <Text style={{ fontSize: 52, fontWeight: '900', color: C.white, letterSpacing: -3, lineHeight: 60 }}>{level}</Text>
+        {/* Particles */}
+        <View pointerEvents="none" style={{position:'absolute', alignItems:'center', justifyContent:'center'}}>
+          <ParticleBurst trigger={burst} color={accent} />
+        </View>
+
+        <View style={{alignItems:'center', paddingHorizontal:36, width:'100%', gap:0}}>
+          {/* Top badge */}
+          <Animated.View style={{opacity:ringOp, marginBottom:32}}>
+            <View style={{flexDirection:'row', alignItems:'center', gap:8, paddingHorizontal:14, paddingVertical:6, borderRadius:20, borderWidth:1, borderColor:`${accent}45`, backgroundColor:`${accent}10`}}>
+              <View style={{width:5, height:5, borderRadius:2.5, backgroundColor:accent}}/>
+              <Text style={{color:accent, fontSize:9, fontWeight:'900', letterSpacing:3}}>ASCENSION · NIVEAU {level}</Text>
+              <View style={{width:5, height:5, borderRadius:2.5, backgroundColor:accent}}/>
             </View>
           </Animated.View>
 
-          <Animated.View style={{ alignItems: 'center', gap: 10, opacity: textOp }}>
-            <Text style={{ color: C.gold, fontSize: 9, fontWeight: '900', letterSpacing: 2.5 }}>NOUVELLE IDENTITÉ</Text>
-            <Text style={{ color: C.white, fontSize: 22, fontWeight: '900', textAlign: 'center', letterSpacing: -0.5, lineHeight: 28 }}>{title}</Text>
-            <View style={{ height: 1, width: 50, backgroundColor: `${accentColor}50` }} />
-            <Text style={{ color: accentColor, fontSize: 16, fontWeight: '800', textAlign: 'center', letterSpacing: -0.2 }}>{copy.headline}</Text>
-            <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 13, textAlign: 'center', lineHeight: 20, maxWidth: 280 }}>{copy.body}</Text>
+          {/* Level ring */}
+          <Animated.View style={{transform:[{scale:numScale}], opacity:numOp, marginBottom:26}}>
+            <Animated.View style={{opacity:ringOp, transform:[{scale:ringScale}]}}>
+              <View style={{width:148, height:148, borderRadius:74, borderWidth:2.5, borderColor:accent, backgroundColor:`${accent}10`, alignItems:'center', justifyContent:'center',
+                ...(Platform.OS!=='web'?{shadowColor:accent, shadowOffset:{width:0,height:0}, shadowOpacity:0.75, shadowRadius:24, elevation:14}:{boxShadow:`0 0 32px 8px ${accent}40`} as any)}}>
+                <Text style={{fontSize:9, fontWeight:'900', color:accent, letterSpacing:2.5, marginBottom:-6}}>NIVEAU</Text>
+                <Text style={{fontSize:74, fontWeight:'900', color:C.white, letterSpacing:-5, lineHeight:80}}>{level}</Text>
+              </View>
+            </Animated.View>
           </Animated.View>
 
-          <Animated.View style={{ opacity: textOp, width: '100%' }}>
-            <TouchableOpacity onPress={onClose} style={{ paddingVertical: 16, borderRadius: 16, backgroundColor: accentColor, alignItems: 'center', marginTop: 8 }} activeOpacity={0.85}>
-              <Text style={{ color: C.navyDark, fontSize: 15, fontWeight: '900' }}>Continuer votre voyage →</Text>
+          {/* Text block */}
+          <Animated.View style={{alignItems:'center', gap:10, opacity:textOp, width:'100%'}}>
+            <Text style={{color:`${accent}90`, fontSize:9, fontWeight:'900', letterSpacing:2.5}}>NOUVELLE IDENTITÉ</Text>
+            <Text style={{color:C.white, fontSize:27, fontWeight:'900', textAlign:'center', letterSpacing:-0.8, lineHeight:32}}>{title}</Text>
+            <View style={{width:44, height:1.5, backgroundColor:`${accent}55`, marginVertical:2}}/>
+            <Text style={{color:accent, fontSize:16, fontWeight:'800', textAlign:'center', letterSpacing:-0.3}}>{copy.headline}</Text>
+            <Text style={{color:'rgba(255,255,255,0.50)', fontSize:13, textAlign:'center', lineHeight:21, maxWidth:290}}>{copy.body}</Text>
+          </Animated.View>
+
+          {/* CTA */}
+          <Animated.View style={{opacity:btnOp, width:'100%', marginTop:30}}>
+            <TouchableOpacity onPress={onClose} activeOpacity={0.84}
+              style={{paddingVertical:17, borderRadius:18, backgroundColor:accent, alignItems:'center'}}>
+              <Text style={{color:C.navyDark, fontSize:15, fontWeight:'900', letterSpacing:0.2}}>Continuer votre voyage</Text>
             </TouchableOpacity>
           </Animated.View>
         </View>
-      </View>
+      </Animated.View>
     </Modal>
   );
 });
@@ -1248,6 +1291,7 @@ export const GameHUD = memo(function GameHUD({ profile, earnedBadges }: { profil
 const hud = StyleSheet.create({
   wrap: { borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: C.borderHi },
   inner: { flexDirection: 'row', alignItems: 'center', gap: 11, padding: 12 },
+  lvlWrap: {},
   lvlBadge: { width: 46, height: 46, borderRadius: 13, borderWidth: 2, borderColor: C.borderHi, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
   lvlNum: { color: C.white, fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
   title: { color: C.white, fontSize: 12, fontWeight: '700', flex: 1 },
@@ -1501,7 +1545,7 @@ export const DailyQuestsPanel = memo(function DailyQuestsPanel({
         {questsWithStatus.map(q => (
           <TouchableOpacity
             key={q.id}
-            onPress={() => !q.completed && onComplete(q.id)}
+            onPress={() => !q.completed && onComplete(q.id as string)}
             activeOpacity={0.85}
             style={[dq.card, q.completed && dq.cardDone]}
           >

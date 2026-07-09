@@ -27,7 +27,7 @@ import GalaxyBackground      from '@/components/shared/GalaxyBackground';
 import { GlowAccentCard }    from '@/components/shared/GlowAccentCard';
 import {
   resolveImg, useGamification, XPFloat, XPBar as GamiXPBar, LevelUpCelebration,
-  type Work, type GamiProfile,
+  type Work, type GamiProfile, type GamiBadge,
 } from '@/contexts/GamificationSystem';
 
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -61,6 +61,10 @@ const E = 20;
 const fmtK   = (n:number)=>n>=1e6?`${(n/1e6).toFixed(1)}M`:n>=1e3?`${(n/1e3).toFixed(1)}K`:`${n}`;
 const fmtDur = (m:number|null)=>{ if(!m)return''; if(m>=60)return`${Math.floor(m/60)}h${m%60?` ${m%60}m`:''}`; return`${m}m`; };
 
+// Module-level singleton — survives component remounts and tab switches.
+// Prevents LevelUpCelebration from replaying on Supabase hydration.
+const _lastCelebratedLevel = new Map<string, number>();
+
 // ─── ATOMS ───────────────────────────────────────────────────────────────────
 const Shimmer=memo(({w,h,r=8}:{w:number|string;h:number;r?:number})=>{
   const op=useRef(new Animated.Value(0.15)).current;
@@ -73,38 +77,22 @@ const Shimmer=memo(({w,h,r=8}:{w:number|string;h:number;r?:number})=>{
 const LEVEL_ICONS = ['star-outline','sparkles-outline','flash-outline','rocket-outline','flash-outline','nuclear-outline','infinite-outline','planet-outline','planet-outline','planet-outline'] as const;
 const levelIcon = (level:number) => LEVEL_ICONS[Math.min(Math.max(level,1),10)-1];
 
-// ─── DÉFIS DU JOUR — pool "créateur indépendant", 3 tirés chaque jour ───────
+// ─── DÉFIS DU JOUR — 8 actions ancrées dans les vraies features de l'app ────
 const DAILY_POOL = [
-  { id:'watch',    icon:'play-circle-outline' as const, title:'Scout du Jour',   desc:"Visionner un court métrage indépendant sur les Reels",   xp:40, total:1, cta:'Visionner' },
-  { id:'critique', icon:'create-outline'      as const, title:'Voix du Cosmos',  desc:"Publier une critique argumentée sur une œuvre",          xp:60, total:1, cta:'Rédiger'    },
-  { id:'like',     icon:'heart-outline'       as const, title:'Coup de Cœur',    desc:"Liker la création d'un cinéaste indépendant",            xp:30, total:1, cta:'Découvrir'  },
-  { id:'comment',  icon:'chatbubble-outline'  as const, title:'Retour Créateur', desc:"Commenter le travail d'un autre créateur",                xp:35, total:1, cta:'Commenter'  },
-  { id:'pro',      icon:'briefcase-outline'   as const, title:'Réseau Pro',      desc:"Contacter un professionnel du cinéma",                    xp:50, total:1, cta:'Réseauter'  },
-  { id:'create',   icon:'videocam-outline'    as const, title:'Studio Ouvert',   desc:"Uploader un nouveau projet ou reel",                      xp:80, total:1, cta:'Publier'    },
-  { id:'profile',  icon:'person-outline'      as const, title:'Carte de Visite', desc:"Compléter une section de votre profil créateur",          xp:45, total:1, cta:'Profil'     },
-  { id:'share',    icon:'share-outline'       as const, title:'Porte-Voix',      desc:"Partager une œuvre avec votre communauté",                xp:30, total:1, cta:'Partager'   },
-  { id:'streak',   icon:'flame-outline'       as const, title:'Streak du Jour',  desc:"Maintenir votre streak de connexion quotidienne",          xp:25, total:1, cta:'Se Connecter'},
-  { id:'explore',  icon:'compass-outline'    as const, title:'Explorateur',     desc:"Découvrir un nouveau créateur ou film sur la plateforme",  xp:35, total:1, cta:'Explorer'   },
-  { id:'feedback', icon:'megaphone-outline'  as const, title:'Écho du Cinéma',  desc:"Donner votre avis sur une fonctionnalité ou un film",      xp:40, total:1, cta:'Donner Avis'},
-  { id:'event',    icon:'calendar-outline'   as const, title:'Événement',       desc:"Participer à un événement ou challenge spécial du jour",   xp:50, total:1, cta:'Participer'},
-  { id:'collab',   icon:'people-outline'     as const, title:'Collaboration',   desc:"Collaborer avec un autre créateur sur un projet",          xp:70, total:1, cta:'Collaborer'},
-  { id:'tutorial', icon:'school-outline'      as const, title:'Apprentissage',   desc:"Suivre un tutoriel ou guide pour améliorer vos compétences",xp:30, total:1, cta:'Apprendre'  },
-  { id:'challenge', icon:'trophy-outline'     as const, title:'Défi du Jour',    desc:"Relever un défi créatif proposé par la communauté",        xp:60, total:1, cta:'Relever'    },
-  { id:'survey',   icon:'clipboard-outline'  as const, title:'Sondage',         desc:"Répondre à un sondage ou questionnaire sur la plateforme",  xp:25, total:1, cta:'Répondre'  },
-  { id:'donate',   icon:'cash-outline'       as const, title:'Soutien',         desc:"Faire un don ou soutenir un créateur indépendant",          xp:50, total:1, cta:'Soutenir'   },
-  { id:'share_story', icon:'share-social-outline' as const, title:'Partage d\'Histoire', desc:"Partager une histoire ou expérience personnelle liée au cinéma", xp:40, total:1, cta:'Partager' },
-  { id:'review',   icon:'star-half-outline' as const, title:'Critique Étoilée', desc:"Évaluer un film ou une création avec un système d'étoiles", xp:35, total:1, cta:'Évaluer'    },
-  { id:'invite',   icon:'person-add-outline' as const, title:'Inviter un Ami', desc:"Inviter un ami à rejoindre la plateforme et découvrir le cinéma indépendant", xp:30, total:1, cta:'Inviter' },
+  { id:'upload',     icon:'cloud-upload-outline'  as const, title:'Premier Clap',     desc:"Importer et publier une nouvelle vidéo dans Universe",           xp:80, total:1, cta:'Créer'     },
+  { id:'comment',    icon:'chatbubble-outline'     as const, title:'Retour Créateur',  desc:"Laisser un commentaire sur une critique ou un post",              xp:35, total:1, cta:'Commenter' },
+  { id:'watch',      icon:'play-circle-outline'    as const, title:'Scout du Jour',    desc:"Visionner un reel ou une vidéo sur le feed principal",            xp:30, total:1, cta:'Visionner' },
+  { id:'write_crit', icon:'create-outline'         as const, title:'Plume Critique',   desc:"Rédiger et publier une critique argumentée sur une œuvre",        xp:60, total:1, cta:'Rédiger'   },
+  { id:'like_crit',  icon:'heart-outline'          as const, title:'Coup de Cœur',    desc:"Liker le commentaire ou la critique d'un autre membre",           xp:20, total:1, cta:'Explorer'  },
+  { id:'like_reel',  icon:'thumbs-up-outline'      as const, title:'Applaudissement',  desc:"Liker une vidéo ou un reel dans le feed Reels",                   xp:20, total:1, cta:'Feed'      },
+  { id:'share',      icon:'share-outline'          as const, title:'Porte-Voix',       desc:"Partager une vidéo par mail, message ou WhatsApp",                xp:30, total:1, cta:'Partager'  },
+  { id:'favorite',   icon:'bookmark-outline'       as const, title:'Cinémathèque',     desc:"Mettre une vidéo ou un film en favoris dans ta liste",            xp:25, total:1, cta:'Explorer'  },
 ] as const;
 type DailyTpl = typeof DAILY_POOL[number];
 type DailyId  = DailyTpl['id'];
 
-// 3 défis distincts par jour calendaire, identiques pour tous, renouvelés à minuit
-function todaysChallenges(): DailyTpl[] {
-  const dayIndex = Math.floor(Date.now()/86400000);
-  const n = DAILY_POOL.length;
-  return [0,1,2,3,4,5].map(k => DAILY_POOL[(dayIndex*6 + k) % n]);
-}
+// Tous les défis affichés chaque jour — 8 actions, 1 par feature
+function todaysChallenges(): DailyTpl[] { return [...DAILY_POOL] as DailyTpl[]; }
 
 // ─── FOMO + EN-TÊTE ROTATIF DU BOUTON ────────────────────────────────────────
 const FOMO = [
@@ -177,51 +165,87 @@ const DailyRow=memo(({ch,progress:rawProg,claimed,onClaim,onAction}:{
   ch:DailyTpl;progress:number;claimed:boolean;onClaim:()=>void;onAction:()=>void;
 })=>{
   const p=rawProg/ch.total;
-  const anim=useRef(new Animated.Value(0)).current;
-  useEffect(()=>{Animated.timing(anim,{toValue:p,duration:800,useNativeDriver:false}).start();},[p]);
+  const done=p>=1||claimed;
+  const barAnim=useRef(new Animated.Value(0)).current;
+  useEffect(()=>{Animated.timing(barAnim,{toValue:done?1:p,duration:700,easing:Easing.out(Easing.quad),useNativeDriver:false}).start();},[done,p]);
   return(
-    <View style={{height:78,marginBottom:8,borderRadius:14,overflow:'hidden',borderWidth:1,borderColor:p>=1?C.goldBd:C.border}}>
-      <LinearGradient colors={p>=1?['rgba(245,200,66,0.10)','rgba(13,32,64,0.95)']:[C.card,'rgba(4,8,15,0.94)']} style={{flex:1,paddingHorizontal:14,flexDirection:'row',alignItems:'center',gap:12}}>
-        <View style={{width:38,height:38,borderRadius:11,backgroundColor:p>=1?C.goldFaint:C.faint,borderWidth:1,borderColor:p>=1?C.goldBd:C.border,alignItems:'center',justifyContent:'center',flexShrink:0}}>
-          <Ionicons name={ch.icon} size={17} color={p>=1?C.gold:C.muted}/>
+    <View style={{marginBottom:9,borderRadius:16,overflow:'hidden',borderWidth:1,borderColor:done?C.goldBd:'rgba(255,255,255,0.08)'}}>
+      <LinearGradient
+        colors={done?['rgba(245,200,66,0.11)','rgba(13,26,54,0.97)']:['rgba(13,26,54,0.94)','rgba(4,8,15,0.98)']}
+        start={{x:0,y:0}} end={{x:1,y:1}}
+        style={{paddingHorizontal:14,paddingVertical:13,flexDirection:'row',alignItems:'center',gap:12}}>
+        {/* Icon */}
+        <View style={{width:42,height:42,borderRadius:13,backgroundColor:done?C.goldFaint:'rgba(255,255,255,0.05)',borderWidth:1,borderColor:done?C.goldBd:'rgba(255,255,255,0.09)',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+          <Ionicons name={done?'checkmark-circle':ch.icon} size={done?20:18} color={done?C.gold:C.muted}/>
         </View>
-        <View style={{flex:1,gap:4}}>
-          <View style={{flexDirection:'row',justifyContent:'space-between',alignItems:'center'}}>
-            <Text style={{color:C.white,fontSize:12,fontWeight:'800'}} numberOfLines={1}>{ch.title}</Text>
-            <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="flash" size={9} color={C.gold}/><Text style={{color:C.gold,fontSize:11,fontWeight:'700'}}>+{ch.xp}</Text></View>
+        {/* Body */}
+        <View style={{flex:1,gap:5}}>
+          <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
+            <Text style={{color:done?C.gold:C.white,fontSize:12,fontWeight:'800',flex:1}} numberOfLines={1}>{ch.title}</Text>
+            <View style={{flexDirection:'row',alignItems:'center',gap:2}}>
+              <Ionicons name="flash" size={9} color={C.gold}/>
+              <Text style={{color:C.gold,fontSize:11,fontWeight:'800'}}>+{ch.xp}</Text>
+            </View>
           </View>
-          <View style={{height:3,backgroundColor:C.subtle,borderRadius:2,overflow:'hidden'}}>
-            <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:p>=1?C.gold:C.white,width:anim.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/>
+          <View style={{height:2.5,backgroundColor:'rgba(255,255,255,0.07)',borderRadius:2,overflow:'hidden'}}>
+            <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:done?C.gold:'rgba(255,255,255,0.45)',width:barAnim.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/>
           </View>
-          <Text style={{color:C.muted,fontSize:10}} numberOfLines={1}>{ch.desc}</Text>
+          <Text style={{color:C.muted,fontSize:10,lineHeight:14}} numberOfLines={2}>{ch.desc}</Text>
         </View>
-        {claimed&&<View style={{width:28,height:28,borderRadius:14,backgroundColor:C.goldFaint,borderWidth:1,borderColor:C.goldBd,alignItems:'center',justifyContent:'center',flexShrink:0}}><Text style={{color:C.gold,fontSize:12,fontWeight:'900'}}>✓</Text></View>}
-        {!claimed&&p>=1&&<TouchableOpacity onPress={onClaim} style={{backgroundColor:C.gold,borderRadius:10,paddingHorizontal:11,paddingVertical:7,flexShrink:0}}><Text style={{color:C.bg,fontSize:11,fontWeight:'900'}}>CLAIM</Text></TouchableOpacity>}
-        {!claimed&&p<1&&<TouchableOpacity onPress={onAction} style={{borderRadius:10,paddingHorizontal:11,paddingVertical:7,borderWidth:1,borderColor:C.goldBd,backgroundColor:C.goldFaint,flexShrink:0}}><Text style={{color:C.gold,fontSize:11,fontWeight:'700'}}>{ch.cta}</Text></TouchableOpacity>}
+        {/* CTA */}
+        <View style={{flexShrink:0}}>
+          {claimed&&<View style={{width:30,height:30,borderRadius:15,backgroundColor:'rgba(245,200,66,0.12)',borderWidth:1,borderColor:C.goldBd,alignItems:'center',justifyContent:'center'}}><Ionicons name="checkmark" size={14} color={C.gold}/></View>}
+          {!claimed&&done&&<TouchableOpacity onPress={()=>{hL();onClaim();}} style={{backgroundColor:C.gold,borderRadius:11,paddingHorizontal:13,paddingVertical:8}} activeOpacity={0.82}><Text style={{color:C.bg,fontSize:11,fontWeight:'900'}}>CLAIM</Text></TouchableOpacity>}
+          {!claimed&&!done&&<TouchableOpacity onPress={()=>{hL();onAction();}} style={{borderRadius:11,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:C.goldBd,backgroundColor:C.goldFaint}} activeOpacity={0.82}><Text style={{color:C.gold,fontSize:11,fontWeight:'700'}}>{ch.cta}</Text></TouchableOpacity>}
+        </View>
       </LinearGradient>
     </View>
   );
 });
 
+// ─── GALAXY MODAL — helpers ───────────────────────────────────────────────────
+const RARITY_COLOR:Record<string,string>={commun:'rgba(255,255,255,0.38)',rare:'#5A96E6',épique:'#9B6BFF',légendaire:'#F5C842'};
+const streakMultiplier=(d:number)=>d>=30?2.0:d>=14?1.5:d>=7?1.25:d>=3?1.1:1.0;
+const XP_TIPS=[
+  {icon:'videocam-outline', color:C.orange, title:'Publier une vidéo',    desc:'Upload un reel ou projet complet',          xp:80},
+  {icon:'create-outline',   color:C.purple, title:'Rédiger une critique', desc:'Analyse argumentée sur une œuvre',          xp:60},
+  {icon:'compass-outline',  color:C.blue,   title:'Découvrir une pépite', desc:'Like/commente une œuvre < 100 likes',       xp:40},
+  {icon:'person-outline',   color:C.cyan,   title:'Compléter le profil',  desc:'Avatar, bio, localisation, spécialité',     xp:45},
+  {icon:'flame-outline',    color:C.orange, title:'Maintenir son streak', desc:'7 jours consécutifs = ×1.25 XP',           xp:175},
+] as const;
+
 // ─── GALAXY MODAL — Cosmos + Défis du jour ; XP réel via GamificationSystem ──
 const GalaxyModal=memo(({
-  visible,onClose,profile,earnedCount,awardXP,daily,
+  visible,onClose,profile,awardXP,daily,userId,badges,
 }:{
   visible:boolean;onClose:()=>void;
-  profile:GamiProfile; earnedCount:number;
+  profile:GamiProfile;
   awardXP:(amount:number,reason:string)=>void;
   daily:ReturnType<typeof useDailyChallenges>;
+  userId:string;badges:GamiBadge[];
 })=>{
   const router=useRouter(),insets=useSafeAreaInsets();
   const slideY=useRef(new Animated.Value(SH)).current;
   const[burst,setBurst]=useState({v:false,n:0});
-  const prevLevel=useRef(profile.level);
   const[levelUp,setLevelUp]=useState<{level:number;title:string}|null>(null);
+  const[activeBadge,setActiveBadge]=useState<string|null>(null);
+  const[tipsOpen,setTipsOpen]=useState(false);
 
+  // Singleton-based guard: only fire for genuine in-session level gains.
+  // Module-level map survives remounts and tab switches — immune to hydration.
   useEffect(()=>{
-    if(profile.level>prevLevel.current)setLevelUp({level:profile.level,title:profile.title});
-    prevLevel.current=profile.level;
-  },[profile.level,profile.title]);
+    if(!userId||profile.level===0)return;
+    const last=_lastCelebratedLevel.get(userId);
+    if(last===undefined){
+      // First time we see this user — set baseline, no celebration
+      _lastCelebratedLevel.set(userId,profile.level);
+      return;
+    }
+    if(profile.level>last){
+      setLevelUp({level:profile.level,title:profile.title});
+      _lastCelebratedLevel.set(userId,profile.level);
+    }
+  },[userId,profile.level,profile.title]);
 
   useEffect(()=>{
     if(visible){Animated.spring(slideY,{toValue:0,useNativeDriver:true,tension:62,friction:11}).start();}
@@ -229,33 +253,23 @@ const GalaxyModal=memo(({
   },[visible]);
 
   const showBurst=useCallback((n:number)=>{setBurst({v:true,n});setTimeout(()=>setBurst({v:false,n:0}),1300);},[]);
-  // ★ XP réel — persisté via awardXP (supabase.rpc('add_xp',…)) sur cinephile_profiles,
-  // plus jamais une simple variable React locale qui se réinitialise au reload.
   const handleClaim=useCallback((id:DailyId,xp:number)=>{daily.claimChallenge(id,xp);awardXP(xp,`défi_du_jour_${id}`);showBurst(xp);},[daily,awardXP,showBurst]);
-
   const go=useCallback((route:string)=>{onClose();setTimeout(()=>router.push(route as any),320);},[onClose,router]);
+
   const dailyActions:Partial<Record<DailyId,()=>void>>={
-    watch:       ()=>go('/(tabs)'),
-    critique:    ()=>go('/(tabs)/create'),
-    like:        ()=>go('/(tabs)/social'),
-    comment:     ()=>go('/(tabs)/social'),
-    pro:         ()=>go('/(tabs)/social'),
-    create:      ()=>go('/(tabs)/create'),
-    profile:     ()=>go('/(tabs)/profile'),
-    share:       ()=>go('/(tabs)/social'),
-    streak:      ()=>go('/(tabs)'),
-    explore:     ()=>go('/(tabs)/search'),
-    feedback:    ()=>go('/(tabs)/social'),
-    event:       ()=>go('/(tabs)/social'),
-    collab:      ()=>go('/(tabs)/social'),
-    tutorial:    ()=>go('/(tabs)/search'),
-    challenge:   ()=>go('/(tabs)/search'),
-    survey:      ()=>go('/(tabs)/social'),
-    donate:      ()=>go('/(tabs)/social'),
-    share_story: ()=>go('/(tabs)/social'),
-    review:      ()=>go('/(tabs)/create'),
-    invite:      ()=>go('/(tabs)/social'),
+    upload:     ()=>go('/(tabs)/create'),
+    comment:    ()=>go('/(tabs)/social'),
+    watch:      ()=>go('/(tabs)'),
+    write_crit: ()=>go('/(tabs)/create'),
+    like_crit:  ()=>go('/(tabs)/social'),
+    like_reel:  ()=>go('/(tabs)'),
+    share:      ()=>go('/(tabs)'),
+    favorite:   ()=>go('/(tabs)/search'),
   };
+
+  const mult=streakMultiplier(profile.streak_days);
+  const claimedToday=daily.claimed.length;
+  const activeBadgeData=useMemo(()=>badges.find(b=>b.id===activeBadge),[badges,activeBadge]);
 
   if(!visible)return null;
   return(
@@ -263,6 +277,7 @@ const GalaxyModal=memo(({
       <View style={{flex:1,backgroundColor:'rgba(4,8,15,0.92)'}}>
         <GalaxyBackground/>
         <Animated.View style={{flex:1,transform:[{translateY:slideY}]}}>
+          {/* Header */}
           <View style={{paddingTop:insets.top+12,paddingHorizontal:E,paddingBottom:14,flexDirection:'row',alignItems:'center'}}>
             <View style={{flex:1}}>
               <Text style={{color:C.white,fontSize:22,fontWeight:'900',letterSpacing:-0.5}}>Galaxie XP</Text>
@@ -273,16 +288,102 @@ const GalaxyModal=memo(({
             </TouchableOpacity>
           </View>
           <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.border,marginBottom:4}}/>
+
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:E,paddingBottom:52}}>
+            {/* XP bar */}
             <GamiXPBar profile={profile}/>
-            {earnedCount>0&&<View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:14,marginBottom:4}}><Ionicons name="ribbon-outline" size={12} color={C.gold}/><Text style={{color:C.muted,fontSize:11}}>{earnedCount} badge{earnedCount>1?'s':''} débloqué{earnedCount>1?'s':''}</Text></View>}
+
+            {/* Streak card — tappable, goes to home to keep streak alive */}
+            {profile.streak_days>0&&(
+              <TouchableOpacity activeOpacity={0.82} onPress={()=>go('/(tabs)')}
+                style={{flexDirection:'row',alignItems:'center',gap:12,marginTop:12,padding:13,borderRadius:14,borderWidth:1,borderColor:'rgba(255,140,66,0.28)',backgroundColor:'rgba(255,140,66,0.07)'}}>
+                <View style={{width:40,height:40,borderRadius:12,backgroundColor:'rgba(255,140,66,0.15)',borderWidth:1,borderColor:'rgba(255,140,66,0.38)',alignItems:'center',justifyContent:'center'}}>
+                  <Ionicons name="flame" size={19} color={C.orange}/>
+                </View>
+                <View style={{flex:1}}>
+                  <Text style={{color:C.white,fontSize:13,fontWeight:'800'}}>Streak · {profile.streak_days} jour{profile.streak_days>1?'s':''}</Text>
+                  <Text style={{color:C.muted,fontSize:10,marginTop:1}}>Multiplicateur actif — connexion quotidienne</Text>
+                </View>
+                <View style={{paddingHorizontal:10,paddingVertical:6,borderRadius:10,backgroundColor:'rgba(255,140,66,0.15)',borderWidth:1,borderColor:'rgba(255,140,66,0.38)',alignItems:'center'}}>
+                  <Text style={{color:C.orange,fontSize:14,fontWeight:'900'}}>×{mult.toFixed(1)}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* Badges earned — horizontal scrollable, tap for description */}
+            {badges.length>0&&(
+              <>
+                <View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:20,marginBottom:10}}>
+                  <Ionicons name="ribbon-outline" size={13} color={C.gold}/>
+                  <Text style={{color:C.white,fontSize:15,fontWeight:'800',flex:1}}>Badges débloqués</Text>
+                  <Text style={{color:C.muted,fontSize:11}}>{badges.length}</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingRight:4}}>
+                  {badges.map(b=>{
+                    const col=RARITY_COLOR[b.rarity]??C.muted;
+                    const active=activeBadge===b.id;
+                    return(
+                      <TouchableOpacity key={b.id} onPress={()=>{hL();setActiveBadge(active?null:b.id);}} activeOpacity={0.78} style={{width:72,alignItems:'center',gap:5}}>
+                        <View style={{width:52,height:52,borderRadius:16,backgroundColor:`${col}18`,borderWidth:active?1.5:1,borderColor:active?col:`${col}40`,alignItems:'center',justifyContent:'center'}}>
+                          <Ionicons name={b.icon} size={22} color={col}/>
+                        </View>
+                        <Text style={{color:active?col:C.muted,fontSize:9,fontWeight:'700',textAlign:'center',lineHeight:12}} numberOfLines={2}>{b.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+                {activeBadgeData&&(
+                  <View style={{marginTop:8,padding:11,borderRadius:12,backgroundColor:C.faint,borderWidth:1,borderColor:C.border,flexDirection:'row',alignItems:'flex-start',gap:8}}>
+                    <Ionicons name="information-circle-outline" size={13} color={C.muted} style={{marginTop:1}}/>
+                    <Text style={{color:C.muted,fontSize:11,flex:1,lineHeight:16}}>{activeBadgeData.description}</Text>
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* Claimed today summary */}
+            {claimedToday>0&&(
+              <View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:16,marginBottom:4}}>
+                <Ionicons name="checkmark-circle" size={12} color={C.gold}/>
+                <Text style={{color:C.muted,fontSize:11}}>{claimedToday} défi{claimedToday>1?'s':''} réclamé{claimedToday>1?'s':''} aujourd'hui</Text>
+              </View>
+            )}
+
+            {/* Daily challenges */}
             <Text style={{color:C.white,fontSize:15,fontWeight:'800',marginTop:18,marginBottom:4}}>Défis du jour</Text>
-            <Text style={{color:C.muted,fontSize:11,marginBottom:10,fontStyle:'italic'}}>3 actions créateur renouvelées chaque jour — XP réel au CLAIM</Text>
+            <Text style={{color:C.muted,fontSize:11,marginBottom:10,fontStyle:'italic'}}>Renouvelés à minuit — XP réel au CLAIM</Text>
             {daily.challenges.map(ch=>(
               <DailyRow key={ch.id} ch={ch} progress={daily.progress[ch.id]??0} claimed={daily.claimed.includes(ch.id)}
                 onClaim={()=>handleClaim(ch.id,ch.xp)}
                 onAction={()=>{daily.bump(ch.id,ch.total);dailyActions[ch.id]?.();}}/>
             ))}
+
+            {/* XP Tips accordion */}
+            <TouchableOpacity onPress={()=>setTipsOpen(x=>!x)} activeOpacity={0.78}
+              style={{flexDirection:'row',alignItems:'center',gap:8,marginTop:18,paddingVertical:12,paddingHorizontal:13,borderRadius:14,backgroundColor:C.faint,borderWidth:1,borderColor:C.border}}>
+              <Ionicons name="bulb-outline" size={14} color={C.gold}/>
+              <Text style={{color:C.gold,fontSize:13,fontWeight:'700',flex:1}}>Comment gagner plus de XP ?</Text>
+              <Ionicons name={tipsOpen?'chevron-up-outline':'chevron-down-outline'} size={13} color={C.muted}/>
+            </TouchableOpacity>
+            {tipsOpen&&(
+              <View style={{marginTop:6,gap:6}}>
+                {XP_TIPS.map((t,i)=>(
+                  <View key={i} style={{flexDirection:'row',alignItems:'center',gap:10,padding:11,borderRadius:12,backgroundColor:C.faint,borderWidth:1,borderColor:C.border}}>
+                    <View style={{width:32,height:32,borderRadius:9,backgroundColor:`${t.color}18`,borderWidth:1,borderColor:`${t.color}30`,alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                      <Ionicons name={t.icon as any} size={14} color={t.color}/>
+                    </View>
+                    <View style={{flex:1}}>
+                      <Text style={{color:C.white,fontSize:11,fontWeight:'700'}}>{t.title}</Text>
+                      <Text style={{color:C.muted,fontSize:10,marginTop:1}}>{t.desc}</Text>
+                    </View>
+                    <View style={{flexDirection:'row',alignItems:'center',gap:2,flexShrink:0}}>
+                      <Ionicons name="flash" size={9} color={C.gold}/>
+                      <Text style={{color:C.gold,fontSize:11,fontWeight:'800'}}>+{t.xp}</Text>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
           </ScrollView>
           <XPFloat amount={burst.n} visible={burst.v} onDone={()=>{}}/>
         </Animated.View>
@@ -438,7 +539,7 @@ export default function SearchScreen(){
         </TouchableOpacity>
       </Animated.View>
       <SearchOverlay visible={srch} onClose={()=>setSrch(false)} works={works}/>
-      <GalaxyModal visible={galaxy} onClose={()=>setGalaxy(false)} profile={gamiProfile} earnedCount={earnedBadges.length} awardXP={awardXP} daily={daily}/>
+      <GalaxyModal visible={galaxy} onClose={()=>setGalaxy(false)} profile={gamiProfile} awardXP={awardXP} daily={daily} userId={userId} badges={earnedBadges}/>
       <Animated.ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom:120}} scrollEventThrottle={16}
         onScroll={Animated.event([{nativeEvent:{contentOffset:{y:scrollY}}}],{useNativeDriver:true})}>
         <HeroBanner works={hero} loading={loading} onFilmPress={item=>router.push(`/film/${item.id}` as any)}/>
