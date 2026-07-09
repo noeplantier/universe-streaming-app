@@ -182,44 +182,7 @@ const Shimmer = memo(function Shimmer({w,h,r=6}:{w:number|string;h:number;r?:num
   return <Animated.View style={{width:w as any,height:h,borderRadius:r,backgroundColor:'rgba(255,255,255,0.09)',opacity:_shim}}/>;
 });
 
-// ─── ★ Badges interactifs (strip horizontal) ──────────────────────────────────
-const BadgeChip = memo(function BadgeChip({b}:{b:Badge}) {
-  const [open,setOpen] = useState(false);
-  const sc = useRef(new Animated.Value(1)).current;
-  const press = () => {
-    hapticLight();
-    Animated.sequence([
-      Animated.spring(sc,{toValue:0.88,tension:350,friction:7,useNativeDriver:true}),
-      Animated.spring(sc,{toValue:1,tension:200,friction:8,useNativeDriver:true}),
-    ]).start();
-    setOpen(v=>!v);
-  };
-  const ptsStr = `+${b.pts}pts`;
-  return (
-    <Animated.View style={{transform:[{scale:sc}]}}>
-      <TouchableOpacity onPress={press} activeOpacity={0.80} style={[bc.wrap, b.earned&&bc.wrapOn]}>
-        <View style={[bc.icon, b.earned&&bc.iconOn]}>
-          <Ionicons name={b.icon} size={12} color={b.earned?'#fff':T.textTert}/>
-        </View>
-        <Text style={[bc.label, b.earned&&{color:'#fff'}]} numberOfLines={1}>{b.label}</Text>
-        {b.earned
-          ? <Text style={bc.pts}>{ptsStr}</Text>
-          : <Ionicons name="lock-closed" size={7} color={T.textTert}/>
-        }
-        {open && <Text style={bc.desc}>{b.desc}</Text>}
-      </TouchableOpacity>
-    </Animated.View>
-  );
-});
-const bc = StyleSheet.create({
-  wrap:    {alignItems:'center',gap:3,paddingVertical:7,paddingHorizontal:8,borderRadius:10,borderWidth:StyleSheet.hairlineWidth,borderColor:T.border,backgroundColor:'rgba(255,255,255,0.03)',opacity:0.52,minWidth:60},
-  wrapOn:  {opacity:1,borderColor:T.borderHi,backgroundColor:T.surf},
-  icon:    {width:24,height:24,borderRadius:7,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(255,255,255,0.04)',borderWidth:StyleSheet.hairlineWidth,borderColor:T.border},
-  iconOn:  {borderColor:T.borderHi,backgroundColor:T.surfHi},
-  label:   {color:T.textTert,fontSize:8,fontWeight:'600',textAlign:'center'},
-  pts:     {color:T.gold,fontSize:7,fontWeight:'800'},
-  desc:    {color:T.textTert,fontSize:7,textAlign:'center',lineHeight:10,marginTop:2},
-});
+
 
 // ─── ★ PROFILE HEADER (doc 4 + gamification greffée) ─────────────────────────
 const ProfileHeader = memo(function ProfileHeader({
@@ -290,7 +253,7 @@ const ProfileHeader = memo(function ProfileHeader({
 
       {/* ── ★ XP bar animée (compacte, 3px) ── */}
       <View style={ph.xpRow}>
-        <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+        <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
           <Text style={ph.xpLabel}>{levelStr}</Text>
           {level.n < 5
             ? <Text style={ph.xpHint}>{nextStr}</Text>
@@ -301,45 +264,13 @@ const ProfileHeader = memo(function ProfileHeader({
           <Animated.View style={[ph.xpFill,{width:barW}]}/>
         </View>
       </View>
-
-      {/* ── Compteurs films / critiques / créas — identique doc 4 ── */}
-      <View style={ph.countsRow}>
-        {[
-          {v:profile.filmCount,     l:'films'    },
-          {v:profile.critiqueCount, l:'critiques'},
-          {v:profile.reelCount,     l:'créas'    },
-        ].map(({v,l},i,arr)=>(
-          <React.Fragment key={l}>
-            <View style={ph.countItem}>
-              <Text style={ph.countVal}>{v>=1000?`${(v/1000).toFixed(1)}K`:String(v)}</Text>
-              <Text style={ph.countLbl}>{l}</Text>
-            </View>
-            {i<arr.length-1 && <View style={ph.countDiv}/>}
-          </React.Fragment>
-        ))}
-      </View>
-
-      {/* ── ★ Badges interactifs — strip sous les compteurs ── */}
-      <View style={{marginTop:12}}>
-        <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:7}}>
-          <Ionicons name="ribbon-outline" size={10} color={T.textTert}/>
-          <Text style={ph.badgeTitle}>BADGES</Text>
-          <View style={ph.badgePill}><Text style={ph.badgePillTxt}>{badgesStr}</Text></View>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:6}}>
-          {[...badges.filter(b=>b.earned),...badges.filter(b=>!b.earned)].map(b=>(
-            <BadgeChip key={b.id} b={b}/>
-          ))}
-        </ScrollView>
-      </View>
-
     </Animated.View>
   );
 });
 
 const ph = StyleSheet.create({
   section:     {paddingHorizontal:20,paddingTop:14,paddingBottom:16},
-  profileRow:  {flexDirection:'row',alignItems:'center',gap:13,marginBottom:12},
+  profileRow:  {flexDirection:'row',alignItems:'center',gap:13,marginBottom:30},
   avatarWrap:  {position:'relative'},
   avatarRing:  {position:'absolute',top:-2,left:-2,right:-2,bottom:-2,borderRadius:29},
   avatar:      {width:52,height:52,borderRadius:26,borderWidth:2,borderColor:T.bg},

@@ -16,7 +16,7 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "geolocation=(), microphone=(), camera=()"
-    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' ws: wss: https: https://*.supabase.co wss://*.supabase.co; media-src 'self' blob: data: https://*.supabase.co https:;"
+    Content-Security-Policy = "default-src 'self'; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' blob: ws: wss: https: https://*.supabase.co wss://*.supabase.co; media-src 'self' blob: data: https://*.supabase.co https:;"
 
 [[headers]]
   for = "/assets/*"

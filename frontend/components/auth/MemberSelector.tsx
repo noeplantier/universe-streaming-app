@@ -20,7 +20,6 @@ export const TEAM_MEMBERS = [
   { name: 'Chassaing', initials: 'CH', color: ['#0EA5E9','#0369A1'] as [string,string] },
   { name: 'BSE',       initials: 'BS', color: ['#10B981','#047857'] as [string,string] },
   { name: 'Sharl',     initials: 'SH', color: ['#F59E0B','#B45309'] as [string,string] },
-  { name: 'Clem',      initials: 'CL', color: ['#EC4899','#9D174D'] as [string,string] },
   { name: 'Enzo',      initials: 'EN', color: ['#EF4444','#991B1B'] as [string,string] },
   { name: 'NOX',       initials: 'NX', color: ['#8B5CF6','#6D28D9'] as [string,string] },
   { name: 'Maxime',    initials: 'MX', color: ['#14B8A6','#0F766E'] as [string,string] },
