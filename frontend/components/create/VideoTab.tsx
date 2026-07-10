@@ -3,6 +3,20 @@
  *
  * Flow : Vidéo → Miniature (galerie, toujours dispo) → Infos → Upload → Backoffice
  *
+ * ★★ CHANGEMENTS (sur demande) ★★
+ * 1. Galerie = UNIQUEMENT vidéos (natif ET web) — jamais d'image.
+ * 2. Caméra = ouvre réellement la caméra et permet d'enregistrer une vidéo,
+ *    y compris sur web mobile (capture="environment" déclenche l'appareil
+ *    natif du téléphone au lieu de la galerie).
+ * 3. Dropdown Genre réécrit : s'ouvre désormais dans un Modal (overlay),
+ *    positionné sous le champ, hauteur fixe avec scroll interne — ne pousse
+ *    plus jamais le reste du formulaire vers le bas.
+ * 4. Champ "Année" remplacé par un vrai sélecteur de date (calendrier
+ *    mensuel maison, même langage visuel que le reste du form).
+ * 5. Le message "Vidéo envoyée au backoffice" n'est plus une notification
+ *    flottante (Banner) : il s'affiche uniquement inline, juste au-dessus
+ *    du bouton "Soumettre la vidéo".
+ *
  * Miniature :
  *   • Sélection manuelle depuis la galerie (JAMAIS bloquante)
  *   • Tentative auto via expo-video-thumbnails (bonus non-bloquant)
@@ -19,7 +33,7 @@ import React, {
 } from 'react';
 import {
   ActivityIndicator, Alert, Animated,
-  Image, KeyboardAvoidingView, Platform,
+  Image, KeyboardAvoidingView, Modal, Platform,
   ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View,
 } from 'react-native';
@@ -91,6 +105,29 @@ const GENRES: { value: string; label: string; icon: keyof typeof Ionicons.glyphM
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CALENDRIER — helpers (aucune dépendance externe)
+// ─────────────────────────────────────────────────────────────────────────────
+const MONTHS_FR   = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const WEEKDAYS_FR = ['L','M','M','J','V','S','D'];
+
+function isoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function fmtDateFR(d: Date): string {
+  return `${d.getDate()} ${MONTHS_FR[d.getMonth()].slice(0,3)}. ${d.getFullYear()}`;
+}
+function buildMonthGrid(year: number, month: number): (Date | null)[] {
+  const first = new Date(year, month, 1);
+  const startOffset = (first.getDay() + 6) % 7; // lundi = colonne 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
 interface VideoAsset {
@@ -108,7 +145,7 @@ interface Form {
   title:    string;
   genre:    string;
   director: string;
-  year:     string;
+  year:     string; // ISO "YYYY-MM-DD" — sélectionné via calendrier
   synopsis: string;
 }
 const EMPTY: Form = { title:'', genre:'', director:'', year:'', synopsis:'' };
@@ -124,6 +161,15 @@ const fmtDur = (ms?: number | null) => {
   const s = Math.round(ms / 1000);
   return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`;
 };
+
+// ★ Refuse un fichier trop lourd pour l'endpoint d'upload non-resumable.
+function oversizeMsg(bytes?: number | null): string | null {
+  if (!bytes) return null;
+  const mb = bytes / (1024 * 1024);
+  return mb > MAX_FILE_MB
+    ? `Fichier trop volumineux (${mb.toFixed(0)} Mo). Limite : ${MAX_FILE_MB} Mo.`
+    : null;
+}
 
 // ★ Fallback MIME par extension — file.type est souvent vide pour .mov côté
 // navigateur (aucune entrée native dans la table de types web).
@@ -157,9 +203,7 @@ async function uploadXHR(
     xhr.setRequestHeader('Content-Type', mime);
     xhr.setRequestHeader('x-upsert', 'true');
     xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(e.loaded / e.total * 100); };
-    // ★ Le message exact de Supabase (ex: "exceeded the maximum allowed size",
-    // "mime type not supported", policy RLS…) est dans le corps de la réponse,
-    // jamais dans le seul status code — sans ça, tout échec reste un 400 muet.
+
     xhr.onload  = () => {
       if (xhr.status < 300) { res(); return; }
       let detail = xhr.responseText || `HTTP ${xhr.status}`;
@@ -170,35 +214,6 @@ async function uploadXHR(
     xhr.send(blob);
   });
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BANNIÈRE SUCCÈS
-// ─────────────────────────────────────────────────────────────────────────────
-const Banner = memo(function Banner({ visible }: { visible: boolean }) {
-  const anim = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(anim, { toValue: visible?1:0, tension:80, friction:12, useNativeDriver:true }).start();
-  }, [visible, anim]);
-  const ty = anim.interpolate({ inputRange:[0,1], outputRange:[-90,0] });
-  return (
-    <Animated.View style={[bn.root, { opacity:anim, transform:[{translateY:ty}] }]} pointerEvents="none">
-      <BlurView intensity={Platform.OS==='ios'?28:18} tint="dark" style={bn.inner}>
-        <View style={bn.iconWrap}><Ionicons name="shield-checkmark" size={18} color={C.amber}/></View>
-        <View style={{flex:1}}>
-          <Text style={bn.title}>Vidéo soumise à l'équipe Universe</Text>
-          <Text style={bn.body}>Tu seras notifié dès qu'elle sera approuvée et visible dans les Reels.</Text>
-        </View>
-      </BlurView>
-    </Animated.View>
-  );
-});
-const bn = StyleSheet.create({
-  root:    { position:'absolute', top:8, left:12, right:12, zIndex:300, borderRadius:16, overflow:'hidden', borderWidth:1, borderColor:'rgba(245,158,11,0.35)', elevation:10 },
-  inner:   { flexDirection:'row', alignItems:'flex-start', gap:12, padding:14 },
-  iconWrap:{ width:36, height:36, borderRadius:18, backgroundColor:'rgba(245,158,11,0.15)', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(245,158,11,0.30)' },
-  title:   { color:C.white, fontSize:13, fontWeight:'800', marginBottom:2 },
-  body:    { color:C.muted, fontSize:11, lineHeight:16 },
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHAMP TEXTE
@@ -236,57 +251,72 @@ const fi = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GENRE DROPDOWN
+// GENRE DROPDOWN — ★ overlay Modal, hauteur fixe, scroll interne
+// Ne pousse plus jamais le reste du formulaire : la liste s'affiche dans un
+// Modal transparent positionné juste sous le champ, avec un scroll propre.
 // ─────────────────────────────────────────────────────────────────────────────
 const GenreDropdown = memo(function GenreDropdown({
   value, onSelect,
 }: { value:string; onSelect:(v:string)=>void }) {
   const [open, setOpen] = useState(false);
-  const anim = useRef(new Animated.Value(0)).current;
+  const [anchor, setAnchor] = useState<{ x:number; y:number; width:number; height:number } | null>(null);
+  const triggerRef = useRef<View>(null);
 
-  const toggle = useCallback(() => {
-    const next = !open; setOpen(next);
-    Animated.spring(anim, { toValue:next?1:0, tension:70, friction:12, useNativeDriver:false }).start();
-  }, [open, anim]);
+  const openList = useCallback(() => {
+    triggerRef.current?.measureInWindow((x, y, width, height) => {
+      setAnchor({ x, y, width, height });
+      setOpen(true);
+    });
+  }, []);
 
   const select = useCallback((v: string) => {
-    onSelect(v); setOpen(false);
-    Animated.timing(anim, { toValue:0, duration:180, useNativeDriver:false }).start();
-  }, [onSelect, anim]);
+    onSelect(v);
+    setOpen(false);
+  }, [onSelect]);
 
-  const maxH   = anim.interpolate({ inputRange:[0,1], outputRange:[0, GENRES.length*50+8] });
-  const sel    = GENRES.find(g => g.value === value);
+  const sel = GENRES.find(g => g.value === value);
 
   return (
     <View style={gd.wrap}>
       <Text style={fi.label}>GENRE</Text>
-      <TouchableOpacity style={gd.trigger} onPress={toggle} activeOpacity={0.80}>
-        <View style={gd.left}>
-          {sel && <Ionicons name={sel.icon} size={15} color={C.accent} style={{marginRight:9}}/>}
-          <Text style={[gd.trigTxt, !value && {color:C.muted}]}>
-            {sel?.label ?? 'Sélectionne un genre…'}
-          </Text>
-        </View>
-        <Ionicons name={open?'chevron-up':'chevron-down'} size={14} color={C.muted}/>
-      </TouchableOpacity>
-      <Animated.View style={[gd.listWrap, {maxHeight:maxH}]}>
-        <View style={gd.list}>
-          {GENRES.map((g, i) => {
-            const on = value === g.value;
-            return (
-              <TouchableOpacity
-                key={g.value}
-                style={[gd.item, on && gd.itemOn, i<GENRES.length-1 && gd.itemBorder]}
-                onPress={() => select(g.value)} activeOpacity={0.75}
-              >
-                <Ionicons name={g.icon} size={15} color={on?C.accent:C.muted} style={{marginRight:12}}/>
-                <Text style={[gd.itemTxt, on && gd.itemTxtOn]}>{g.label}</Text>
-                {on && <Ionicons name="checkmark-circle" size={15} color={C.accent} style={{marginLeft:'auto'}}/>}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </Animated.View>
+
+      <View ref={triggerRef} collapsable={false}>
+        <TouchableOpacity style={gd.trigger} onPress={openList} activeOpacity={0.80}>
+          <View style={gd.left}>
+            {sel && <Ionicons name={sel.icon} size={15} color={C.accent} style={{marginRight:9}}/>}
+            <Text style={[gd.trigTxt, !value && {color:C.muted}]} numberOfLines={1}>
+              {sel?.label ?? 'Sélectionne un genre…'}
+            </Text>
+          </View>
+          <Ionicons name={open?'chevron-up':'chevron-down'} size={14} color={C.muted}/>
+        </TouchableOpacity>
+      </View>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setOpen(false)} />
+        {anchor && (
+          <View style={[gd.floatWrap, { top: anchor.y + anchor.height + 4, left: anchor.x, width: anchor.width }]}>
+            <View style={gd.list}>
+              <ScrollView style={gd.scroll} showsVerticalScrollIndicator nestedScrollEnabled>
+                {GENRES.map((g, i) => {
+                  const on = value === g.value;
+                  return (
+                    <TouchableOpacity
+                      key={g.value}
+                      style={[gd.item, on && gd.itemOn, i < GENRES.length-1 && gd.itemBorder]}
+                      onPress={() => select(g.value)} activeOpacity={0.75}
+                    >
+                      <Ionicons name={g.icon} size={15} color={on?C.accent:C.muted} style={{marginRight:12}}/>
+                      <Text style={[gd.itemTxt, on && gd.itemTxtOn]}>{g.label}</Text>
+                      {on && <Ionicons name="checkmark-circle" size={15} color={C.accent} style={{marginLeft:'auto'}}/>}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        )}
+      </Modal>
     </View>
   );
 });
@@ -294,14 +324,121 @@ const gd = StyleSheet.create({
   wrap:      { marginBottom:12 },
   trigger:   { flexDirection:'row', alignItems:'center', justifyContent:'space-between', backgroundColor:C.navy, borderRadius:12, paddingHorizontal:14, paddingVertical:13, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
   left:      { flexDirection:'row', alignItems:'center', flex:1 },
-  trigTxt:   { color:C.white, fontSize:14 },
-  listWrap:  { overflow:'hidden', marginTop:4, borderRadius:12 },
-  list:      { backgroundColor:C.navyHi, borderRadius:12, borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBr, overflow:'hidden' },
+  trigTxt:   { color:C.white, fontSize:14, flexShrink:1 },
+  floatWrap: { position:'absolute' },
+  list:      { backgroundColor:C.navyHi, borderRadius:12, borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBr, overflow:'hidden', elevation:12, shadowColor:'#000', shadowOffset:{width:0,height:6}, shadowOpacity:0.35, shadowRadius:14 },
+  scroll:    { maxHeight:260 },
   item:      { flexDirection:'row', alignItems:'center', paddingHorizontal:14, paddingVertical:13 },
   itemOn:    { backgroundColor:'rgba(167,139,250,0.12)' },
   itemBorder:{ borderBottomWidth:StyleSheet.hairlineWidth, borderBottomColor:C.border },
   itemTxt:   { color:C.mid, fontSize:13, fontWeight:'500', flex:1 },
   itemTxtOn: { color:C.white, fontWeight:'700' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ SÉLECTEUR DE DATE — calendrier mensuel maison (remplace le champ Année)
+// ─────────────────────────────────────────────────────────────────────────────
+const DateField = memo(function DateField({
+  value, onChange,
+}: { value: string; onChange: (iso: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const parsed = useMemo(() => (value ? new Date(`${value}T00:00:00`) : null), [value]);
+  const [viewDate, setViewDate] = useState<Date>(parsed ?? new Date());
+
+  const openCal = useCallback(() => {
+    setViewDate(parsed ?? new Date());
+    setOpen(true);
+  }, [parsed]);
+
+  const selectDay = useCallback((d: Date) => {
+    onChange(isoDate(d));
+    setOpen(false);
+  }, [onChange]);
+
+  const prevMonth = useCallback(() => setViewDate(d => new Date(d.getFullYear(), d.getMonth()-1, 1)), []);
+  const nextMonth = useCallback(() => setViewDate(d => new Date(d.getFullYear(), d.getMonth()+1, 1)), []);
+
+  const grid  = useMemo(() => buildMonthGrid(viewDate.getFullYear(), viewDate.getMonth()), [viewDate]);
+  const today = useMemo(() => new Date(), []);
+  const todayIso = isoDate(today);
+  const selectedIso = parsed ? isoDate(parsed) : null;
+
+  return (
+    <View>
+      <Text style={fi.label}>DATE DE SORTIE</Text>
+      <TouchableOpacity style={gd.trigger} onPress={openCal} activeOpacity={0.80}>
+        <View style={gd.left}>
+          <Ionicons name="calendar-outline" size={15} color={C.accent} style={{marginRight:9}}/>
+          <Text style={[gd.trigTxt, !value && {color:C.muted}]} numberOfLines={1}>
+            {parsed ? fmtDateFR(parsed) : 'Sélectionner une date'}
+          </Text>
+        </View>
+        <Ionicons name="chevron-down" size={14} color={C.muted}/>
+      </TouchableOpacity>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <View style={cal.overlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setOpen(false)} />
+          <View style={cal.card}>
+            <View style={cal.header}>
+              <TouchableOpacity onPress={prevMonth} hitSlop={10} style={cal.navBtn}>
+                <Ionicons name="chevron-back" size={17} color={C.white}/>
+              </TouchableOpacity>
+              <Text style={cal.headerTxt}>{MONTHS_FR[viewDate.getMonth()]} {viewDate.getFullYear()}</Text>
+              <TouchableOpacity onPress={nextMonth} hitSlop={10} style={cal.navBtn}>
+                <Ionicons name="chevron-forward" size={17} color={C.white}/>
+              </TouchableOpacity>
+            </View>
+
+            <View style={cal.weekRow}>
+              {WEEKDAYS_FR.map((w, i) => <Text key={i} style={cal.weekTxt}>{w}</Text>)}
+            </View>
+
+            <View style={cal.grid}>
+              {grid.map((d, i) => {
+                if (!d) return <View key={i} style={cal.cell} />;
+                const dIso = isoDate(d);
+                const isSelected = dIso === selectedIso;
+                const isToday = dIso === todayIso;
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    style={[cal.cell, cal.day, isSelected && cal.daySelected, isToday && !isSelected && cal.dayToday]}
+                    onPress={() => selectDay(d)} activeOpacity={0.75}
+                  >
+                    <Text style={[cal.dayTxt, isSelected && cal.dayTxtSelected]}>{d.getDate()}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity style={cal.todayBtn} onPress={() => selectDay(new Date())} activeOpacity={0.82}>
+              <Ionicons name="today-outline" size={13} color={C.accent} />
+              <Text style={cal.todayTxt}>Aujourd'hui</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+});
+const cal = StyleSheet.create({
+  overlay:    { flex:1, alignItems:'center', justifyContent:'center', backgroundColor:'rgba(3,5,12,0.72)', padding:24 },
+  card:       { width:'100%', maxWidth:340, backgroundColor:C.navyHi, borderRadius:18, padding:16, borderWidth:1, borderColor:C.borderBr },
+  header:     { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:12 },
+  navBtn:     { width:30, height:30, borderRadius:15, alignItems:'center', justifyContent:'center', backgroundColor:C.navy, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
+  headerTxt:  { color:C.white, fontSize:14, fontWeight:'800' },
+  weekRow:    { flexDirection:'row', marginBottom:4 },
+  weekTxt:    { flex:1, textAlign:'center', color:C.muted, fontSize:10, fontWeight:'700' },
+  grid:       { flexDirection:'row', flexWrap:'wrap' },
+  cell:       { width:`${100/7}%`, aspectRatio:1, alignItems:'center', justifyContent:'center', padding:2 },
+  day:        { borderRadius:999 },
+  daySelected:{ backgroundColor:C.accent },
+  dayToday:   { borderWidth:1, borderColor:C.accent },
+  dayTxt:     { color:C.offWhite, fontSize:13, fontWeight:'600' },
+  dayTxtSelected:{ color:C.bg, fontWeight:'900' },
+  todayBtn:   { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:6, marginTop:12, paddingVertical:10, borderRadius:12, backgroundColor:'rgba(167,139,250,0.12)', borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(167,139,250,0.30)' },
+  todayTxt:   { color:C.accent, fontSize:12.5, fontWeight:'700' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -410,14 +547,14 @@ const VideoTab = memo(function VideoTab() {
   const [uploading,   setUploading]   = useState(false);
   const [phase,       setPhase]       = useState('');
   const [error,       setError]       = useState<string | null>(null);
-  const [showBanner,  setShowBanner]  = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false); // ★ message inline (ex-Banner)
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const progAnim    = useRef(new Animated.Value(0)).current;
   const scrollRef   = useRef<ScrollView>(null);
-  const bannerTimer = useRef<ReturnType<typeof setTimeout>>();
+  const successTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => () => clearTimeout(bannerTimer.current), []);
+  useEffect(() => () => clearTimeout(successTimer.current), []);
 
   // ── Animation progression ─────────────────────────────────────────────────
   const animProg = useCallback((val: number) => {
@@ -438,11 +575,11 @@ const VideoTab = memo(function VideoTab() {
     scrollRef.current?.scrollTo({ y:0, animated:true });
   }, [progAnim]);
 
-  // ── Bannière ──────────────────────────────────────────────────────────────
-  const triggerBanner = useCallback(() => {
-    clearTimeout(bannerTimer.current);
-    setShowBanner(true);
-    bannerTimer.current = setTimeout(() => setShowBanner(false), BANNER_TTL);
+  // ── Confirmation de soumission — ★ inline uniquement, plus de notification
+  const triggerSuccessMsg = useCallback(() => {
+    clearTimeout(successTimer.current);
+    setShowSuccess(true);
+    successTimer.current = setTimeout(() => setShowSuccess(false), BANNER_TTL);
     if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
   }, []);
 
@@ -466,7 +603,7 @@ const VideoTab = memo(function VideoTab() {
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ★ SÉLECTION MINIATURE DEPUIS LA GALERIE (toujours opérationnelle)
+  // ★ SÉLECTION MINIATURE DEPUIS LA GALERIE (toujours opérationnelle, IMAGES)
   // ─────────────────────────────────────────────────────────────────────────
   const pickThumbnail = useCallback(async () => {
     // ★ FIX FileReader — expo-image-picker passe par FileReader.readAsDataURL()
@@ -504,7 +641,7 @@ const VideoTab = memo(function VideoTab() {
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // SÉLECTION VIDÉO — galerie
+  // ★ SÉLECTION VIDÉO — GALERIE UNIQUEMENT, uniquement des vidéos
   // ─────────────────────────────────────────────────────────────────────────
   const pickGallery = useCallback(async () => {
     // ★ FIX FileReader — même bypass que pickThumbnail/edit.tsx : ImagePicker
@@ -515,7 +652,8 @@ const VideoTab = memo(function VideoTab() {
     if (Platform.OS === 'web') {
       if (typeof document === 'undefined') return;
       const input = document.createElement('input');
-      input.type = 'file'; input.accept = 'video/*';
+      input.type = 'file';
+      input.accept = 'video/*'; // ★ uniquement vidéos, jamais d'image
       input.onchange = (e: any) => {
         const file = e.target.files?.[0]; if (!file) return;
         const uri = URL.createObjectURL(file);
@@ -544,7 +682,7 @@ const VideoTab = memo(function VideoTab() {
       Alert.alert('Permission requise', 'Active la galerie dans les réglages.'); return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes:       ['videos'] as any,
+      mediaTypes:       ['videos'] as any, // ★ uniquement vidéos, jamais d'image
       videoMaxDuration: MAX_DUR_S,
       quality:          1,
       selectionLimit:   1,
@@ -568,9 +706,40 @@ const VideoTab = memo(function VideoTab() {
   }, [tryAutoThumb]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // CAMÉRA — filme réellement une vidéo
+  // ★ CAMÉRA — allume réellement la caméra et enregistre une vidéo
+  // (natif : expo-image-picker camera ; web mobile : capture="environment"
+  // déclenche l'appli caméra native du téléphone, pas la galerie)
   // ─────────────────────────────────────────────────────────────────────────
   const pickCamera = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      if (typeof document === 'undefined') return;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'video/*';
+      // ★ capture='environment' est l'attribut standard qui force les
+      // navigateurs mobiles à ouvrir directement l'appareil photo/caméra du
+      // téléphone (enregistrement) plutôt que le sélecteur de galerie.
+      (input as any).capture = 'environment';
+      input.onchange = (e: any) => {
+        const file = e.target.files?.[0]; if (!file) return;
+        const uri = URL.createObjectURL(file);
+        const fileName = file.name || `record_${Date.now()}.mp4`;
+        const asset: VideoAsset = {
+          uri,
+          fileName,
+          fileSize: file.size,
+          duration: null,
+          mimeType: file.type || mimeFromExt(fileName),
+          webBlob: file,
+        };
+        setVideo(asset); setError(null);
+        tryAutoThumb(uri, null);
+        setTimeout(() => scrollRef.current?.scrollTo({ y:280, animated:true }), 350);
+      };
+      input.click();
+      return;
+    }
+
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Caméra inaccessible', 'Active la permission Caméra dans les réglages.'); return;
@@ -670,7 +839,7 @@ const VideoTab = memo(function VideoTab() {
         title:         form.title.trim()    || null,
         genre:         form.genre           || null,
         director:      form.director.trim() || null,
-        year:          form.year.trim()     || null,
+        year:          form.year.trim()     || null, // ISO "YYYY-MM-DD" — colonne texte
         synopsis:      form.synopsis.trim() || null,
         duration:      video.duration ? Math.round(video.duration / 1000) : null,
         likes_count:   0,
@@ -681,10 +850,10 @@ const VideoTab = memo(function VideoTab() {
       });
       if (insErr) throw new Error(insErr.message);
 
-      // ── D. Succès ───────────────────────────────────────────────────────
+      // ── D. Succès — ★ confirmation inline uniquement (plus de notification)
       animProg(100);
       setPhase('');
-      triggerBanner();
+      triggerSuccessMsg();
       setTimeout(reset, 1_800);
 
     } catch (e: any) {
@@ -693,7 +862,7 @@ const VideoTab = memo(function VideoTab() {
     } finally {
       setUploading(false);
     }
-  }, [video, thumbUri, thumbBlob, form, animProg, triggerBanner, reset]);
+  }, [video, thumbUri, thumbBlob, form, animProg, triggerSuccessMsg, reset]);
 
   // ── Booleans dérivés ──────────────────────────────────────────────────────
   const canSubmit = useMemo(
@@ -710,8 +879,6 @@ const VideoTab = memo(function VideoTab() {
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={{ flex:1 }}>
-      <Banner visible={showBanner}/>
-
       <KeyboardAvoidingView style={{ flex:1 }}
         behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={140}>
         <ScrollView ref={scrollRef}
@@ -719,7 +886,7 @@ const VideoTab = memo(function VideoTab() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled">
 
-          {/* ────── ÉTAPE 1 : SÉLECTION VIDÉO ─────────────────────────── */}
+          {/* ────── ÉTAPE 1 : SÉLECTION VIDÉO (galerie = vidéos uniquement) ── */}
           {!video ? (
             <View style={s.dropZone}>
               <View style={s.dropIconWrap}>
@@ -785,9 +952,8 @@ const VideoTab = memo(function VideoTab() {
               <View style={{flex:1}}>
                 <Field label="RÉALISATEUR" value={form.director} onChange={setDirector} placeholder="Nom"/>
               </View>
-              <View style={{width:84}}>
-                <Field label="ANNÉE" value={form.year} onChange={setYear}
-                  placeholder="2024" keyboardType="numeric" maxLength={4}/>
+              <View style={{width:150}}>
+                <DateField value={form.year} onChange={setYear}/>
               </View>
             </View>
 
@@ -806,14 +972,25 @@ const VideoTab = memo(function VideoTab() {
             </View>
           )}
 
-          {/* ────── INFO MODÉRATION ──────────────────────────────────── */}
-          {!!video && !uploading && !error && (
+          {/* ────── INFO MODÉRATION (avant soumission) ──────────────── */}
+          {!!video && !uploading && !error && !showSuccess && (
             <View style={s.infoBox}>
               <Ionicons name="shield-checkmark-outline" size={14} color={C.amber}/>
               <Text style={s.infoTxt}>
                 Ta vidéo sera transmise à l'équipe Universe (backoffice) dès soumission.
                 Tu seras notifié de la décision de modération.
               </Text>
+            </View>
+          )}
+
+          {/* ────── ★ CONFIRMATION — inline, juste au-dessus du bouton ── */}
+          {showSuccess && (
+            <View style={s.successBox}>
+              <Ionicons name="checkmark-circle" size={16} color={C.success}/>
+              <View style={{flex:1}}>
+                <Text style={s.successTitle}>Vidéo envoyée au backoffice</Text>
+                <Text style={s.successBody}>Tu seras notifié dès qu'elle sera approuvée et visible dans les Reels.</Text>
+              </View>
             </View>
           )}
 
@@ -872,9 +1049,14 @@ const s = StyleSheet.create({
   errorBox:      { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:'rgba(239,68,68,0.12)', borderRadius:12, padding:12, marginBottom:12, borderWidth:1, borderColor:'rgba(239,68,68,0.25)' },
   errorTxt:      { flex:1, color:'#FCA5A5', fontSize:12 },
 
-  // Info
+  // Info (pré-soumission)
   infoBox:       { flexDirection:'row', alignItems:'flex-start', gap:8, backgroundColor:'rgba(245,158,11,0.08)', borderRadius:12, padding:12, marginBottom:14, borderWidth:1, borderColor:'rgba(245,158,11,0.20)' },
   infoTxt:       { flex:1, color:C.muted, fontSize:11, lineHeight:16 },
+
+  // ★ Confirmation inline (post-soumission) — remplace l'ancienne notification
+  successBox:    { flexDirection:'row', alignItems:'flex-start', gap:8, backgroundColor:'rgba(34,197,94,0.10)', borderRadius:12, padding:12, marginBottom:14, borderWidth:1, borderColor:'rgba(34,197,94,0.28)' },
+  successTitle:  { color:C.white, fontSize:12.5, fontWeight:'800', marginBottom:2 },
+  successBody:   { color:C.muted, fontSize:11, lineHeight:16 },
 
   // Submit
   submitBtn:     { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:10, backgroundColor:C.navy, borderRadius:16, paddingVertical:15, marginBottom:8, borderWidth:1, borderColor:C.borderBr },

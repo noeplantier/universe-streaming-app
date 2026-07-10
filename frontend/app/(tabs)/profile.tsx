@@ -723,7 +723,7 @@ export default function ProfileScreen() {
     if(loading)return<View><SkeletonSection/><SkeletonSection/><SkeletonSection/></View>;
     if(fetchError)return<ErrorState/>;
     return(
-      <View>
+      <View style={{marginBottom:80,gap:20}}>
         <SecHead icon="heart-outline" label="Œuvres favorites" count={favWorks.length} onMore={favWorks.length>0?()=>setModal('favorites'):undefined}/>
         {!favWorks.length?<Empty icon="heart-outline" text="Aucun favori" sub="Sauvegardez des films depuis le catalogue"/>:<HRow c={favWorks.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
@@ -733,9 +733,9 @@ export default function ProfileScreen() {
         <SecHead icon="eye-outline" label="Œuvres visionnées" count={watched.length} onMore={watched.length>0?()=>setModal('watched'):undefined}/>
         {!watched.length?<Empty icon="film-outline" text="Aucun visionnage"/>:<HRow c={watched.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
-        <SecHead icon="shuffle-outline" label="Recommandés pour vous" onMore={recs.length>0?()=>setModal('recs'):undefined}/>
+        {/* <SecHead icon="shuffle-outline" label="Recommandés pour vous" onMore={recs.length>0?()=>setModal('recs'):undefined}/>
         {!recs.length?<Empty icon="planet-outline" text="Regardez des films pour des recs personnalisées"/>:<HRow c={recs.map(f=><PortraitCard key={f.id} item={f}/>)}/>}
-        <View style={{height:110}}/>
+        <View style={{height:110}}/> */}
       </View>
     );
   },[loading,fetchError,favWorks,reviews,watched,recs,router,ErrorState]);
