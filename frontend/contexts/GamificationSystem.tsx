@@ -142,7 +142,7 @@ export const LEVEL_UP_COPY: Record<number, { headline: string; body: string }> =
 
 export const BADGE_IMPACT: Record<string, string> = {
   explorateur_indie: "Vous avez traversé 10 univers que le grand public n'atteindra jamais.",
-  cinephile_nocturne: "Les films les plus honnêtes se regardent quand tout le monde dort.",
+  nocturne: "Les films les plus honnêtes se regardent quand tout le monde dort.",
   decouvreur_pepites: "Votre instinct cinéphile a devancé tous les algorithmes. C'est rare.",
   festival_lover: "Une programmation entière. Vous avez fait le travail d'un jury.",
   esprit_ouvert: "L'expérimental, c'est le cinéma du futur. Vous y étiez.",
@@ -397,9 +397,9 @@ export const QUEST_HOOKS: Record<string, string> = {
   write_10_critiques: "10 critiques — vous n'êtes plus un utilisateur. Vous êtes une voix.",
 };
 
-export const CINEPHILE_BADGES_CATALOG: Omit<GamiBadge, 'earned' | 'earned_at'>[] = [
+export const BADGES_CATALOG: Omit<GamiBadge, 'earned' | 'earned_at'>[] = [
   { id: 'explorateur_indie', label: 'Explorateur indé', description: BADGE_IMPACT.explorateur_indie, icon: 'compass-outline', rarity: 'commun', xp_reward: 15, is_hidden: false },
-  { id: 'cinephile_nocturne', label: 'Cinéphile nocturne', description: BADGE_IMPACT.cinephile_nocturne, icon: 'moon-outline', rarity: 'commun', xp_reward: 5, is_hidden: false },
+  { id: 'nocturne', label: 'Cinéphile nocturne', description: BADGE_IMPACT.nocturne, icon: 'moon-outline', rarity: 'commun', xp_reward: 5, is_hidden: false },
   { id: 'decouvreur_pepites', label: 'Découvreur de pépites', description: BADGE_IMPACT.decouvreur_pepites, icon: 'star-outline', rarity: 'rare', xp_reward: 25, is_hidden: false },
   { id: 'festival_lover', label: 'Festival Lover', description: BADGE_IMPACT.festival_lover, icon: 'trophy-outline', rarity: 'rare', xp_reward: 20, is_hidden: false },
   { id: 'esprit_ouvert', label: 'Esprit ouvert', description: BADGE_IMPACT.esprit_ouvert, icon: 'flask-outline', rarity: 'rare', xp_reward: 20, is_hidden: false },
@@ -642,7 +642,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
     let dead = false;
 
     Promise.all([
-      supabase.from('cinephile_profiles').select('xp,level,title,streak_days,contribution_score').eq('user_id', userId).maybeSingle(),
+      supabase.from('profiles').select('xp,level,title,streak_days,contribution_score').eq('user_id', userId).maybeSingle(),
       skipBadges ? Promise.resolve({ data: null }) : supabase.from('badges').select('id,label,description,icon,rarity,xp_reward,is_hidden').eq('is_hidden', false),
       skipBadges ? Promise.resolve({ data: null }) : supabase.from('user_badges').select('badge_id,earned_at').eq('user_id', userId),
     ])
@@ -664,7 +664,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
             xpToNext: lvl.xpToNext,
           });
         } else {
-          supabase.from('cinephile_profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).then(() => {}, () => {});
+          supabase.from('profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).then(() => {}, () => {});
         }
 
         if (!skipBadges) {
@@ -676,7 +676,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
           })) as GamiBadge[];
           const merged = dbBadges.length > 0
             ? dbBadges
-            : CINEPHILE_BADGES_CATALOG.map(b => ({
+            : BADGES_CATALOG.map(b => ({
                 ...b,
                 earned: earnedMap.has(b.id),
                 earned_at: earnedMap.get(b.id),

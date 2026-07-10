@@ -148,44 +148,36 @@ const CritiqueTab = memo(function CritiqueTab() {
     scrollRef.current?.scrollTo({ y:0, animated:true });
   }, []);
 
-  // ── ★ Submit — getDeviceId() (zéro supabase.auth.*) ──────────────────────
   const submit = useCallback(async () => {
     setError(null);
-    if (!form.title.trim())             { setError('Le titre de la critique est obligatoire.'); return; }
-    if (!form.filmTitle.trim())         { setError('Le titre de l\'œuvre est obligatoire.'); return; }
-    if (form.content.trim().length < 20){ setError('La critique doit faire au moins 20 caractères.'); return; }
-
+    if (!form.title.trim()) { setError('Le titre de la critique est obligatoire.'); return; }
+    if (!form.filmTitle.trim()) { setError("Le titre de l'œuvre est obligatoire."); return; }
+    if (form.content.trim().length < 20) { setError('La critique doit faire au moins 20 caractères.'); return; }
+  
     setSubmitting(true);
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-
+  
     try {
-      // ★ UUID device — aucun appel à supabase.auth.*
-      const userId = await getDeviceId();
-
+      const deviceId = await getDeviceId();
+  
       const { error: insErr } = await supabase.from('critiques').insert({
-        user_id:    userId,
-        title:      form.title.trim(),
-        film_title: form.filmTitle.trim(),
-        content:    form.content.trim(),
-        rating:     form.rating > 0 ? form.rating : null,
-        tags:       form.tags.length > 0 ? form.tags : null,
-        reel_id:    form.reelId ?? null,
+        device_id:   deviceId, // au lieu de user_id
+        title:       form.title.trim(),
+        film_title:  form.filmTitle.trim(),
+        content:     form.content.trim(),
+        rating:      form.rating > 0 ? form.rating : null,
+        tags:        form.tags.length > 0 ? form.tags : null,
+        reel_id:     form.reelId ?? null,
       });
-
-      if (insErr) throw new Error(insErr.message);
-
-      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  
+      if (insErr) throw insErr;
       setDone(true);
       setTimeout(reset, 3000);
-
     } catch (e: any) {
       setError(e?.message ?? 'Erreur inconnue lors de la publication.');
     } finally {
       setSubmitting(false);
     }
   }, [form, reset]);
-
-  const canSubmit = !!form.title.trim() && !!form.filmTitle.trim() && form.content.trim().length >= 20 && !submitting && !done;
 
   return (
     <KeyboardAvoidingView style={{ flex:1 }} behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={140}>
@@ -268,7 +260,7 @@ const CritiqueTab = memo(function CritiqueTab() {
 
         {/* Bouton */}
         {!done&&(
-          <TouchableOpacity style={[ct.submitBtn,{opacity:canSubmit?1:0.5}]} onPress={submit} activeOpacity={0.84} disabled={!canSubmit}>
+          <TouchableOpacity style={[ct.submitBtn,{opacity:submit?1:0.5}]} onPress={submit} activeOpacity={0.84} disabled={!submit}>
             {submitting?<ActivityIndicator color={C.white} size="small"/>:<Ionicons name="send" size={16} color={C.white}/>}
             <Text style={ct.submitTxt}>{submitting?'Publication…':'Publier la critique'}</Text>
           </TouchableOpacity>
