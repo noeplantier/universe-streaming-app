@@ -1,9 +1,11 @@
 /**
- * app/(tabs)/reels/index.tsx — UNIVERSE · v6
+ * app/(tabs)/reels/index.tsx — UNIVERSE · v7
  *
  * ★ ReelsUIProvider est instancié ICI — plus besoin de modifier _layout.tsx
  * ★ ReelsScreenInner consomme useReelsUI() → TopHeader animé
  * ★ FeedItem consomme useReelsUI() → NavBar + TopHeader cachés SIMULTANÉMENT
+ * ★ Filtrage RÉEL par genre : feedKey = 'all' | <genres.value exacte>
+ *   La query Supabase applique .eq('genre', feedKey) sauf pour 'all'.
  *
  * Pour brancher la CustomNavBar (dans _layout.tsx ou le composant NavBar) :
  *   import { useReelsUI } from '@/contexts/ReelsUIContext';
@@ -37,8 +39,9 @@ import type { FeedFilm } from '@/components/reels/types';
 // ─────────────────────────────────────────────────────────────────────────────
 // Config
 // ─────────────────────────────────────────────────────────────────────────────
-const SUPABASE_URL = 'https://knrzbdqfflobfjdmqyte.supabase.co';
-const VIDEO_BUCKET = 'community-images';
+const SUPABASE_URL  = 'https://knrzbdqfflobfjdmqyte.supabase.co';
+const VIDEO_BUCKET   = 'community-images';
+const ALL_GENRES_KEY = 'all'; // doit matcher la clé émise par DropdownMenu
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -90,21 +93,30 @@ const COLS =
 
 const PAGE_SIZE = 20;
 
-async function fetchApprovedPage(page: number): Promise<SupabaseReel[]> {
+// ★ Filtrage réel par genre : genre = clé exacte de public.genres.value,
+//   'all' (ou vide) = aucun filtre → tous les reels approuvés.
+async function fetchApprovedPage(page: number, genre: MenuKey): Promise<SupabaseReel[]> {
   const from = page * PAGE_SIZE;
-  const { data, error } = await supabase
+  let query = supabase
     .from('reels')
     .select(COLS)
-    .eq('status', 'approved')
+    .eq('status', 'approved');
+
+  if (genre && genre !== ALL_GENRES_KEY) {
+    query = query.eq('genre', genre);
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .range(from, from + PAGE_SIZE - 1)
     .returns<SupabaseReel[]>();
+
   if (error) throw error;
   return data ?? [];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Hook feed
+// Hook feed — re-fetch complet à chaque changement de feedKey (genre)
 // ─────────────────────────────────────────────────────────────────────────────
 function useReelsFeed(feedKey: MenuKey) {
   const [films,   setFilms]   = useState<FeedFilm[]>([]);
@@ -113,12 +125,14 @@ function useReelsFeed(feedKey: MenuKey) {
   const pageRef     = useRef(0);
   const hasMoreRef  = useRef(true);
   const loadingMore = useRef(false);
+  const feedKeyRef  = useRef(feedKey);
+  feedKeyRef.current = feedKey;
 
   useEffect(() => {
     let dead = false;
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setFilms([]);
     pageRef.current = 0; hasMoreRef.current = true; loadingMore.current = false;
-    fetchApprovedPage(0)
+    fetchApprovedPage(0, feedKey)
       .then(rows => {
         if (!dead) {
           setFilms(rows.map(mapReel));
@@ -141,7 +155,7 @@ function useReelsFeed(feedKey: MenuKey) {
     loadingMore.current = true;
     const next = pageRef.current + 1;
     try {
-      const rows = await fetchApprovedPage(next);
+      const rows = await fetchApprovedPage(next, feedKeyRef.current);
       setFilms(prev => [...prev, ...rows.map(mapReel)]);
       pageRef.current = next;
       hasMoreRef.current = rows.length === PAGE_SIZE;
@@ -152,6 +166,7 @@ function useReelsFeed(feedKey: MenuKey) {
     }
   }, []);
 
+  // ── Realtime — ne réinjecte/maj que si le reel appartient au genre actif ──
   useEffect(() => {
     const ch = supabase
       .channel(`reels_rt_${Date.now()}`)
@@ -159,7 +174,10 @@ function useReelsFeed(feedKey: MenuKey) {
         { event: 'UPDATE', schema: 'public', table: 'reels' },
         ({ new: row }) => {
           const r = row as SupabaseReel;
-          if (r.status === 'approved') {
+          const activeGenre = feedKeyRef.current;
+          const matchesGenre = activeGenre === ALL_GENRES_KEY || r.genre === activeGenre;
+
+          if (r.status === 'approved' && matchesGenre) {
             setFilms(prev =>
               prev.some(x => x.id === r.id)
                 ? prev.map(x => x.id === r.id ? mapReel(r) : x)
@@ -211,7 +229,7 @@ function ReelsScreenInner() {
   const [activeIndex,   setActiveIndex]   = useState(0);
   const [screenFocused, setScreenFocused] = useState(true);
   const [menuOpen,      setMenuOpen]      = useState(false);
-  const [feedKey,       setFeedKey]       = useState<MenuKey>('foryou');
+  const [feedKey,       setFeedKey]       = useState<MenuKey>(ALL_GENRES_KEY);
   const [infoFilm,      setInfoFilm]      = useState<FeedFilm | null>(null);
 
   const flatRef      = useRef<FlatList>(null);
@@ -224,6 +242,15 @@ function ReelsScreenInner() {
 
   const filmsRef = useRef(films);
   filmsRef.current = films;
+
+  // ── Sélection d'un genre depuis le DropdownMenu ───────────────────────────
+  const handleGenreSelect = useCallback((key: MenuKey) => {
+    setFeedKey(key);
+    activeIdxRef.current = 0;
+    setActiveIndex(0);
+    // Reset immédiat en haut du feed filtré
+    flatRef.current?.scrollToOffset({ offset: 0, animated: false });
+  }, []);
 
   // ── Index actif ───────────────────────────────────────────────────────────
   const commitIndex = useCallback((next: number) => {
@@ -341,6 +368,46 @@ function ReelsScreenInner() {
     );
   }
 
+  // ── Aucun résultat pour ce genre ──────────────────────────────────────────
+  if (!loading && !films.length) {
+    return (
+      <View style={s.root}>
+        <StatusBar style="light" translucent />
+        <View style={s.center}>
+          <Text style={s.loadTxt}>Aucune vidéo dans ce genre pour l'instant.</Text>
+        </View>
+
+        <Animated.View
+          style={[s.header, { opacity: uiOpacity }]}
+          pointerEvents={uiVisible ? 'box-none' : 'none'}
+        >
+          <SafeAreaView edges={['top']}>
+            <TopHeader
+              feedKey={feedKey}
+              onMenuPress={() => setMenuOpen(true)}
+              scrollY={scrollY}
+            />
+          </SafeAreaView>
+        </Animated.View>
+
+        <Modal
+          visible={menuOpen}
+          transparent
+          animationType="none"
+          statusBarTranslucent
+          onRequestClose={() => setMenuOpen(false)}
+        >
+          <DropdownMenu
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            onSelect={handleGenreSelect}
+            activeKey={feedKey}
+          />
+        </Modal>
+      </View>
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <View style={s.root}>
@@ -396,7 +463,7 @@ function ReelsScreenInner() {
         </View>
       )}
 
-      {/* Menu */}
+      {/* Menu — onSelect déclenche le re-fetch filtré par genre */}
       <Modal
         visible={menuOpen}
         transparent
@@ -407,7 +474,7 @@ function ReelsScreenInner() {
         <DropdownMenu
           visible={menuOpen}
           onClose={() => setMenuOpen(false)}
-          onSelect={setFeedKey}
+          onSelect={handleGenreSelect}
           activeKey={feedKey}
         />
       </Modal>
@@ -435,8 +502,8 @@ export default function ReelsScreen() {
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: '#000' },
   header: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 50 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadTxt: { color: 'rgba(255,255,255,0.40)', fontSize: 15 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
+  loadTxt: { color: 'rgba(255,255,255,0.40)', fontSize: 15, textAlign: 'center' },
   errBanner: {
     position: 'absolute', bottom: 100, left: 20, right: 20, zIndex: 99,
     backgroundColor: 'rgba(239,68,68,0.15)', borderRadius: 12,

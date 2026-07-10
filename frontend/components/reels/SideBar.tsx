@@ -125,6 +125,7 @@ import React, {
   function useReelGenres(): { genres:GenreWithCount[]; loading:boolean } {
     const [genres,  setGenres]  = useState<GenreWithCount[]>([]);
     const [loading, setLoading] = useState(true);
+    const [saved, setSaved ] = useState(true);
   
     useEffect(() => {
       let dead = false;
@@ -156,6 +157,13 @@ import React, {
         finally { if (!dead) setLoading(false); }
       };
       load();
+
+      // setSaved function
+   function setSaved(value: boolean) {
+        setSaved(value);
+      }
+      
+
   
       // Realtime : nouveau reel approuvé
       const ch = supabase.channel(`sb_genres_${Date.now()}`)
@@ -295,7 +303,7 @@ import React, {
   // ─── ★ SIDEBAR ────────────────────────────────────────────────────────────────
   export const SideBar = memo(function SideBar({
     visible, liked, muted, saved,
-    onLike, onMute, onSave, onInfo, onShare,
+    onLike, onMute, onSave, onInfo,
     activeGenre, onGenreSelect,
     activeFormat=null,   onFormatSelect,
     activeAmbiance=null, onAmbianceSelect,
@@ -316,6 +324,32 @@ import React, {
     [onInteract]);
   
     if (!visible) return null;
+
+
+    const onShare = async () => {
+      try {
+        const userId = session?.user?.id; // adapte selon ton state auth
+        const workId = work?.id;          // oeuvre du reel courant
+    
+        if (!userId || !workId) return;
+    
+        const { error } = await supabase
+          .from('user_favorites')
+          .upsert(
+            { user_id: userId, work_id: workId },
+            { onConflict: 'user_id,work_id' }
+          );
+    
+        if (error) throw error;
+    
+        // option UX
+        setSaved?.(true); // si tu as cet état local
+        // toast.success('Ajouté aux favoris');
+      } catch (e) {
+        console.error('[share->favorite] error:', e);
+        // toast.error('Impossible d’ajouter en favoris');
+      }
+    };
   
     // Comptage des filtres actifs (pour badge sur sections)
     const hasFormat    = !!activeFormat;
@@ -333,10 +367,9 @@ import React, {
           {/* ── ACTIONS ─────────────────────────────────────────────────── */}
           <View style={sb.actions}>
             <ActionBtn icon="heart-outline"        iconOn="heart"          active={liked} color={P.red}   onPress={wrap(onLike)}/>
-            <ActionBtn icon="bookmark-outline"       iconOn="bookmark"       active={saved} color="#fff"   onPress={wrap(onSave)}/>
             <ActionBtn icon="volume-high-outline"   iconOn="volume-mute"    active={muted} color="rgba(255,255,255,0.90)" onPress={wrap(onMute)}/>
-            {onShare && <ActionBtn icon="share-outline" iconOn="share" active={false} color={P.blue} onPress={wrap(onShare)}/>}
-            {onInfo  && <ActionBtn icon="list-outline"  iconOn="list"  active={false} color={P.muted} onPress={wrap(onInfo)}/>}
+          <ActionBtn icon="share-outline" iconOn="share" active={false} color={P.blue} onPress={wrap(onShare)}/>
+          <ActionBtn icon="list-outline"  iconOn="list"  active={false} color={P.muted} onPress={wrap(onInfo)}/>
           </View>
   
           <View style={sb.divider}/>
@@ -489,3 +522,9 @@ import React, {
       marginRight:4,
     },
   });
+
+
+function setSaved(arg0: boolean) {
+  throw new Error('Function not implemented.');
+}
+

@@ -1,15 +1,37 @@
 /**
- * contexts/GamificationSystem.tsx — UNIVERSE · Gamification v5
+ * contexts/GamificationSystem.tsx — UNIVERSE · Gamification v6
  *
- * Objectifs :
- * - Afficher le level-up une seule fois par niveau gagné
- * - UX/UI plus premium, plus claire, plus interactive
- * - Gamification adaptée à une app de streaming de cinéma indépendant
- * - Zéro dépendance à supabase.auth.*
+ * ★★ CHANGEMENTS v6 (sur demande) ★★
+ * 1. Défis du jour réduits à EXACTEMENT 4 (1 par pilier actif : watch,
+ *    critique, explorer, creator — le pilier "profile" sort de la boucle
+ *    quotidienne car il n'a pas vocation à se répéter chaque jour).
+ * 2. Chaque défi est maintenant à PROGRESSION (target > 1 pour la plupart)
+ *    et doit être intégralement terminé avant de pouvoir "Claim" son XP.
+ *    Le XP n'est plus crédité automatiquement : il faut un tap explicite
+ *    sur "Réclamer" une fois la barre à 100%.
+ * 3. Nouveau composant `FirstStepsGuide` : prend le nouvel utilisateur par
+ *    la main dès son arrivée (profil vierge), avec 4 étapes numérotées qui
+ *    pointent 1:1 vers les 4 défis du jour et naviguent directement vers
+ *    l'action (go_catalog / go_create / go_social...). Se referme seul dès
+ *    qu'un premier défi progresse, ou via le bouton de fermeture.
+ * 4. `DailyQuestsPanel` réécrit : barre de progression réelle, état
+ *    "prêt à réclamer" mis en avant (glow doré + bouton Claim), état
+ *    "réclamé" verrouillé, et mise en évidence du prochain défi à faire
+ *    pour guider l'oeil sans surcharger l'écran.
+ *
+ * ★★ MIGRATION SQL REQUISE ★★ (ajoute le suivi claim, non destructif) :
+ *   alter table public.user_quests
+ *     add column if not exists claimed boolean not null default false,
+ *     add column if not exists claimed_at timestamptz null;
+ *
+ * Tout le reste (badges, XP/niveaux, weekly challenge, score de
+ * contribution, piliers) est conservé à l'identique — c'est le moteur de
+ * fond qui donne de la profondeur sans surcharger l'écran principal.
+ *
+ * Zéro dépendance à supabase.auth.* — userId = getDeviceId() côté écran.
  */
 
 import React, {
-  Key,
   memo,
   ReactNode,
   useCallback,
@@ -22,8 +44,6 @@ import {
   Animated,
   Dimensions,
   Easing,
-  FlatList,
-  Image,
   Modal,
   Platform,
   ScrollView,
@@ -35,13 +55,17 @@ import {
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import { ParticleBurst } from '@/components/shared/ParticleBurst';
 import { GlowAccentCard } from '@/components/shared/GlowAccentCard';
 import { SpringToast } from '@/components/shared/SpringToast';
+
+// ─── Web-safe Haptics (même pattern que le reste du projet) ─────────────────
+let _Haptics: any = null;
+if (Platform.OS !== 'web') { try { _Haptics = require('expo-haptics'); } catch {} }
+function hapticLight()   { _Haptics?.impactAsync?.(_Haptics.ImpactFeedbackStyle?.Light).catch(()=>{}); }
+function hapticSuccess() { _Haptics?.notificationAsync?.(_Haptics.NotificationFeedbackType?.Success).catch(()=>{}); }
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -336,6 +360,9 @@ export interface XPMultiplier {
   sources: string[];
 }
 
+// ─── ★ Défis du jour — EXACTEMENT 4, un par pilier actif ─────────────────────
+// À progression (target > 1 le plus souvent) : le XP n'est crédité qu'après
+// un tap explicite sur "Réclamer" une fois la barre à 100%.
 export interface DailyQuestDef {
   id: string;
   title: string;
@@ -344,12 +371,17 @@ export interface DailyQuestDef {
   xp: number;
   icon: keyof typeof Ionicons.glyphMap;
   cta: string;
+  target: number;      // nombre d'actions requises pour débloquer le Claim
+  deepAction: string;  // action de navigation (go_catalog, go_create, go_social...)
+  hint: string;        // micro-coaching affiché tant que le défi n'est pas terminé
 }
 
 export interface DailyQuestProgress {
   id: string;
-  done: boolean;
   date: string;
+  progress: number;
+  completed: boolean;  // target atteint
+  claimed: boolean;    // XP effectivement réclamé
 }
 
 export const QUEST_HOOKS: Record<string, string> = {
@@ -403,12 +435,32 @@ export const QUEST_DEFINITIONS: QuestDef[] = [
   { id: 'write_10_critiques', title: 'Critique confirmé', desc: 'Publier 10 critiques au total', target: 10, reward_badge: 'serial_critic', xp: 80, action: 'go_create', icon: 'document-text-outline', tip: QUEST_HOOKS.write_10_critiques },
 ];
 
+// ★ 4 défis du jour — un par pilier actif (watch / explorer / critique / creator)
 export const DAILY_QUEST_DEFINITIONS: DailyQuestDef[] = [
-  { id: 'daily_watch', title: 'Film du jour', desc: 'Visionner au moins un film', pillar: 'watch', xp: 20, icon: 'play-circle-outline', cta: 'Explorer' },
-  { id: 'daily_critique', title: 'Plume du jour', desc: 'Rédiger une critique', pillar: 'critique', xp: 40, icon: 'create-outline', cta: 'Rédiger' },
-  { id: 'daily_explore', title: 'Découverte', desc: "Explorer la page d'accueil", pillar: 'explorer', xp: 15, icon: 'compass-outline', cta: 'Découvrir' },
-  { id: 'daily_create', title: 'Studio ouvert', desc: 'Publier ou mettre à jour un projet', pillar: 'creator', xp: 60, icon: 'videocam-outline', cta: 'Publier' },
-  { id: 'daily_profile', title: 'Profil du jour', desc: 'Compléter une info manquante dans le profil', pillar: 'profile', xp: 25, icon: 'person-outline', cta: 'Profil' },
+  {
+    id: 'daily_watch', title: 'Session ciné', desc: 'Regardez 2 films jusqu\'au bout',
+    pillar: 'watch', xp: 25, icon: 'play-circle-outline', cta: 'Explorer',
+    target: 2, deepAction: 'go_catalog',
+    hint: "Chaque film terminé compte. Encore un peu.",
+  },
+  {
+    id: 'daily_explore', title: 'Chasse aux pépites', desc: 'Découvrez 3 films ou créateurs',
+    pillar: 'explorer', xp: 20, icon: 'compass-outline', cta: 'Découvrir',
+    target: 3, deepAction: 'go_catalog',
+    hint: "L'algorithme ne trouve rien. C'est vous, le radar.",
+  },
+  {
+    id: 'daily_critique', title: 'Voix du jour', desc: 'Publiez 1 critique argumentée',
+    pillar: 'critique', xp: 40, icon: 'create-outline', cta: 'Rédiger',
+    target: 1, deepAction: 'go_create',
+    hint: "80 mots suffisent. Votre avis compte vraiment.",
+  },
+  {
+    id: 'daily_create', title: 'Studio ouvert', desc: 'Publiez ou mettez à jour un projet',
+    pillar: 'creator', xp: 60, icon: 'videocam-outline', cta: 'Publier',
+    target: 1, deepAction: 'go_create',
+    hint: "Un cinéaste a besoin d'un premier spectateur : vous.",
+  },
 ];
 
 export const PROFILE_POWER_FIELDS: Omit<ProfilePowerField, 'done'>[] = [
@@ -893,9 +945,10 @@ export function useContributionScore(userId: string) {
   return { score, loading, detectPepite };
 }
 
-export function useDailyQuests(userId: string) {
+// ─── ★ Défis du jour — progression + Claim explicite ────────────────────────
+export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questId: string) => void) {
   const today = useMemo(() => todayKey(), []);
-  const [done, setDone] = useState<Set<string>>(new Set());
+  const [progressMap, setProgressMap] = useState<Map<string, DailyQuestProgress>>(new Map());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -905,11 +958,21 @@ export function useDailyQuests(userId: string) {
     }
     let dead = false;
     const ids = DAILY_QUEST_DEFINITIONS.map(d => `${d.id}_${today}`);
-    supabase.from('user_quests').select('quest_id,completed').eq('user_id', userId).in('quest_id', ids)
+    supabase.from('user_quests').select('quest_id,progress,completed,claimed').eq('user_id', userId).in('quest_id', ids)
       .then(({ data }) => {
         if (dead) return;
-        const s = new Set<string>((data ?? []).filter((r: any) => r.completed).map((r: any) => r.quest_id as string));
-        setDone(s);
+        const m = new Map<string, DailyQuestProgress>();
+        (data ?? []).forEach((r: any) => {
+          const baseId = (r.quest_id as string).replace(`_${today}`, '');
+          m.set(baseId, {
+            id: baseId,
+            date: today,
+            progress: r.progress ?? 0,
+            completed: r.completed ?? false,
+            claimed: r.claimed ?? false,
+          });
+        });
+        setProgressMap(m);
         setLoading(false);
       }, () => {
         if (!dead) setLoading(false);
@@ -917,33 +980,89 @@ export function useDailyQuests(userId: string) {
     return () => { dead = true; };
   }, [userId, today]);
 
-  const completeDailyQuest = useCallback(async (questId: string) => {
+  // ── Incrémente la progression d'un défi (appelé depuis n'importe où dans
+  //    l'app : lecture d'une vidéo terminée, publication d'une critique...).
+  //    Se bloque tout seul une fois la cible atteinte.
+  const incrementDailyQuest = useCallback(async (questId: string, by = 1) => {
     if (!isValidUUID(userId)) return;
-    const dailyKey = `${questId}_${today}`;
-    if (done.has(dailyKey)) return;
-    setDone(s => {
-      const ns = new Set(s);
-      ns.add(dailyKey);
-      return ns;
-    });
+    const def = DAILY_QUEST_DEFINITIONS.find(d => d.id === questId);
+    if (!def) return;
+    const prev = progressMap.get(questId);
+    if (prev?.completed) return; // déjà à 100%, rien à faire tant que non réclamé
+
+    const newProg = Math.min((prev?.progress ?? 0) + by, def.target);
+    const completed = newProg >= def.target;
+    const next: DailyQuestProgress = { id: questId, date: today, progress: newProg, completed, claimed: false };
+
+    setProgressMap(m => { const nm = new Map(m); nm.set(questId, next); return nm; });
+
+    if (completed) hapticSuccess(); else hapticLight();
+
     await supabase.from('user_quests').upsert({
       user_id: userId,
-      quest_id: dailyKey,
-      progress: 1,
-      completed: true,
-      completed_at: new Date().toISOString(),
+      quest_id: `${questId}_${today}`,
+      progress: newProg,
+      completed,
+      completed_at: completed ? new Date().toISOString() : null,
+      claimed: false,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
-  }, [userId, today, done]);
+  }, [userId, today, progressMap]);
 
-  const questsWithStatus = useMemo(() => DAILY_QUEST_DEFINITIONS.map(d => ({
-    ...d,
-    completed: done.has(`${d.id}_${today}`),
-  })), [done, today]);
+  // ── Réclame l'XP d'un défi TERMINÉ. Bloqué tant que la cible n'est pas
+  //    atteinte — c'est la règle centrale demandée : pas de Claim partiel.
+  const claimDailyQuest = useCallback(async (questId: string) => {
+    if (!isValidUUID(userId)) return;
+    const def = DAILY_QUEST_DEFINITIONS.find(d => d.id === questId);
+    const prev = progressMap.get(questId);
+    if (!def || !prev?.completed || prev.claimed) return;
 
-  const completedToday = useMemo(() => questsWithStatus.filter(q => q.completed).length, [questsWithStatus]);
+    hapticSuccess();
+    setProgressMap(m => {
+      const nm = new Map(m);
+      nm.set(questId, { ...prev, claimed: true });
+      return nm;
+    });
 
-  return { questsWithStatus, completedToday, loading, completeDailyQuest, today };
+    await supabase.from('user_quests').upsert({
+      user_id: userId,
+      quest_id: `${questId}_${today}`,
+      progress: prev.progress,
+      completed: true,
+      claimed: true,
+      claimed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
+
+    onXPClaimed?.(def.xp, questId);
+  }, [userId, today, progressMap, onXPClaimed]);
+
+  const questsWithStatus = useMemo(() => DAILY_QUEST_DEFINITIONS.map(d => {
+    const p = progressMap.get(d.id);
+    return {
+      ...d,
+      progress: p?.progress ?? 0,
+      completed: p?.completed ?? false,
+      claimed: p?.claimed ?? false,
+      pct: Math.min(1, (p?.progress ?? 0) / d.target),
+    };
+  }), [progressMap]);
+
+  const completedToday    = useMemo(() => questsWithStatus.filter(q => q.claimed).length, [questsWithStatus]);
+  const readyToClaimCount = useMemo(() => questsWithStatus.filter(q => q.completed && !q.claimed).length, [questsWithStatus]);
+  // Aucune progression sur aucun défi → signal "nouvel arrivant" côté écran
+  const hasAnyProgress = useMemo(() => questsWithStatus.some(q => q.progress > 0), [questsWithStatus]);
+
+  return {
+    questsWithStatus,
+    completedToday,
+    readyToClaimCount,
+    hasAnyProgress,
+    loading,
+    incrementDailyQuest,
+    claimDailyQuest,
+    today,
+  };
 }
 
 export function useXPMultiplier(streakDays: number, profilePct: number): XPMultiplier {
@@ -1518,50 +1637,131 @@ const cc = StyleSheet.create({
   rowPts: { color: C.muted, fontSize: 10, width: 44, textAlign: 'right' },
 });
 
+// ─── ★ Panel des 4 défis du jour — progression réelle + Claim explicite ──────
+type DailyQuestWithStatus = DailyQuestDef & {
+  progress: number;
+  completed: boolean;
+  claimed: boolean;
+  pct: number;
+};
+
 export const DailyQuestsPanel = memo(function DailyQuestsPanel({
   questsWithStatus,
   completedToday,
-  onComplete,
+  onAction,
+  onClaim,
 }: {
-  questsWithStatus: DailyQuestDef & {
-    id: Key | null | undefined;
-    icon: "key" | "push" | "map" | "filter" | "at" | "link" | "search" | "image" | "text" | "alert" | "checkbox" | "menu" | "radio" | "timer" | "close" | "book" | "pause" | "mail" | "home" | "laptop" | "star" | "save" | "cloud" | "eye" | "camera" | "enter" | "heart" | "calculator" | "download" | "play" | "calendar" | "barcode" | "hourglass" | "flag" | "car" | "man" | "gift" | "wallet" | "woman" | "earth" | "wifi" | "sync" | "warning" | "archive" | "arrow-down" | "arrow-up" | "bookmark" | "bookmarks" | "briefcase" | "brush" | "bug" | "chevron-down" | "chevron-up" | "clipboard" | "code" | "cog" | "compass" | "copy" | "crop" | "document" | "documents" | "flash" | "flashlight" | "flower" | "folder" | "funnel" | "game-controller" | "globe" | "grid" | "help" | "images" | "language" | "layers" | "leaf" | "list" | "location" | "lock-open" | "log-out" | "magnet" | "medal" | "megaphone" | "mic" | "moon" | "notifications-off" | "paper-plane" | "pencil" | "pie-chart" | "pin" | "print" | "rocket" | "share" | "shield" | "shuffle" | "stopwatch" | "thermometer" | "thumbs-down" | "thumbs-up" | "ticket" | "trash" | "trophy" | "tv" | "water" | "cart" | "refresh" | "alert-circle" | "aperture" | "arrow-down-circle" | "arrow-up-circle" | "bar-chart" | "battery-charging" | "bluetooth" | "disc" | "eye-off" | "film" | "git-branch" | "git-commit" | "git-merge" | "git-pull-request" | "help-circle" | "log-in" | "mic-off" | "move" | "pause-circle" | "play-circle" | "power" | "repeat" | "send" | "server" | "settings" | "square" | "stop-circle" | "terminal" | "trending-down" | "trending-up" | "triangle" | "umbrella" | "watch" | "remove" | "volume-off" | "stop" | "ban" | "expand" | "folder-open" | "star-half" | "flask" | "cut" | "caret-down" | "caret-up" | "cloud-download" | "cloud-upload" | "medkit" | "beer" | "desktop" | "unlink" | "female" | "male" | "paw" | "cube" | "bicycle" | "bus" | "diamond" | "transgender" | "bed" | "train" | "subway" | "battery-full" | "battery-half" | "id-card" | "body" | "time" | "ellipse" | "newspaper" | "backspace" | "bowling-ball" | "dice" | "egg" | "fish" | "glasses" | "hammer" | "headset" | "ice-cream" | "receipt" | "ribbon" | "school" | "shapes" | "skull" | "volume-mute" | "bandage" | "baseball" | "basketball" | "ellipsis-vertical" | "football" | "person" | "shirt" | "volume-high" | "volume-low" | "navigate" | "cloudy" | "snow" | "pulse" | "contrast" | "male-female" | "tablet-landscape" | "tablet-portrait" | "accessibility" | "accessibility-outline" | "accessibility-sharp" | "add" | "add-circle" | "add-circle-outline" | "add-circle-sharp" | "add-outline" | "add-sharp" | "airplane" | "airplane-outline" | "airplane-sharp" | "alarm" | "alarm-outline" | "alarm-sharp" | "albums" | "albums-outline" | "albums-sharp" | "alert-circle-outline" | "alert-circle-sharp" | "alert-outline" | "alert-sharp" | "american-football" | "american-football-outline" | "american-football-sharp" | "analytics" | "analytics-outline" | "analytics-sharp" | "aperture-outline" | "aperture-sharp" | "apps" | "apps-outline" | "apps-sharp" | "archive-outline" | "archive-sharp" | "arrow-back" | "arrow-back-circle" | "arrow-back-circle-outline" | "arrow-back-circle-sharp" | "arrow-back-outline" | "arrow-back-sharp" | "arrow-down-circle-outline" | "arrow-down-circle-sharp" | "arrow-down-outline" | "arrow-down-sharp" | "arrow-forward" | "arrow-forward-circle" | "arrow-forward-circle-outline" | "arrow-forward-circle-sharp" | "arrow-forward-outline" | "arrow-forward-sharp" | "arrow-redo" | "arrow-redo-circle" | "arrow-redo-circle-outline" | "arrow-redo-circle-sharp" | "arrow-redo-outline" | "arrow-redo-sharp" | "arrow-undo" | "arrow-undo-circle" | "arrow-undo-circle-outline" | "arrow-undo-circle-sharp" | "arrow-undo-outline" | "arrow-undo-sharp" | "arrow-up-circle-outline" | "arrow-up-circle-sharp" | "arrow-up-outline" | "arrow-up-sharp" | "at-circle" | "at-circle-outline" | "at-circle-sharp" | "at-outline" | "at-sharp" | "attach" | "attach-outline" | "attach-sharp" | "backspace-outline" | "backspace-sharp" | "bag" | "bag-add" | "bag-add-outline" | "bag-add-sharp" | "bag-check" | "bag-check-outline" | "bag-check-sharp" | "bag-handle" | "bag-handle-outline" | "bag-handle-sharp" | "bag-outline" | "bag-remove" | "bag-remove-outline" | "bag-remove-sharp" | "bag-sharp" | "balloon" | "balloon-outline" | "balloon-sharp" | "ban-outline" | "ban-sharp" | "bandage-outline" | "bandage-sharp" | "bar-chart-outline" | "bar-chart-sharp" | "barbell" | "barbell-outline" | "barbell-sharp" | "barcode-outline" | "barcode-sharp" | "baseball-outline" | "baseball-sharp" | "basket" | "basket-outline" | "basket-sharp" | "basketball-outline" | "basketball-sharp" | "battery-charging-outline" | "battery-charging-sharp" | "battery-dead" | "battery-dead-outline" | "battery-dead-sharp" | "battery-full-outline" | "battery-full-sharp" | "battery-half-outline" | "battery-half-sharp" | "beaker" | "beaker-outline" | "beaker-sharp" | "bed-outline" | "bed-sharp" | "beer-outline" | "beer-sharp" | "bicycle-outline" | "bicycle-sharp" | "bluetooth-outline" | "bluetooth-sharp" | "boat" | "boat-outline" | "boat-sharp" | "body-outline" | "body-sharp" | "bonfire" | "bonfire-outline" | "bonfire-sharp" | "book-outline" | "book-sharp" | "bookmark-outline" | "bookmark-sharp" | "bookmarks-outline" | "bookmarks-sharp" | "bowling-ball-outline" | "bowling-ball-sharp" | "briefcase-outline" | "briefcase-sharp" | "browsers" | "browsers-outline" | "browsers-sharp" | "brush-outline" | "brush-sharp" | "bug-outline" | "bug-sharp" | "build" | "build-outline" | "build-sharp" | "bulb" | "bulb-outline" | "bulb-sharp" | "bus-outline" | "bus-sharp" | "business" | "business-outline" | "business-sharp" | "cafe" | "cafe-outline" | "cafe-sharp" | "calculator-outline" | "calculator-sharp" | "calendar-clear" | "calendar-clear-outline" | "calendar-clear-sharp" | "calendar-number" | "calendar-number-outline" | "calendar-number-sharp" | "calendar-outline" | "calendar-sharp" | "call" | "call-outline" | "call-sharp" | "camera-outline" | "camera-reverse" | "camera-reverse-outline" | "camera-reverse-sharp" | "camera-sharp" | "car-outline" | "car-sharp" | "car-sport" | "car-sport-outline" | "car-sport-sharp" | "card" | "card-outline" | "card-sharp" | "caret-back" | "caret-back-circle" | "caret-back-circle-outline" | "caret-back-circle-sharp" | "caret-back-outline" | "caret-back-sharp" | "caret-down-circle" | "caret-down-circle-outline" | "caret-down-circle-sharp" | "caret-down-outline" | "caret-down-sharp" | "caret-forward" | "caret-forward-circle" | "caret-forward-circle-outline" | "caret-forward-circle-sharp" | "caret-forward-outline" | "caret-forward-sharp" | "caret-up-circle" | "caret-up-circle-outline" | "caret-up-circle-sharp" | "caret-up-outline" | "caret-up-sharp" | "cart-outline" | "cart-sharp" | "cash" | "cash-outline" | "cash-sharp" | "cellular" | "cellular-outline" | "cellular-sharp" | "chatbox" | "chatbox-ellipses" | "chatbox-ellipses-outline" | "chatbox-ellipses-sharp" | "chatbox-outline" | "chatbox-sharp" | "chatbubble" | "chatbubble-ellipses" | "chatbubble-ellipses-outline" | "chatbubble-ellipses-sharp" | "chatbubble-outline" | "chatbubble-sharp" | "chatbubbles" | "chatbubbles-outline" | "chatbubbles-sharp" | "checkbox-outline" | "checkbox-sharp" | "checkmark" | "checkmark-circle" | "checkmark-circle-outline" | "checkmark-circle-sharp" | "checkmark-done" | "checkmark-done-circle" | "checkmark-done-circle-outline" | "checkmark-done-circle-sharp" | "checkmark-done-outline" | "checkmark-done-sharp" | "checkmark-outline" | "checkmark-sharp" | "chevron-back" | "chevron-back-circle" | "chevron-back-circle-outline" | "chevron-back-circle-sharp" | "chevron-back-outline" | "chevron-back-sharp" | "chevron-collapse" | "chevron-collapse-outline" | "chevron-collapse-sharp" | "chevron-down-circle" | "chevron-down-circle-outline" | "chevron-down-circle-sharp" | "chevron-down-outline" | "chevron-down-sharp" | "chevron-expand" | "chevron-expand-outline" | "chevron-expand-sharp" | "chevron-forward" | "chevron-forward-circle" | "chevron-forward-circle-outline" | "chevron-forward-circle-sharp" | "chevron-forward-outline" | "chevron-forward-sharp" | "chevron-up-circle" | "chevron-up-circle-outline" | "chevron-up-circle-sharp" | "chevron-up-outline" | "chevron-up-sharp" | "clipboard-outline" | "clipboard-sharp" | "close-circle" | "close-circle-outline" | "close-circle-sharp" | "close-outline" | "close-sharp" | "cloud-circle" | "cloud-circle-outline" | "cloud-circle-sharp" | "cloud-done" | "cloud-done-outline" | "cloud-done-sharp" | "cloud-download-outline" | "cloud-download-sharp" | "cloud-offline" | "cloud-offline-outline" | "cloud-offline-sharp" | "cloud-outline" | "cloud-sharp" | "cloud-upload-outline" | "cloud-upload-sharp" | "cloudy-night" | "cloudy-night-outline" | "cloudy-night-sharp" | "cloudy-outline" | "cloudy-sharp" | "code-download" | "code-download-outline" | "code-download-sharp" | "code-outline" | "code-sharp" | "code-slash" | "code-slash-outline" | "code-slash-sharp" | "code-working" | "code-working-outline" | "code-working-sharp" | "cog-outline" | "cog-sharp" | "color-fill" | "color-fill-outline" | "color-fill-sharp" | "color-filter" | "color-filter-outline" | "color-filter-sharp" | "color-palette" | "color-palette-outline" | "color-palette-sharp" | "color-wand" | "color-wand-outline" | "color-wand-sharp" | "compass-outline" | "compass-sharp" | "construct" | "construct-outline" | "construct-sharp" | "contract" | "contract-outline" | "contract-sharp" | "contrast-outline" | "contrast-sharp" | "copy-outline" | "copy-sharp" | "create" | "create-outline" | "create-sharp" | "crop-outline" | "crop-sharp" | "cube-outline" | "cube-sharp" | "cut-outline" | "cut-sharp" | "desktop-outline" | "desktop-sharp" | "diamond-outline" | "diamond-sharp" | "dice-outline" | "dice-sharp" | "disc-outline" | "disc-sharp" | "document-attach" | "document-attach-outline" | "document-attach-sharp" | "document-lock" | "document-lock-outline" | "document-lock-sharp" | "document-outline" | "document-sharp" | "document-text" | "document-text-outline" | "document-text-sharp" | "documents-outline" | "documents-sharp" | "download-outline" | "download-sharp" | "duplicate" | "duplicate-outline" | "duplicate-sharp" | "ear" | "ear-outline" | "ear-sharp" | "earth-outline" | "earth-sharp" | "easel" | "easel-outline" | "easel-sharp" | "egg-outline" | "egg-sharp" | "ellipse-outline" | "ellipse-sharp" | "ellipsis-horizontal" | "ellipsis-horizontal-circle" | "ellipsis-horizontal-circle-outline" | "ellipsis-horizontal-circle-sharp" | "ellipsis-horizontal-outline" | "ellipsis-horizontal-sharp" | "ellipsis-vertical-circle" | "ellipsis-vertical-circle-outline" | "ellipsis-vertical-circle-sharp" | "ellipsis-vertical-outline" | "ellipsis-vertical-sharp" | "enter-outline" | "enter-sharp" | "exit" | "exit-outline" | "exit-sharp" | "expand-outline" | "expand-sharp" | "extension-puzzle" | "extension-puzzle-outline" | "extension-puzzle-sharp" | "eye-off-outline" | "eye-off-sharp" | "eye-outline" | "eye-sharp" | "eyedrop" | "eyedrop-outline" | "eyedrop-sharp" | "fast-food" | "fast-food-outline" | "fast-food-sharp" | "female-outline" | "female-sharp" | "file-tray" | "file-tray-full" | "file-tray-full-outline" | "file-tray-full-sharp" | "file-tray-outline" | "file-tray-sharp" | "file-tray-stacked" | "file-tray-stacked-outline" | "file-tray-stacked-sharp" | "film-outline" | "film-sharp" | "filter-circle" | "filter-circle-outline" | "filter-circle-sharp" | "filter-outline" | "filter-sharp" | "finger-print" | "finger-print-outline" | "finger-print-sharp" | "fish-outline" | "fish-sharp" | "fitness" | "fitness-outline" | "fitness-sharp" | "flag-outline" | "flag-sharp" | "flame" | "flame-outline" | "flame-sharp" | "flash-off" | "flash-off-outline" | "flash-off-sharp" | "flash-outline" | "flash-sharp" | "flashlight-outline" | "flashlight-sharp" | "flask-outline" | "flask-sharp" | "flower-outline" | "flower-sharp" | "folder-open-outline" | "folder-open-sharp" | "folder-outline" | "folder-sharp" | "football-outline" | "football-sharp" | "footsteps" | "footsteps-outline" | "footsteps-sharp" | "funnel-outline" | "funnel-sharp" | "game-controller-outline" | "game-controller-sharp" | "gift-outline" | "gift-sharp" | "git-branch-outline" | "git-branch-sharp" | "git-commit-outline" | "git-commit-sharp" | "git-compare" | "git-compare-outline" | "git-compare-sharp" | "git-merge-outline" | "git-merge-sharp" | "git-network" | "git-network-outline" | "git-network-sharp" | "git-pull-request-outline" | "git-pull-request-sharp" | "glasses-outline" | "glasses-sharp" | "globe-outline" | "globe-sharp" | "golf" | "golf-outline" | "golf-sharp" | "grid-outline" | "grid-sharp" | "hammer-outline" | "hammer-sharp" | "hand-left" | "hand-left-outline" | "hand-left-sharp" | "hand-right" | "hand-right-outline" | "hand-right-sharp" | "happy" | "happy-outline" | "happy-sharp" | "hardware-chip" | "hardware-chip-outline" | "hardware-chip-sharp" | "headset-outline" | "headset-sharp" | "heart-circle" | "heart-circle-outline" | "heart-circle-sharp" | "heart-dislike" | "heart-dislike-circle" | "heart-dislike-circle-outline" | "heart-dislike-circle-sharp" | "heart-dislike-outline" | "heart-dislike-sharp" | "heart-half" | "heart-half-outline" | "heart-half-sharp" | "heart-outline" | "heart-sharp" | "help-buoy" | "help-buoy-outline" | "help-buoy-sharp" | "help-circle-outline" | "help-circle-sharp" | "help-outline" | "help-sharp" | "home-outline" | "home-sharp" | "hourglass-outline" | "hourglass-sharp" | "ice-cream-outline" | "ice-cream-sharp" | "id-card-outline" | "id-card-sharp" | "image-outline" | "image-sharp" | "images-outline" | "images-sharp" | "infinite" | "infinite-outline" | "infinite-sharp" | "information" | "information-circle" | "information-circle-outline" | "information-circle-sharp" | "information-outline" | "information-sharp" | "invert-mode" | "invert-mode-outline" | "invert-mode-sharp" | "journal" | "journal-outline" | "journal-sharp" | "key-outline" | "key-sharp" | "keypad" | "keypad-outline" | "keypad-sharp" | "language-outline" | "language-sharp" | "laptop-outline" | "laptop-sharp" | "layers-outline" | "layers-sharp" | "leaf-outline" | "leaf-sharp" | "library" | "library-outline" | "library-sharp" | "link-outline" | "link-sharp" | "list-circle" | "list-circle-outline" | "list-circle-sharp" | "list-outline" | "list-sharp" | "locate" | "locate-outline" | "locate-sharp" | "location-outline" | "location-sharp" | "lock-closed" | "lock-closed-outline" | "lock-closed-sharp" | "lock-open-outline" | "lock-open-sharp" | "log-in-outline" | "log-in-sharp" | "log-out-outline" | "log-out-sharp" | "logo-alipay" | "logo-amazon" | "logo-amplify" | "logo-android" | "logo-angular" | "logo-apple" | "logo-apple-appstore" | "logo-apple-ar" | "logo-behance" | "logo-bitbucket" | "logo-bitcoin" | "logo-buffer" | "logo-capacitor" | "logo-chrome" | "logo-closed-captioning" | "logo-codepen" | "logo-css3" | "logo-designernews" | "logo-deviantart" | "logo-discord" | "logo-docker" | "logo-dribbble" | "logo-dropbox" | "logo-edge" | "logo-electron" | "logo-euro" | "logo-facebook" | "logo-figma" | "logo-firebase" | "logo-firefox" | "logo-flickr" | "logo-foursquare" | "logo-github" | "logo-gitlab" | "logo-google" | "logo-google-playstore" | "logo-hackernews" | "logo-html5" | "logo-instagram" | "logo-ionic" | "logo-ionitron" | "logo-javascript" | "logo-laravel" | "logo-linkedin" | "logo-markdown" | "logo-mastodon" | "logo-medium" | "logo-microsoft" | "logo-no-smoking" | "logo-nodejs" | "logo-npm" | "logo-octocat" | "logo-paypal" | "logo-pinterest" | "logo-playstation" | "logo-pwa" | "logo-python" | "logo-react" | "logo-reddit" | "logo-rss" | "logo-sass" | "logo-skype" | "logo-slack" | "logo-snapchat" | "logo-soundcloud" | "logo-stackoverflow" | "logo-steam" | "logo-stencil" | "logo-tableau" | "logo-tiktok" | "logo-tumblr" | "logo-tux" | "logo-twitch" | "logo-twitter" | "logo-usd" | "logo-venmo" | "logo-vercel" | "logo-vimeo" | "logo-vk" | "logo-vue" | "logo-web-component" | "logo-wechat" | "logo-whatsapp" | "logo-windows" | "logo-wordpress" | "logo-xbox" | "logo-xing" | "logo-yahoo" | "logo-yen" | "logo-youtube" | "magnet-outline" | "magnet-sharp" | "mail-open" | "mail-open-outline" | "mail-open-sharp" | "mail-outline" | "mail-sharp" | "mail-unread" | "mail-unread-outline" | "mail-unread-sharp" | "male-female-outline" | "male-female-sharp" | "male-outline" | "male-sharp" | "man-outline" | "man-sharp" | "map-outline" | "map-sharp" | "medal-outline" | "medal-sharp" | "medical" | "medical-outline" | "medical-sharp" | "medkit-outline" | "medkit-sharp" | "megaphone-outline" | "megaphone-sharp" | "menu-outline" | "menu-sharp" | "mic-circle" | "mic-circle-outline" | "mic-circle-sharp" | "mic-off-circle" | "mic-off-circle-outline" | "mic-off-circle-sharp" | "mic-off-outline" | "mic-off-sharp" | "mic-outline" | "mic-sharp" | "moon-outline" | "moon-sharp" | "move-outline" | "move-sharp" | "musical-note" | "musical-note-outline" | "musical-note-sharp" | "musical-notes" | "musical-notes-outline" | "musical-notes-sharp" | "navigate-circle" | "navigate-circle-outline" | "navigate-circle-sharp" | "navigate-outline" | "navigate-sharp" | "newspaper-outline" | "newspaper-sharp" | "notifications" | "notifications-circle" | "notifications-circle-outline" | "notifications-circle-sharp" | "notifications-off-circle" | "notifications-off-circle-outline" | "notifications-off-circle-sharp" | "notifications-off-outline" | "notifications-off-sharp" | "notifications-outline" | "notifications-sharp" | "nuclear" | "nuclear-outline" | "nuclear-sharp" | "nutrition" | "nutrition-outline" | "nutrition-sharp" | "open" | "open-outline" | "open-sharp" | "options" | "options-outline" | "options-sharp" | "paper-plane-outline" | "paper-plane-sharp" | "partly-sunny" | "partly-sunny-outline" | "partly-sunny-sharp" | "pause-circle-outline" | "pause-circle-sharp" | "pause-outline" | "pause-sharp" | "paw-outline" | "paw-sharp" | "pencil-outline" | "pencil-sharp" | "people" | "people-circle" | "people-circle-outline" | "people-circle-sharp" | "people-outline" | "people-sharp" | "person-add" | "person-add-outline" | "person-add-sharp" | "person-circle" | "person-circle-outline" | "person-circle-sharp" | "person-outline" | "person-remove" | "person-remove-outline" | "person-remove-sharp" | "person-sharp" | "phone-landscape" | "phone-landscape-outline" | "phone-landscape-sharp" | "phone-portrait" | "phone-portrait-outline" | "phone-portrait-sharp" | "pie-chart-outline" | "pie-chart-sharp" | "pin-outline" | "pin-sharp" | "pint" | "pint-outline" | "pint-sharp" | "pizza" | "pizza-outline" | "pizza-sharp" | "planet" | "planet-outline" | "planet-sharp" | "play-back" | "play-back-circle" | "play-back-circle-outline" | "play-back-circle-sharp" | "play-back-outline" | "play-back-sharp" | "play-circle-outline" | "play-circle-sharp" | "play-forward" | "play-forward-circle" | "play-forward-circle-outline" | "play-forward-circle-sharp" | "play-forward-outline" | "play-forward-sharp" | "play-outline" | "play-sharp" | "play-skip-back" | "play-skip-back-circle" | "play-skip-back-circle-outline" | "play-skip-back-circle-sharp" | "play-skip-back-outline" | "play-skip-back-sharp" | "play-skip-forward" | "play-skip-forward-circle" | "play-skip-forward-circle-outline" | "play-skip-forward-circle-sharp" | "play-skip-forward-outline" | "play-skip-forward-sharp" | "podium" | "podium-outline" | "podium-sharp" | "power-outline" | "power-sharp" | "pricetag" | "pricetag-outline" | "pricetag-sharp" | "pricetags" | "pricetags-outline" | "pricetags-sharp" | "print-outline" | "print-sharp" | "prism" | "prism-outline" | "prism-sharp" | "pulse-outline" | "pulse-sharp" | "push-outline" | "push-sharp" | "qr-code" | "qr-code-outline" | "qr-code-sharp" | "radio-button-off" | "radio-button-off-outline" | "radio-button-off-sharp" | "radio-button-on" | "radio-button-on-outline" | "radio-button-on-sharp" | "radio-outline" | "radio-sharp" | "rainy" | "rainy-outline" | "rainy-sharp" | "reader" | "reader-outline" | "reader-sharp" | "receipt-outline" | "receipt-sharp" | "recording" | "recording-outline" | "recording-sharp" | "refresh-circle" | "refresh-circle-outline" | "refresh-circle-sharp" | "refresh-outline" | "refresh-sharp" | "reload" | "reload-circle" | "reload-circle-outline" | "reload-circle-sharp" | "reload-outline" | "reload-sharp" | "remove-circle" | "remove-circle-outline" | "remove-circle-sharp" | "remove-outline" | "remove-sharp" | "reorder-four" | "reorder-four-outline" | "reorder-four-sharp" | "reorder-three" | "reorder-three-outline" | "reorder-three-sharp" | "reorder-two" | "reorder-two-outline" | "reorder-two-sharp" | "repeat-outline" | "repeat-sharp" | "resize" | "resize-outline" | "resize-sharp" | "restaurant" | "restaurant-outline" | "restaurant-sharp" | "return-down-back" | "return-down-back-outline" | "return-down-back-sharp" | "return-down-forward" | "return-down-forward-outline" | "return-down-forward-sharp" | "return-up-back" | "return-up-back-outline" | "return-up-back-sharp" | "return-up-forward" | "return-up-forward-outline" | "return-up-forward-sharp" | "ribbon-outline" | "ribbon-sharp" | "rocket-outline" | "rocket-sharp" | "rose" | "rose-outline" | "rose-sharp" | "sad" | "sad-outline" | "sad-sharp" | "save-outline" | "save-sharp" | "scale" | "scale-outline" | "scale-sharp" | "scan" | "scan-circle" | "scan-circle-outline" | "scan-circle-sharp" | "scan-outline" | "scan-sharp" | "school-outline" | "school-sharp" | "search-circle" | "search-circle-outline" | "search-circle-sharp" | "search-outline" | "search-sharp" | "send-outline" | "send-sharp" | "server-outline" | "server-sharp" | "settings-outline" | "settings-sharp" | "shapes-outline" | "shapes-sharp" | "share-outline" | "share-sharp" | "share-social" | "share-social-outline" | "share-social-sharp" | "shield-checkmark" | "shield-checkmark-outline" | "shield-checkmark-sharp" | "shield-half" | "shield-half-outline" | "shield-half-sharp" | "shield-outline" | "shield-sharp" | "shirt-outline" | "shirt-sharp" | "shuffle-outline" | "shuffle-sharp" | "skull-outline" | "skull-sharp" | "snow-outline" | "snow-sharp" | "sparkles" | "sparkles-outline" | "sparkles-sharp" | "speedometer" | "speedometer-outline" | "speedometer-sharp" | "square-outline" | "square-sharp" | "star-half-outline" | "star-half-sharp" | "star-outline" | "star-sharp" | "stats-chart" | "stats-chart-outline" | "stats-chart-sharp" | "stop-circle-outline" | "stop-circle-sharp" | "stop-outline" | "stop-sharp" | "stopwatch-outline" | "stopwatch-sharp" | "storefront" | "storefront-outline" | "storefront-sharp" | "subway-outline" | "subway-sharp" | "sunny" | "sunny-outline" | "sunny-sharp" | "swap-horizontal" | "swap-horizontal-outline" | "swap-horizontal-sharp" | "swap-vertical" | "swap-vertical-outline" | "swap-vertical-sharp" | "sync-circle" | "sync-circle-outline" | "sync-circle-sharp" | "sync-outline" | "sync-sharp" | "tablet-landscape-outline" | "tablet-landscape-sharp" | "tablet-portrait-outline" | "tablet-portrait-sharp" | "telescope" | "telescope-outline" | "telescope-sharp" | "tennisball" | "tennisball-outline" | "tennisball-sharp" | "terminal-outline" | "terminal-sharp" | "text-outline" | "text-sharp" | "thermometer-outline" | "thermometer-sharp" | "thumbs-down-outline" | "thumbs-down-sharp" | "thumbs-up-outline" | "thumbs-up-sharp" | "thunderstorm" | "thunderstorm-outline" | "thunderstorm-sharp" | "ticket-outline" | "ticket-sharp" | "time-outline" | "time-sharp" | "timer-outline" | "timer-sharp" | "today" | "today-outline" | "today-sharp" | "toggle" | "toggle-outline" | "toggle-sharp" | "trail-sign" | "trail-sign-outline" | "trail-sign-sharp" | "train-outline" | "train-sharp" | "transgender-outline" | "transgender-sharp" | "trash-bin" | "trash-bin-outline" | "trash-bin-sharp" | "trash-outline" | "trash-sharp" | "trending-down-outline" | "trending-down-sharp" | "trending-up-outline" | "trending-up-sharp" | "triangle-outline" | "triangle-sharp" | "trophy-outline" | "trophy-sharp" | "tv-outline" | "tv-sharp" | "umbrella-outline" | "umbrella-sharp" | "unlink-outline" | "unlink-sharp" | "videocam" | "videocam-off" | "videocam-off-outline" | "videocam-off-sharp" | "videocam-outline" | "videocam-sharp" | "volume-high-outline" | "volume-high-sharp" | "volume-low-outline" | "volume-low-sharp" | "volume-medium" | "volume-medium-outline" | "volume-medium-sharp" | "volume-mute-outline" | "volume-mute-sharp" | "volume-off-outline" | "volume-off-sharp" | "walk" | "walk-outline" | "walk-sharp" | "wallet-outline" | "wallet-sharp" | "warning-outline" | "warning-sharp" | "watch-outline" | "watch-sharp" | "water-outline" | "water-sharp" | "wifi-outline" | "wifi-sharp" | "wine" | "wine-outline" | "wine-sharp" | "woman-outline" | "woman-sharp" | undefined;
-    title: ReactNode;
-    desc: ReactNode;
-    xp: ReactNode;
-    cta: ReactNode; completed: boolean 
-}[];
+  questsWithStatus: DailyQuestWithStatus[];
   completedToday: number;
-  onComplete: (questId: string) => void;
+  onAction: (action: string) => void;
+  onClaim: (questId: string) => void;
 }) {
+  // Prochain défi à mettre en avant : le premier non réclamé, priorité à
+  // ceux déjà "prêts à réclamer" pour ne jamais laisser d'XP en attente.
+  const nextId = useMemo(() => {
+    const ready = questsWithStatus.find(q => q.completed && !q.claimed);
+    if (ready) return ready.id;
+    const inProgress = questsWithStatus.find(q => !q.claimed);
+    return inProgress?.id;
+  }, [questsWithStatus]);
+
   return (
     <View style={dq.wrap}>
       <View style={dq.header}>
         <Ionicons name="today-outline" size={13} color={C.mid} />
-        <Text style={dq.title}>Quêtes du jour</Text>
+        <Text style={dq.title}>Défis du jour</Text>
         <View style={dq.badge}><Text style={dq.badgeTxt}>{completedToday}/{questsWithStatus.length}</Text></View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingHorizontal: 20 }}>
-        {questsWithStatus.map(q => (
-          <TouchableOpacity
-            key={q.id}
-            onPress={() => !q.completed && onComplete(q.id as string)}
-            activeOpacity={0.85}
-            style={[dq.card, q.completed && dq.cardDone]}
-          >
-            <View style={[dq.iconWrap, q.completed && dq.iconDone]}>
-              <Ionicons name={q.icon} size={18} color={q.completed ? C.green : C.mid} />
-            </View>
-            <Text style={dq.cardTitle}>{q.title}</Text>
-            <Text style={dq.cardDesc} numberOfLines={2}>{q.desc}</Text>
-            <View style={dq.footer}>
-              <View style={dq.xpPill}><Ionicons name="flash" size={8} color={C.gold} /><Text style={dq.xpTxt}>+{q.xp} XP</Text></View>
-              <Text style={dq.cta}>{q.completed ? 'Terminé' : q.cta}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+
+      <View style={dq.grid}>
+        {questsWithStatus.map(q => {
+          const readyToClaim = q.completed && !q.claimed;
+          const isNext = q.id === nextId;
+          const pillarColor = PILLAR_DEFS[q.pillar].color;
+
+          return (
+            <DailyQuestCard
+              key={q.id}
+              quest={q}
+              accent={readyToClaim ? C.gold : pillarColor}
+              highlighted={isNext}
+              readyToClaim={readyToClaim}
+              onPress={() => !q.claimed && !readyToClaim && onAction(q.deepAction)}
+              onClaim={() => onClaim(q.id)}
+            />
+          );
+        })}
+      </View>
     </View>
+  );
+});
+
+const DailyQuestCard = memo(function DailyQuestCard({
+  quest, accent, highlighted, readyToClaim, onPress, onClaim,
+}: {
+  quest: DailyQuestWithStatus; accent: string; highlighted: boolean; readyToClaim: boolean;
+  onPress: () => void; onClaim: () => void;
+}) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (!readyToClaim) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.03, duration: 700, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1,    duration: 700, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [readyToClaim]);
+
+  const pctStr = `${Math.round(quest.pct * 100)}%`;
+
+  return (
+    <Animated.View style={[{ transform: [{ scale: readyToClaim ? pulseAnim : 1 }] }, dq.cardWrap]}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        disabled={quest.claimed}
+        onPress={readyToClaim ? onClaim : onPress}
+        style={[
+          dq.card,
+          quest.claimed && dq.cardDone,
+          readyToClaim && { borderColor: `${accent}55`, backgroundColor: `${accent}0F` },
+          highlighted && !readyToClaim && { borderColor: `${accent}35` },
+        ]}
+      >
+        {highlighted && !quest.claimed && (
+          <View style={[dq.nextPill, { backgroundColor: `${accent}20`, borderColor: `${accent}45` }]}>
+            <Text style={[dq.nextTxt, { color: accent }]}>SUIVANT</Text>
+          </View>
+        )}
+
+        <View style={[dq.iconWrap, { borderColor: `${accent}35`, backgroundColor: `${accent}14` }]}>
+          <Ionicons name={quest.claimed ? 'checkmark-circle' : quest.icon} size={18} color={quest.claimed ? C.green : accent} />
+        </View>
+
+        <Text style={dq.cardTitle} numberOfLines={1}>{quest.title}</Text>
+        <Text style={dq.cardDesc} numberOfLines={2}>
+          {quest.claimed ? 'Défi réclamé aujourd\'hui.' : readyToClaim ? 'Terminé — réclamez votre XP !' : quest.hint}
+        </Text>
+
+        <View style={dq.track}>
+          <View style={[dq.fill, { width: pctStr, backgroundColor: quest.claimed ? C.green : accent }]} />
+        </View>
+        <Text style={dq.progLabel}>{quest.progress}/{quest.target}</Text>
+
+        <View style={dq.footer}>
+          <View style={dq.xpPill}>
+            <Ionicons name="flash" size={8} color={C.gold} />
+            <Text style={dq.xpTxt}>+{quest.xp} XP</Text>
+          </View>
+          {readyToClaim ? (
+            <View style={dq.claimBtn}><Text style={dq.claimTxt}>Réclamer</Text></View>
+          ) : (
+            <Text style={dq.cta}>{quest.claimed ? 'Terminé' : quest.cta}</Text>
+          )}
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
   );
 });
 
@@ -1571,16 +1771,112 @@ const dq = StyleSheet.create({
   title: { color: C.white, fontSize: 15, fontWeight: '800', flex: 1 },
   badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: C.navyMid, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
   badgeTxt: { color: C.muted, fontSize: 9, fontWeight: '700' },
-  card: { width: 170, padding: 14, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint, gap: 8 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20 },
+  cardWrap: { width: (SW - 20 * 2 - 10) / 2 },
+  card: { padding: 13, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint, gap: 7, minHeight: 154 },
   cardDone: { borderColor: 'rgba(46,204,138,0.22)', backgroundColor: 'rgba(46,204,138,0.05)' },
-  iconWrap: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.navyMid, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, alignItems: 'center', justifyContent: 'center' },
-  iconDone: { backgroundColor: 'rgba(46,204,138,0.14)', borderColor: 'rgba(46,204,138,0.30)' },
-  cardTitle: { color: C.white, fontSize: 13, fontWeight: '800' },
-  cardDesc: { color: C.muted, fontSize: 10.5, lineHeight: 15, minHeight: 30 },
+  nextPill: { position: 'absolute', top: 10, right: 10, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth },
+  nextTxt: { fontSize: 7, fontWeight: '900', letterSpacing: 1 },
+  iconWrap: { width: 32, height: 32, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  cardTitle: { color: C.white, fontSize: 12.5, fontWeight: '800' },
+  cardDesc: { color: C.muted, fontSize: 9.5, lineHeight: 13, minHeight: 26 },
+  track: { height: 3, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 2 },
+  fill: { height: '100%', borderRadius: 999 },
+  progLabel: { color: C.muted, fontSize: 8.5, fontWeight: '700' },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
   xpPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: C.goldDim, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.22)' },
   xpTxt: { color: C.gold, fontSize: 9, fontWeight: '800' },
   cta: { color: C.blue, fontSize: 10, fontWeight: '800' },
+  claimBtn: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: C.gold },
+  claimTxt: { color: C.navyDark, fontSize: 9.5, fontWeight: '900' },
+});
+
+// ─── ★ Prise en main — guide 4 étapes pour les nouveaux arrivants ────────────
+// Affiché uniquement pour un profil totalement vierge (xp === 0 et aucun
+// badge) : disparaît de lui-même dès qu'un premier défi progresse, ou via le
+// bouton de fermeture. Chaque étape pointe 1:1 vers un défi du jour et
+// navigue directement vers l'action pour maximiser l'interaction réelle
+// avec l'app (catalogue, création, profil...).
+export const FirstStepsGuide = memo(function FirstStepsGuide({
+  visible,
+  questsWithStatus,
+  onAction,
+  onDismiss,
+}: {
+  visible: boolean;
+  questsWithStatus: DailyQuestWithStatus[];
+  onAction: (action: string) => void;
+  onDismiss: () => void;
+}) {
+  const glowAnim = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    if (!visible) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(glowAnim, { toValue: 1,   duration: 1000, useNativeDriver: true }),
+      Animated.timing(glowAnim, { toValue: 0.5, duration: 1000, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const firstUndoneIdx = questsWithStatus.findIndex(q => q.progress === 0);
+
+  return (
+    <View style={fsg.wrap}>
+      <LinearGradient colors={['rgba(90,150,230,0.10)', 'rgba(7,12,23,0.92)']} style={StyleSheet.absoluteFillObject} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} />
+      <View style={fsg.inner}>
+        <View style={fsg.headRow}>
+          <Text style={fsg.eyebrow}>BIENVENUE SUR UNIVERSE</Text>
+          <TouchableOpacity onPress={onDismiss} hitSlop={10}>
+            <Ionicons name="close" size={16} color={C.muted} />
+          </TouchableOpacity>
+        </View>
+        <Text style={fsg.title}>4 gestes pour démarrer votre voyage</Text>
+        <Text style={fsg.subtitle}>Terminez chaque étape pour débloquer votre premier XP.</Text>
+
+        <View style={{ gap: 8, marginTop: 10 }}>
+          {questsWithStatus.map((q, i) => {
+            const isCurrent = i === firstUndoneIdx;
+            const color = PILLAR_DEFS[q.pillar].color;
+            return (
+              <TouchableOpacity
+                key={q.id}
+                onPress={() => onAction(q.deepAction)}
+                activeOpacity={0.82}
+                style={[fsg.step, isCurrent && { borderColor: `${color}45`, backgroundColor: `${color}0F` }]}
+              >
+                <Animated.View style={[fsg.stepNum, { borderColor: `${color}40` }, isCurrent && { opacity: glowAnim }]}>
+                  <Text style={[fsg.stepNumTxt, { color }]}>{i + 1}</Text>
+                </Animated.View>
+                <View style={{ flex: 1, gap: 1 }}>
+                  <Text style={fsg.stepTitle}>{q.title}</Text>
+                  <Text style={fsg.stepDesc} numberOfLines={1}>{q.desc}</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={13} color={C.muted} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </View>
+  );
+});
+
+const fsg = StyleSheet.create({
+  wrap: { marginHorizontal: 20, marginBottom: 6, borderRadius: 18, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: C.borderHi },
+  inner: { padding: 16, gap: 4 },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  eyebrow: { color: C.blue, fontSize: 8.5, fontWeight: '900', letterSpacing: 1.8 },
+  title: { color: C.white, fontSize: 16, fontWeight: '900', letterSpacing: -0.3, marginTop: 4 },
+  subtitle: { color: C.muted, fontSize: 11, lineHeight: 15 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint },
+  stepNum: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', backgroundColor: C.navyMid },
+  stepNumTxt: { fontSize: 11, fontWeight: '900' },
+  stepTitle: { color: C.white, fontSize: 12.5, fontWeight: '700' },
+  stepDesc: { color: C.muted, fontSize: 10 },
 });
 
 export const PillarsDashboard = memo(function PillarsDashboard({ pillars }: { pillars: PillarProgress[] }) {
@@ -1732,4 +2028,3 @@ const wcc = StyleSheet.create({
   progTxt: { color: C.muted, fontSize: 9, fontWeight: '700' },
   rewardTxt: { color: C.muted, fontSize: 9, fontWeight: '700' },
 });
-

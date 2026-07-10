@@ -509,7 +509,7 @@ const PortraitCard = memo(({item,rank}:{item:LocalWork;rank?:number}) => {
     </TouchableOpacity>
   );
 });
-const ptc=StyleSheet.create({card:{width:CARD_W,height:CARD_H,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},img:{width:CARD_W,height:CARD_H},badge:{position:'absolute',top:7,left:7,paddingHorizontal:5,paddingVertical:2.5,borderRadius:5,backgroundColor:'rgba(7,12,23,0.72)'},badgeTxt:{color:C.mid,fontSize:7,fontWeight:'800',letterSpacing:0.4},rank:{position:'absolute',bottom:32,right:5,fontSize:44,fontWeight:'900',lineHeight:44,letterSpacing:-3,color:'rgba(255,255,255,0.08)'},meta:{position:'absolute',bottom:7,left:8,right:8,gap:3},title:{color:C.white,fontSize:11,fontWeight:'700',lineHeight:14},stat:{color:C.muted,fontSize:9,fontWeight:'600'}});
+const ptc=StyleSheet.create({card:{width:CARD_W,height:CARD_H,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},img:{width:CARD_W,height:CARD_H},badge:{position:'absolute',top:7,left:7,paddingHorizontal:5,paddingVertical:2.5,borderRadius:5,backgroundColor:'rgba(7,12,23,0.72)'},badgeTxt:{color:C.mid,fontSize:7,fontWeight:'800',letterSpacing:0.4},rank:{position:'absolute',bottom:45,right:5,fontSize:44,fontWeight:'900',lineHeight:44,letterSpacing:-3,color:'rgba(255, 255, 255, 0.55)'},meta:{position:'absolute',bottom:7,left:8,right:8,gap:3},title:{color:C.white,fontSize:11,fontWeight:'700',lineHeight:14},stat:{color:C.muted,fontSize:9,fontWeight:'600'}});
 
 const WorkGridCard=memo(({item,onPress}:{item:LocalWork;onPress:()=>void})=>{const uri=useMemo(()=>resolveImg(item.id,item.image),[item.id,item.image]);return(<TouchableOpacity style={gc.card} onPress={onPress} activeOpacity={0.88}><Image source={{uri}} style={gc.img} resizeMode="cover"/><LinearGradient colors={['transparent','rgba(7,12,23,0.96)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.4}} end={{x:0,y:1}}/><View style={gc.badge}><Text style={gc.badgeTxt}>{item.is_original?'ORIG':(item.category??'').slice(0,4).toUpperCase()}</Text></View><View style={gc.meta}>{item.genre?<Text style={gc.genre}>{item.genre.toUpperCase()}</Text>:null}<Text style={gc.title} numberOfLines={2}>{item.title}</Text><View style={{flexDirection:'row',alignItems:'center',gap:5,marginTop:2}}><Ionicons name="heart" size={9} color={C.muted}/><Text style={gc.stat}>{fmt(item.likes??0)}</Text>{item.year>0&&<><Text style={{color:C.muted,fontSize:9}}>·</Text><Text style={gc.stat}>{item.year}</Text></>}</View></View></TouchableOpacity>);});
 const gc=StyleSheet.create({card:{width:GRID_COL,height:GRID_COL*1.5,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},img:{width:'100%',height:'100%',position:'absolute'},badge:{position:'absolute',top:7,left:7,paddingHorizontal:5,paddingVertical:2.5,borderRadius:5,backgroundColor:'rgba(7,12,23,0.72)'},badgeTxt:{color:C.mid,fontSize:7,fontWeight:'800',letterSpacing:0.4},meta:{position:'absolute',bottom:0,left:0,right:0,padding:10,gap:2},genre:{color:C.muted,fontSize:8,fontWeight:'700',letterSpacing:0.8},title:{color:C.white,fontSize:12,fontWeight:'800',lineHeight:16},stat:{color:C.muted,fontSize:9,fontWeight:'600'}});
@@ -723,7 +723,7 @@ export default function ProfileScreen() {
     if(loading)return<View><SkeletonSection/><SkeletonSection/><SkeletonSection/></View>;
     if(fetchError)return<ErrorState/>;
     return(
-      <View>
+      <View style={{marginBottom:80,gap:20}}>
         <SecHead icon="heart-outline" label="Œuvres favorites" count={favWorks.length} onMore={favWorks.length>0?()=>setModal('favorites'):undefined}/>
         {!favWorks.length?<Empty icon="heart-outline" text="Aucun favori" sub="Sauvegardez des films depuis le catalogue"/>:<HRow c={favWorks.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
@@ -733,9 +733,9 @@ export default function ProfileScreen() {
         <SecHead icon="eye-outline" label="Œuvres visionnées" count={watched.length} onMore={watched.length>0?()=>setModal('watched'):undefined}/>
         {!watched.length?<Empty icon="film-outline" text="Aucun visionnage"/>:<HRow c={watched.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
-        <SecHead icon="shuffle-outline" label="Recommandés pour vous" onMore={recs.length>0?()=>setModal('recs'):undefined}/>
+        {/* <SecHead icon="shuffle-outline" label="Recommandés pour vous" onMore={recs.length>0?()=>setModal('recs'):undefined}/>
         {!recs.length?<Empty icon="planet-outline" text="Regardez des films pour des recs personnalisées"/>:<HRow c={recs.map(f=><PortraitCard key={f.id} item={f}/>)}/>}
-        <View style={{height:110}}/>
+        <View style={{height:110}}/> */}
       </View>
     );
   },[loading,fetchError,favWorks,reviews,watched,recs,router,ErrorState]);
