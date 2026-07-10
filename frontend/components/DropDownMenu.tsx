@@ -3,13 +3,26 @@
  *
  * ★ getDeviceId()  — ZERO supabase.auth.* (replace auth.getUser partout)
  * ★ Profil dynamique : profiles (avatar / nom / rôle / pro) — Realtime UPDATE
- * ★ Genres 100% dynamiques depuis public.genres (plus de mock, plus de reels-scan)
+ * ★ Genres 100% dynamiques depuis public.genres — filtrage réel des reels
  * ★ Rubrique "Tous les genres" fixe en tête de liste
  * ★ PanelGalaxy · swipe-to-close · stagger animations — UX v4 identique
  *
- * ✂️ Supprimé volontairement (données mock) :
- *    - Barre de niveau XP / score / badges (gamification factice)
- *    - Bloc "NAVIGATION" (Pour vous / Tendances / ORIGINAL / Cannes)
+ * ★★ FILTRAGE PAR GENRE (important) ★★
+ * `key` de chaque item = `genres.value` EXACT (jamais un label formaté).
+ * C'est cette valeur qui doit matcher la colonne `reels.genre` en DB.
+ * Le parent (écran feed) doit consommer `onSelect(key)` ainsi :
+ *
+ *   const handleGenreSelect = (key: MenuKey) => {
+ *     setActiveGenre(key); // 'all' | 'drame_intimiste' | 'film_auteur' | ...
+ *   };
+ *
+ *   // Query reels :
+ *   let q = supabase.from('reels').select('*').eq('status','approved');
+ *   if (activeGenre !== 'all') q = q.eq('genre', activeGenre);
+ *
+ * Si le filtre ne renvoie toujours rien après ça : vérifier que
+ * `reels.genre` contient bien exactement les mêmes strings que
+ * `genres.value` (accents/casse/underscores identiques des deux côtés).
  */
 import React, {
   memo, useCallback, useEffect, useRef, useState,
@@ -43,41 +56,48 @@ const T = {
   borderHi: 'rgba(255,255,255,0.14)',
   active:   'rgba(255,255,255,0.08)',
   gold:     '#F5C842',
-  goldDim:  'rgba(245,200,66,0.14)',
   bg:       '#03000A',
 } as const;
 
 const { width: W, height: H } = Dimensions.get('window');
 const PANEL_W = Math.min(W * 0.80, 320);
 
-// ─── Icône par genre (heuristique sur value/label — genres 100% DB) ──────────
+// ─── Formattage d'affichage — retire underscores/tirets, capitalise ──────────
+// N'affecte QUE le texte affiché à l'écran. La clé de sélection (value DB)
+// n'est jamais modifiée pour garantir un matching exact avec reels.genre.
+function formatLabel(raw: string): string {
+  return raw
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
+
+// ─── Icône par genre (heuristique sur value — genres 100% DB) ────────────────
 function iconForGenre(value: string): keyof typeof Ionicons.glyphMap {
-  const v = (value || '').toLowerCase();
-  if (v.includes('drame'))                          return 'heart-outline';
+  const v = value.toLowerCase();
+  if (v.includes('drame'))                           return 'heart-outline';
   if (v.includes('comedie') || v.includes('comédie')) return 'happy-outline';
-  if (v.includes('thriller'))                       return 'skull-outline';
-  if (v.includes('horreur'))                        return 'flash-outline';
-  if (v.includes('scifi') || v.includes('science'))  return 'planet-outline';
-  if (v.includes('documentaire'))                   return 'camera-outline';
-  if (v.includes('animation'))                      return 'brush-outline';
-  if (v.includes('romance'))                        return 'rose-outline';
-  if (v.includes('action'))                         return 'flame-outline';
-  if (v.includes('fantastique'))                    return 'sparkles-outline';
-  if (v.includes('policier'))                       return 'shield-outline';
-  if (v.includes('biopic'))                         return 'person-outline';
-  if (v.includes('court'))                          return 'film-outline';
+  if (v.includes('thriller'))                        return 'skull-outline';
+  if (v.includes('horreur'))                         return 'flash-outline';
+  if (v.includes('scifi') || v.includes('science'))   return 'planet-outline';
+  if (v.includes('documentaire'))                    return 'camera-outline';
+  if (v.includes('animation'))                       return 'brush-outline';
+  if (v.includes('romance'))                         return 'rose-outline';
+  if (v.includes('action'))                          return 'flame-outline';
+  if (v.includes('fantastique'))                     return 'sparkles-outline';
+  if (v.includes('policier'))                        return 'shield-outline';
+  if (v.includes('biopic'))                          return 'person-outline';
+  if (v.includes('court'))                           return 'film-outline';
   if (v.includes('experimental') || v.includes('expérimental')) return 'color-wand-outline';
-  if (v.includes('auteur'))                         return 'create-outline';
-  if (v.includes('intimiste'))                      return 'heart-half-outline' as any;
+  if (v.includes('auteur'))                          return 'create-outline';
+  if (v.includes('intimiste'))                       return 'heart-half-outline' as any;
   return 'film-outline';
 }
 
-// ─── Rubrique fixe "Tous les genres" ─────────────────────────────────────────
-const ALL_GENRES_ITEM: MenuItem = {
-  icon: 'grid-outline',
-  label: 'Tous les genres',
-  key: 'all',
-};
+const ALL_GENRES_KEY = 'all';
 
 export type MenuKey = string;
 
@@ -170,7 +190,7 @@ const Shimmer = memo(function Shimmer({w,h,r=6}:{w:number|string;h:number;r?:num
   return <Animated.View style={{width:w as any,height:h,borderRadius:r,backgroundColor:'rgba(255,255,255,0.09)',opacity:_shim}}/>;
 });
 
-// ─── ★ PROFILE HEADER (avatar / nom / rôle — plus de XP/score/badges) ────────
+// ─── ★ PROFILE HEADER (avatar / nom / rôle) ──────────────────────────────────
 const ProfileHeader = memo(function ProfileHeader({
   profile, loading, statsAnim,
 }:{
@@ -213,19 +233,19 @@ const ProfileHeader = memo(function ProfileHeader({
 });
 
 const ph = StyleSheet.create({
-  section:     {paddingHorizontal:20,paddingTop:14,paddingBottom:16},
-  profileRow:  {flexDirection:'row',alignItems:'center',gap:13},
-  avatarWrap:  {position:'relative'},
-  avatar:      {width:52,height:52,borderRadius:26,borderWidth:2,borderColor:T.bg},
-  proBadge:    {position:'absolute',bottom:0,right:0,width:16,height:16,borderRadius:8,backgroundColor:T.bg,alignItems:'center',justifyContent:'center'},
-  name:        {color:'#FFFFFF',fontSize:15,fontWeight:'800',letterSpacing:-0.2,flexShrink:1},
-  handle:      {color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:'500'},
-  niveau:      {color:'rgba(255,255,255,0.30)',fontSize:9,fontWeight:'600',letterSpacing:0.3},
-  proChip:     {paddingHorizontal:6,paddingVertical:1,borderRadius:6,backgroundColor:'rgba(245,200,66,0.20)',borderWidth:1,borderColor:'rgba(245,200,66,0.40)'},
-  proChipTxt:  {color:T.gold,fontSize:8,fontWeight:'900',letterSpacing:0.8},
+  section:    {paddingHorizontal:20,paddingTop:14,paddingBottom:16},
+  profileRow: {flexDirection:'row',alignItems:'center',gap:13},
+  avatarWrap: {position:'relative'},
+  avatar:     {width:52,height:52,borderRadius:26,borderWidth:2,borderColor:T.bg},
+  proBadge:   {position:'absolute',bottom:0,right:0,width:16,height:16,borderRadius:8,backgroundColor:T.bg,alignItems:'center',justifyContent:'center'},
+  name:       {color:'#FFFFFF',fontSize:15,fontWeight:'800',letterSpacing:-0.2,flexShrink:1},
+  handle:     {color:'rgba(255,255,255,0.45)',fontSize:11,fontWeight:'500'},
+  niveau:     {color:'rgba(255,255,255,0.30)',fontSize:9,fontWeight:'600',letterSpacing:0.3},
+  proChip:    {paddingHorizontal:6,paddingVertical:1,borderRadius:6,backgroundColor:'rgba(245,200,66,0.20)',borderWidth:1,borderColor:'rgba(245,200,66,0.40)'},
+  proChipTxt: {color:T.gold,fontSize:8,fontWeight:'900',letterSpacing:0.8},
 });
 
-// ─── Menu Item Row — identique doc 4 ─────────────────────────────────────────
+// ─── Menu Item Row ────────────────────────────────────────────────────────────
 const MenuItemRow = memo(function MenuItemRow({
   item, isActive, onPress, slideAnim,
 }:{item:MenuItem;isActive:boolean;onPress:()=>void;slideAnim:Animated.Value}) {
@@ -245,19 +265,16 @@ const MenuItemRow = memo(function MenuItemRow({
   );
 });
 const mi = StyleSheet.create({
-  item:          {flexDirection:'row',alignItems:'center',paddingHorizontal:16,paddingVertical:12,gap:12,overflow:'hidden'},
-  itemActive:    {backgroundColor:T.active},
-  accentBar:     {position:'absolute',left:0,top:5,bottom:5,width:3,backgroundColor:'rgba(255,255,255,0.45)',borderRadius:2},
-  iconWrap:      {width:32,height:32,borderRadius:10,alignItems:'center',justifyContent:'center',backgroundColor:T.surf,borderWidth:StyleSheet.hairlineWidth,borderColor:T.border},
-  iconWrapActive:{backgroundColor:T.surfHi,borderColor:T.borderHi},
-  label:         {flex:1,color:T.textSec,fontSize:13,fontWeight:'500'},
-  labelActive:   {color:T.text,fontWeight:'700'},
+  item:           {flexDirection:'row',alignItems:'center',paddingHorizontal:16,paddingVertical:12,gap:12,overflow:'hidden'},
+  itemActive:     {backgroundColor:T.active},
+  accentBar:      {position:'absolute',left:0,top:5,bottom:5,width:3,backgroundColor:'rgba(255,255,255,0.45)',borderRadius:2},
+  iconWrap:       {width:32,height:32,borderRadius:10,alignItems:'center',justifyContent:'center',backgroundColor:T.surf,borderWidth:StyleSheet.hairlineWidth,borderColor:T.border},
+  iconWrapActive: {backgroundColor:T.surfHi,borderColor:T.borderHi},
+  label:          {flex:1,color:T.textSec,fontSize:13,fontWeight:'500'},
+  labelActive:    {color:T.text,fontWeight:'700'},
 });
 
 // ─── ★ MAIN ───────────────────────────────────────────────────────────────────
-// Buffer de sécurité pour les animations stagger : "Tous les genres" + genres DB
-const MAX_ITEMS = 60;
-
 const DropdownMenu = memo(function DropdownMenu({
   visible, onClose, onSelect, activeKey,
 }:DropdownMenuProps) {
@@ -270,8 +287,15 @@ const DropdownMenu = memo(function DropdownMenu({
   const slideX    = useRef(new Animated.Value(-PANEL_W)).current;
   const bgOpacity = useRef(new Animated.Value(0)).current;
   const statsAnim = useRef(new Animated.Value(0)).current;
-  const itemAnims = useRef(Array.from({length:MAX_ITEMS},()=>new Animated.Value(0))).current;
+  const itemAnims = useRef<Animated.Value[]>([]).current;
   const rtRef     = useRef<ReturnType<typeof supabase.channel>|null>(null);
+
+  // itemAnims doit couvrir "Tous les genres" (1) + N genres. Recrée le pool
+  // seulement quand la taille change, pour éviter tout re-render inutile.
+  if (itemAnims.length !== genreItems.length + 1) {
+    itemAnims.length = 0;
+    itemAnims.push(...Array.from({length:genreItems.length + 1},()=>new Animated.Value(0)));
+  }
 
   // ── ★ Fetch profil — getDeviceId() ────────────────────────────────────────
   useEffect(()=>{
@@ -322,8 +346,8 @@ const DropdownMenu = memo(function DropdownMenu({
       if (!error && data) {
         const items: MenuItem[] = (data as GenreRow[]).map(g=>({
           icon:  iconForGenre(g.value),
-          label: g.label,
-          key:   g.value,
+          label: formatLabel(g.label || g.value), // affichage propre, sans "_"
+          key:   g.value,                         // ★ valeur EXACTE pour le filtre reels.genre
         }));
         setGenreItems(items);
       }
@@ -352,7 +376,7 @@ const DropdownMenu = memo(function DropdownMenu({
       bgOpacity.setValue(0.55);
       Animated.parallel([
         Animated.timing(statsAnim,{toValue:1,duration:200,useNativeDriver:true}),
-        Animated.stagger(10,itemAnims.slice(0,1+genreItems.length).map(a=>
+        Animated.stagger(10,itemAnims.map(a=>
           Animated.timing(a,{toValue:1,duration:140,useNativeDriver:true})
         )),
       ]).start();
@@ -389,12 +413,12 @@ const DropdownMenu = memo(function DropdownMenu({
 
           <View style={dm.sep}/>
 
-          {/* ★ Tous les genres — rubrique fixe */}
+          {/* ★ Tous les genres — rubrique fixe, affiche tous les reels */}
           <Text style={dm.sectionLabel}>GENRES</Text>
           <MenuItemRow
-            item={ALL_GENRES_ITEM}
-            isActive={activeKey===ALL_GENRES_ITEM.key}
-            onPress={()=>handleSelect(ALL_GENRES_ITEM.key)}
+            item={{ icon:'grid-outline', label:'Tous les genres', key:ALL_GENRES_KEY }}
+            isActive={activeKey===ALL_GENRES_KEY}
+            onPress={()=>handleSelect(ALL_GENRES_KEY)}
             slideAnim={itemAnims[0]}
           />
 
@@ -440,7 +464,7 @@ const DropdownMenu = memo(function DropdownMenu({
 
 export default DropdownMenu;
 
-// ─── Panel styles (identique doc 4) ──────────────────────────────────────────
+// ─── Panel styles ─────────────────────────────────────────────────────────────
 const dm = StyleSheet.create({
   panel:        {position:'absolute',left:0,top:0,bottom:0,width:PANEL_W,borderRightWidth:StyleSheet.hairlineWidth,borderRightColor:T.border,overflow:'hidden',shadowColor:'#000',shadowOffset:{width:8,height:0},shadowOpacity:0.40,shadowRadius:24,elevation:20},
   edgeLine:     {position:'absolute',right:0,top:0,bottom:0,width:StyleSheet.hairlineWidth,backgroundColor:T.borderHi},
