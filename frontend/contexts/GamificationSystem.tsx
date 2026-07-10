@@ -1,23 +1,23 @@
 /**
- * contexts/GamificationSystem.tsx — UNIVERSE · Gamification v6
+ * contexts/GamificationSystem.tsx — UNIVERSE · Gamification v6.1
  *
- * ★★ CHANGEMENTS v6 (sur demande) ★★
- * 1. Défis du jour réduits à EXACTEMENT 4 (1 par pilier actif : watch,
- *    critique, explorer, creator — le pilier "profile" sort de la boucle
- *    quotidienne car il n'a pas vocation à se répéter chaque jour).
- * 2. Chaque défi est maintenant à PROGRESSION (target > 1 pour la plupart)
- *    et doit être intégralement terminé avant de pouvoir "Claim" son XP.
- *    Le XP n'est plus crédité automatiquement : il faut un tap explicite
- *    sur "Réclamer" une fois la barre à 100%.
- * 3. Nouveau composant `FirstStepsGuide` : prend le nouvel utilisateur par
- *    la main dès son arrivée (profil vierge), avec 4 étapes numérotées qui
- *    pointent 1:1 vers les 4 défis du jour et naviguent directement vers
- *    l'action (go_catalog / go_create / go_social...). Se referme seul dès
- *    qu'un premier défi progresse, ou via le bouton de fermeture.
- * 4. `DailyQuestsPanel` réécrit : barre de progression réelle, état
- *    "prêt à réclamer" mis en avant (glow doré + bouton Claim), état
- *    "réclamé" verrouillé, et mise en évidence du prochain défi à faire
- *    pour guider l'oeil sans surcharger l'écran.
+ * ★★ ÉTAT ACTUEL — vérifié contre la demande ★★
+ * 1. EXACTEMENT 4 défis affichés simultanément sur l'écran de gamification
+ *    (DAILY_QUEST_DEFINITIONS.length === 4, DailyQuestsPanel les affiche
+ *    tous en une seule grille 2×2, sans pagination ni scroll caché).
+ * 2. Claim verrouillé tant que l'action n'est pas intégralement terminée —
+ *    renforcé ici avec une DOUBLE vérification côté hook (pas seulement
+ *    l'UI) : `claimDailyQuest` refuse tout si `progress < target` OU si
+ *    `completed` est faux, même en cas d'appel direct au hook. Le bouton
+ *    "Réclamer" n'apparaît de toute façon jamais avant ce seuil (readyToClaim
+ *    = completed && !claimed dans DailyQuestsPanel).
+ * 3. `FirstStepsGuide` prend le nouvel utilisateur par la main dès son
+ *    arrivée (profil vierge : xp===0 et aucun badge), 4 étapes numérotées
+ *    pointant 1:1 vers les 4 défis, navigation directe vers l'action.
+ * 4. Interaction maximisée : chaque progression de défi doit venir d'un
+ *    vrai geste ailleurs dans Universe (incrementDailyQuest appelé à la fin
+ *    d'un visionnage, à la publication d'une critique, etc.) — jamais d'XP
+ *    auto-crédité.
  *
  * ★★ MIGRATION SQL REQUISE ★★ (ajoute le suivi claim, non destructif) :
  *   alter table public.user_quests
@@ -360,9 +360,9 @@ export interface XPMultiplier {
   sources: string[];
 }
 
-// ─── ★ Défis du jour — EXACTEMENT 4, un par pilier actif ─────────────────────
+// ─── ★ Défis du jour — EXACTEMENT 4, affichés simultanément ──────────────────
 // À progression (target > 1 le plus souvent) : le XP n'est crédité qu'après
-// un tap explicite sur "Réclamer" une fois la barre à 100%.
+// un tap explicite sur "Réclamer" une fois la cible réellement atteinte.
 export interface DailyQuestDef {
   id: string;
   title: string;
@@ -436,6 +436,7 @@ export const QUEST_DEFINITIONS: QuestDef[] = [
 ];
 
 // ★ 4 défis du jour — un par pilier actif (watch / explorer / critique / creator)
+// Toujours affichés ENSEMBLE, jamais en rotation ou pagination.
 export const DAILY_QUEST_DEFINITIONS: DailyQuestDef[] = [
   {
     id: 'daily_watch', title: 'Session ciné', desc: 'Regardez 2 films jusqu\'au bout',
@@ -945,7 +946,7 @@ export function useContributionScore(userId: string) {
   return { score, loading, detectPepite };
 }
 
-// ─── ★ Défis du jour — progression + Claim explicite ────────────────────────
+// ─── ★ Défis du jour — progression + Claim explicite, à double vérification ─
 export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questId: string) => void) {
   const today = useMemo(() => todayKey(), []);
   const [progressMap, setProgressMap] = useState<Map<string, DailyQuestProgress>>(new Map());
@@ -981,8 +982,9 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
   }, [userId, today]);
 
   // ── Incrémente la progression d'un défi (appelé depuis n'importe où dans
-  //    l'app : lecture d'une vidéo terminée, publication d'une critique...).
-  //    Se bloque tout seul une fois la cible atteinte.
+  //    l'app : lecture d'une vidéo terminée jusqu'au bout, publication d'une
+  //    critique, etc.). Se bloque tout seul une fois la cible atteinte —
+  //    aucune sur-progression possible, `target` fait office de plafond dur.
   const incrementDailyQuest = useCallback(async (questId: string, by = 1) => {
     if (!isValidUUID(userId)) return;
     const def = DAILY_QUEST_DEFINITIONS.find(d => d.id === questId);
@@ -1009,13 +1011,18 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
     }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
   }, [userId, today, progressMap]);
 
-  // ── Réclame l'XP d'un défi TERMINÉ. Bloqué tant que la cible n'est pas
-  //    atteinte — c'est la règle centrale demandée : pas de Claim partiel.
+  // ── Réclame l'XP d'un défi TERMINÉ. ★ Double garde-fou : refuse si la
+  //    cible n'est pas réellement atteinte (progress < target) OU si le
+  //    flag completed est faux — même en cas d'appel direct au hook, pas
+  //    seulement via le bouton "Réclamer" de l'UI. C'est la règle centrale :
+  //    aucun XP n'est crédité pour une action non intégralement terminée.
   const claimDailyQuest = useCallback(async (questId: string) => {
     if (!isValidUUID(userId)) return;
     const def = DAILY_QUEST_DEFINITIONS.find(d => d.id === questId);
     const prev = progressMap.get(questId);
-    if (!def || !prev?.completed || prev.claimed) return;
+    if (!def || !prev) return;
+    if (prev.claimed) return;
+    if (prev.progress < def.target || !prev.completed) return; // ★ garde-fou
 
     hapticSuccess();
     setProgressMap(m => {
@@ -1037,6 +1044,8 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
     onXPClaimed?.(def.xp, questId);
   }, [userId, today, progressMap, onXPClaimed]);
 
+  // ★ Toujours EXACTEMENT 4 entrées (DAILY_QUEST_DEFINITIONS.length === 4) —
+  //   affichées ensemble par DailyQuestsPanel, sans pagination.
   const questsWithStatus = useMemo(() => DAILY_QUEST_DEFINITIONS.map(d => {
     const p = progressMap.get(d.id);
     return {
@@ -1637,7 +1646,7 @@ const cc = StyleSheet.create({
   rowPts: { color: C.muted, fontSize: 10, width: 44, textAlign: 'right' },
 });
 
-// ─── ★ Panel des 4 défis du jour — progression réelle + Claim explicite ──────
+// ─── ★ Panel des 4 défis du jour — TOUS affichés ensemble, Claim verrouillé ──
 type DailyQuestWithStatus = DailyQuestDef & {
   progress: number;
   completed: boolean;
@@ -1673,8 +1682,12 @@ export const DailyQuestsPanel = memo(function DailyQuestsPanel({
         <View style={dq.badge}><Text style={dq.badgeTxt}>{completedToday}/{questsWithStatus.length}</Text></View>
       </View>
 
+      {/* ★ Grille 2×2 fixe — les 4 défis toujours visibles ensemble */}
       <View style={dq.grid}>
         {questsWithStatus.map(q => {
+          // ★ readyToClaim (donc bouton Réclamer visible) exige que la cible
+          // soit RÉELLEMENT atteinte : q.completed est calculé côté hook à
+          // partir de progress >= target, jamais déclaré manuellement ici.
           const readyToClaim = q.completed && !q.claimed;
           const isNext = q.id === nextId;
           const pillarColor = PILLAR_DEFS[q.pillar].color;
