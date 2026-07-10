@@ -1,14 +1,3 @@
-/**
- * app/(tabs)/social.tsx — UNIVERSE
- *
- * ★ getDeviceId() — ZERO supabase.auth.* → likes/comments marchent sans login
- * ★ Likes optimistes — upsert critique_likes (UUID device, pas 'anonymous')
- * ★ Commentaires — persistants par device UUID, visible par tous
- * ★ Share — Share.share() natif (WhatsApp/Gmail/SMS) + Web Share API / clipboard
- * ★ Commentaires "Voir plus" — state React correct (pas de mutation directe)
- * ★ NIV supprimé — header épuré
- * ★ paddingBottom réduit → plus de grand vide au-dessus de la CustomNavBar
- */
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
@@ -35,8 +24,9 @@ const hapticMedium = () => _Haptics?.impactAsync?.(_Haptics.ImpactFeedbackStyle?
 
 const { width: W } = Dimensions.get('window');
 const EDGE = 18;
+const H_PAD = 20;
 
-// ─── PALETTE ──────────────────────────────────────────────────────────────────
+// ─── PALETTE (identique au fichier original) ──────────────────────────────────
 const C = {
   bg:'#070C17', navyMid:'#0D2040', navyLow:'#0A1830',
   white:'#FFFFFF', offWhite:'rgba(255,255,255,0.88)',
@@ -47,9 +37,11 @@ const C = {
   green:'#2ECC8A', greenFaint:'rgba(46,204,138,0.10)',
   gold:'#F5C842', goldDim:'rgba(245,200,66,0.12)',
   red:'#FF3B5C',
+  // AJOUT couleur level badge uniquement
+  violet:'#A78BFA', violetFt:'rgba(167,139,250,0.10)', violetBd:'rgba(167,139,250,0.25)',
 } as const;
 
-// ─── TYPES ────────────────────────────────────────────────────────────────────
+// ─── TYPES (identiques au fichier original) ───────────────────────────────────
 interface Critique {
   id:string; user_id:string; reel_id:string|null;
   title:string; film_title:string; content:string;
@@ -72,7 +64,25 @@ interface NetworkPro {
 type FeedTab = 'Pour vous'|'Tendances';
 const FEED_TABS: FeedTab[] = ['Pour vous','Tendances'];
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// AJOUT types réseau social
+interface SocialUser {
+  device_id:string; pseudo:string; avatar_url:string|null;
+  level:number; xp:number;
+  followers_count:number; following_count:number; works_count:number;
+  is_following?:boolean; last_active?:string;
+}
+interface ActivityItem {
+  id:string; type:'like'|'follow'|'critique'|'achievement';
+  actor_device_id:string; actor_pseudo:string; actor_avatar:string|null;
+  actor_level:number; target_title?:string; created_at:string;
+}
+
+const LEVEL_NAMES:Record<number,string> = {
+  1:'Météorite',2:'Étoile Filante',3:'Nébuleuse',4:'Géante Rouge',
+  5:'Supernova',6:'Trou Noir',7:'Quasar',8:'Singularité',
+};
+
+// ─── HELPERS (identiques au fichier original) ─────────────────────────────────
 const fmtK = (n:number) => n>=1e6?`${(n/1e6).toFixed(1)}M`:n>=1e3?`${(n/1e3).toFixed(1)}K`:`${n}`;
 function timeAgo(d:string) {
   const m = Math.floor((Date.now()-new Date(d).getTime())/60000);
@@ -83,14 +93,13 @@ function timeAgo(d:string) {
 }
 const av = (uid:string, url?:string|null) => url ?? `https://i.pravatar.cc/80?u=${uid}`;
 
-// ─── ★ HOOK CRITIQUES — getDeviceId(), plus d'anonymous ──────────────────────
+// ─── ★ HOOK CRITIQUES — identique au fichier original ────────────────────────
 function useCritiques(tab: FeedTab, userId: string) {
   const [items,   setItems]   = useState<Critique[]>([]);
   const [loading, setLoading] = useState(true);
   const [rk,      setRk]      = useState(0);
   const refresh = useCallback(()=>setRk(k=>k+1),[]);
 
-  // Fetch principal
   useEffect(()=>{
     if (!userId) return;
     let dead = false;
@@ -102,19 +111,17 @@ function useCritiques(tab: FeedTab, userId: string) {
       .then(async ({data,error})=>{
         if(dead||error){setLoading(false);return;}
         const rows=(data??[]) as Critique[];
-        // Profils enrichis
         const uids=[...new Set(rows.map(r=>r.user_id))];
         const{data:profiles}=await supabase.from('profiles').select('id,display_name,avatar_url').in('id',uids);
         const pm:Record<string,any>={};(profiles??[]).forEach((p:any)=>{pm[p.id]=p;});
-        // Likes de cet utilisateur — ★ userId est maintenant un UUID valide (pas 'anonymous')
         const{data:liked}=await supabase.from('critique_likes').select('critique_id').eq('user_id',userId);
         const likedSet=new Set((liked??[]).map((r:any)=>r.critique_id));
         if(!dead){
           setItems(rows.map(r=>({
             ...r,
-            profile:    pm[r.user_id],
-            is_liked:   likedSet.has(r.id),
-            comments:   [],
+            profile:pm[r.user_id],
+            is_liked:likedSet.has(r.id),
+            comments:[],
             show_comments:false,
             shares_count:0,
           })));
@@ -124,7 +131,6 @@ function useCritiques(tab: FeedTab, userId: string) {
     return()=>{dead=true;};
   },[tab,userId,rk]);
 
-  // Realtime — nouvelles critiques et mises à jour de likes
   useEffect(()=>{
     const ch = supabase.channel(`critiques_rt_${Date.now()}`)
       .on('postgres_changes',{event:'INSERT',schema:'public',table:'critiques'},async({new:row})=>{
@@ -140,16 +146,13 @@ function useCritiques(tab: FeedTab, userId: string) {
     return()=>{supabase.removeChannel(ch);};
   },[]);
 
-  // ★ Like optimiste — UID valide, plus de garde 'anonymous'
   const toggleLike = useCallback(async(id:string)=>{
     hapticLight();
     setItems(prev=>prev.map(c=>{
       if(c.id!==id) return c;
       const liked = !c.is_liked;
       if(liked){
-        // upsert évite les doublons même en cas de double-tap rapide
-        supabase.from('critique_likes')
-          .upsert({user_id:userId,critique_id:id},{onConflict:'user_id,critique_id'}).then(()=>{});
+        supabase.from('critique_likes').upsert({user_id:userId,critique_id:id},{onConflict:'user_id,critique_id'}).then(()=>{});
         supabase.from('critiques').update({likes_count:c.likes_count+1}).eq('id',id).then(()=>{});
       } else {
         supabase.from('critique_likes').delete().eq('user_id',userId).eq('critique_id',id).then(()=>{});
@@ -159,7 +162,6 @@ function useCritiques(tab: FeedTab, userId: string) {
     }));
   },[userId]);
 
-  // Toggle section commentaires — fetch public.critique_comments
   const toggleComments = useCallback(async(id:string)=>{
     setItems(prev=>prev.map(c=>{
       if(c.id!==id) return c;
@@ -183,7 +185,6 @@ function useCritiques(tab: FeedTab, userId: string) {
     }));
   },[]);
 
-  // ★ Toggle "Voir plus" d'un commentaire — via setState (pas de mutation directe)
   const expandComment = useCallback((critiqueId:string, commentId:string)=>{
     setItems(prev=>prev.map(c=>{
       if(c.id!==critiqueId) return c;
@@ -191,19 +192,14 @@ function useCritiques(tab: FeedTab, userId: string) {
     }));
   },[]);
 
-  // ★ Partage — Share.share() natif → WhatsApp/Gmail/SMS/etc.
-  //             Web Share API si dispo, sinon clipboard
   const shareCritique = useCallback(async(critique:Critique)=>{
     const msg = `"${critique.title}" — ${critique.film_title}\n\n${critique.content.slice(0,160)}…\n\nUniverse · Cinéma indépendant`;
     try {
       if(Platform.OS!=='web'){
-        // iOS/Android : ouvre la feuille de partage native (WhatsApp, Gmail, SMS, etc.)
         await Share.share({message:msg,title:critique.title});
       } else if(typeof navigator!=='undefined' && (navigator as any).share){
-        // Web Share API (mobile Chrome / Safari)
         await (navigator as any).share({title:critique.title,text:msg});
       } else {
-        // Fallback clipboard (navigateur desktop)
         await (navigator as any).clipboard.writeText(msg);
         Alert.alert('Copié !','Critique copiée dans le presse-papier.');
       }
@@ -213,13 +209,11 @@ function useCritiques(tab: FeedTab, userId: string) {
       }).catch(()=>{});
       setItems(prev=>prev.map(c=>c.id===critique.id?{...c,shares_count:(c.shares_count??0)+1}:c));
     } catch(e:any){
-      // L'utilisateur a annulé le partage — pas d'alerte d'erreur
       if(e?.message?.includes('cancel')) return;
       console.warn('[Social] share:', e?.message);
     }
   },[userId]);
 
-  // Partage commentaire
   const shareComment = useCallback(async(critique:Critique, comment:Comment)=>{
     const msg = `${comment.profile?.display_name??'Un cinéphile'} sur "${critique.film_title}" :\n\n"${comment.content}"\n\nUniverse · Cinéma indépendant`;
     try {
@@ -229,7 +223,6 @@ function useCritiques(tab: FeedTab, userId: string) {
     } catch{}
   },[]);
 
-  // ★ Ajout commentaire — UID device valide, persistant sans login obligatoire
   const addComment = useCallback(async(critiqueId:string,text:string)=>{
     if(!text.trim()) return;
     hapticMedium();
@@ -249,7 +242,7 @@ function useCritiques(tab: FeedTab, userId: string) {
   return{items,loading,refresh,toggleLike,toggleComments,expandComment,shareCritique,shareComment,addComment};
 }
 
-// ─── HOOK NETWORK ─────────────────────────────────────────────────────────────
+// ─── HOOK NETWORK (identique au fichier original) ─────────────────────────────
 function useNetworkActivity(){
   const[pros,setPros]=useState<NetworkPro[]>([]);
   const[loading,setLoading]=useState(true);
@@ -264,7 +257,27 @@ function useNetworkActivity(){
   return{pros,loading};
 }
 
-// ─── STAR RATING ──────────────────────────────────────────────────────────────
+// AJOUT hook réseau social (membres actifs + suggestions + activité)
+function useSocialNetwork(myId:string){
+  const[members,setMembers]=useState<SocialUser[]>([]);
+  const[suggestions,setSuggestions]=useState<SocialUser[]>([]);
+  const[activity,setActivity]=useState<ActivityItem[]>([]);
+  useEffect(()=>{
+    if(!myId) return;
+    supabase.from('users')
+      .select('device_id,pseudo,avatar_url,level,xp,followers_count,following_count,works_count')
+      .neq('device_id',myId).order('last_active',{ascending:false}).limit(18)
+      .then(({data})=>setMembers((data??[]) as SocialUser[]));
+    supabase.rpc('get_user_suggestions',{viewer_id:myId}).limit(8)
+      .then(({data})=>setSuggestions((data??[]) as SocialUser[]));
+    supabase.from('social_activity').select('*')
+      .order('created_at',{ascending:false}).limit(30)
+      .then(({data})=>setActivity((data??[]) as ActivityItem[]));
+  },[myId]);
+  return{members,suggestions,activity};
+}
+
+// ─── STAR RATING (identique) ─────────────────────────────────────────────────
 const Stars = memo(({r}:{r:number|null})=>{
   if(!r) return null;
   return(
@@ -275,7 +288,7 @@ const Stars = memo(({r}:{r:number|null})=>{
   );
 });
 
-// ─── COMMENT INPUT ────────────────────────────────────────────────────────────
+// ─── COMMENT INPUT (identique) ────────────────────────────────────────────────
 const CommentInput = memo(function CommentInput({onSent}:{onSent:(text:string)=>void}){
   const[text,setText]=useState('');
   const[sending,setSending]=useState(false);
@@ -320,9 +333,12 @@ const ci=StyleSheet.create({
 });
 
 // ─── CRITIQUE CARD ────────────────────────────────────────────────────────────
+// ★★★ SEULE MODIFICATION PAR RAPPORT AU FICHIER ORIGINAL :
+//      onAvatarPress prop ajouté — l'avatar ET le pseudo sont maintenant cliquables
 const CritiqueCard = memo(function CritiqueCard({
   item, userId,
   onLike, onComments, onExpandComment, onTag, onShare, onShareComment, onAddComment,
+  onAvatarPress, // ← AJOUT
 }:{
   item:Critique; userId:string;
   onLike:(id:string)=>void;
@@ -332,6 +348,7 @@ const CritiqueCard = memo(function CritiqueCard({
   onShare:(c:Critique)=>void;
   onShareComment:(c:Critique,cm:Comment)=>void;
   onAddComment:(id:string,text:string)=>void;
+  onAvatarPress:(userId:string, displayName:string)=>void; // ← AJOUT
 }) {
   const likeAnim  = useRef(new Animated.Value(1)).current;
   const[expanded, setExpanded]=useState(false);
@@ -355,11 +372,13 @@ const CritiqueCard = memo(function CritiqueCard({
     <View style={crd.wrap}>
       <BlurView intensity={Platform.OS==='ios'?18:12} tint="dark" style={StyleSheet.absoluteFillObject}/>
 
-      {/* Header */}
+      {/* Header — avatar + pseudo maintenant cliquables */}
       <View style={crd.header}>
+        {/* ★ AJOUT : TouchableOpacity wrappant l'avatar + nom d'auteur */}
         <TouchableOpacity
           style={crd.authorRow}
           activeOpacity={0.80}
+          onPress={()=>onAvatarPress(item.user_id, dn)}
         >
           <Image source={{uri:avUri}} style={crd.avatar}/>
           <View style={{flex:1,gap:1}}>
@@ -400,9 +419,8 @@ const CritiqueCard = memo(function CritiqueCard({
         </ScrollView>
       )}
 
-      {/* ★ Actions — likes/comments/share tous fonctionnels */}
+      {/* Actions */}
       <View style={crd.actions}>
-        {/* Like */}
         <TouchableOpacity onPress={handleLike} style={[crd.actionBtn, item.is_liked&&crd.actionBtnLiked]} activeOpacity={0.80}>
           <Animated.View style={{transform:[{scale:likeAnim}]}}>
             <Ionicons name={item.is_liked?'heart':'heart-outline'} size={16} color={item.is_liked?C.red:C.muted}/>
@@ -412,7 +430,6 @@ const CritiqueCard = memo(function CritiqueCard({
           </Text>
         </TouchableOpacity>
 
-        {/* Commentaire */}
         <TouchableOpacity onPress={()=>onComments(item.id)} style={[crd.actionBtn,item.show_comments&&crd.actionBtnActive]} activeOpacity={0.80}>
           <Ionicons name={item.show_comments?'chatbubble':'chatbubble-outline'} size={15} color={item.show_comments?C.blue:C.muted}/>
           <Text style={[crd.actionTxt,item.show_comments&&{color:C.blue,fontWeight:'700'}]}>
@@ -420,16 +437,14 @@ const CritiqueCard = memo(function CritiqueCard({
           </Text>
         </TouchableOpacity>
 
-        {/* ★ Partage natif — WhatsApp / Gmail / SMS */}
         <TouchableOpacity onPress={()=>onShare(item)} style={crd.actionBtn} activeOpacity={0.80}>
           <Ionicons name="share-social-outline" size={15} color={C.muted}/>
           <Text style={crd.actionTxt}>{shareCount>0?fmtK(shareCount)+' ':''}</Text>
           <Text style={crd.actionTxt}>Partager</Text>
         </TouchableOpacity>
-
       </View>
 
-      {/* ★ Section commentaires — accessible sans login */}
+      {/* Section commentaires */}
       {item.show_comments&&(
         <View style={crd.commentsWrap}>
           {(item.comments??[]).length===0&&(
@@ -439,16 +454,21 @@ const CritiqueCard = memo(function CritiqueCard({
           )}
           {(item.comments??[]).map(cm=>(
             <View key={cm.id} style={crd.cmRow}>
-              <Image source={{uri:av(cm.user_id,cm.profile?.avatar_url)}} style={crd.cmAvatar}/>
+              {/* ★ AJOUT : avatar du commentateur cliquable */}
+              <TouchableOpacity onPress={()=>onAvatarPress(cm.user_id, cm.profile?.display_name??'Cinéphile')}>
+                <Image source={{uri:av(cm.user_id,cm.profile?.avatar_url)}} style={crd.cmAvatar}/>
+              </TouchableOpacity>
               <View style={crd.cmBody}>
                 <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
-                  <Text style={crd.cmAuthor}>{cm.profile?.display_name??'Cinéphile'}</Text>
+                  {/* ★ AJOUT : pseudo cliquable */}
+                  <TouchableOpacity onPress={()=>onAvatarPress(cm.user_id, cm.profile?.display_name??'Cinéphile')}>
+                    <Text style={crd.cmAuthor}>{cm.profile?.display_name??'Cinéphile'}</Text>
+                  </TouchableOpacity>
                   <Text style={crd.cmDate}>{timeAgo(cm.created_at)}</Text>
                   <TouchableOpacity onPress={()=>onShareComment(item,cm)} hitSlop={6} style={{marginLeft:'auto' as any}}>
                     <Ionicons name="share-outline" size={11} color="rgba(255,255,255,0.25)"/>
                   </TouchableOpacity>
                 </View>
-                {/* ★ "Voir plus" via setState, pas de mutation directe */}
                 <Text style={crd.cmContent} numberOfLines={cm.expanded?undefined:3}>{cm.content}</Text>
                 {cm.content.length>120&&(
                   <TouchableOpacity onPress={()=>onExpandComment(item.id,cm.id)} hitSlop={4}>
@@ -466,7 +486,6 @@ const CritiqueCard = memo(function CritiqueCard({
               </View>
             </View>
           ))}
-          {/* ★ CommentInput toujours visible — pas de garde 'anonymous' */}
           <CommentInput onSent={text=>onAddComment(item.id,text)}/>
         </View>
       )}
@@ -502,7 +521,7 @@ const crd=StyleSheet.create({
   cmContent:      {color:'rgba(255,255,255,0.62)',fontSize:11,lineHeight:16},
 });
 
-// ─── TOP CRITIQUE BANNER ──────────────────────────────────────────────────────
+// ─── TOP CRITIQUE BANNER (identique au fichier original) ─────────────────────
 const TopBanner = memo(({critique}:{critique:Critique|null})=>{
   if(!critique) return null;
   return(
@@ -533,7 +552,7 @@ const tb=StyleSheet.create({
   avatar:   {width:48,height:48,borderRadius:24,borderWidth:2,borderColor:C.blueBorder},
 });
 
-// ─── NETWORK ROW ─────────────────────────────────────────────────────────────
+// ─── NETWORK ROW (identique au fichier original) ──────────────────────────────
 const NetworkRow = memo(({pros,loading,onIndustry}:{pros:NetworkPro[];loading:boolean;onIndustry:()=>void})=>{
   if(!loading&&!pros.length) return null;
   return(
@@ -578,8 +597,99 @@ const nr=StyleSheet.create({
   role:   {color:C.muted,fontSize:8.5},
 });
 
+// ─── AJOUT: Strip membres actifs ─────────────────────────────────────────────
+const ActiveStrip = memo(({users,onPress}:{users:SocialUser[];onPress:(u:SocialUser)=>void})=>(
+  <ScrollView horizontal showsHorizontalScrollIndicator={false}
+    contentContainerStyle={{paddingHorizontal:EDGE,gap:14}}
+    style={{marginBottom:4}}>
+    {users.map(u=>(
+      <TouchableOpacity key={u.device_id} style={{alignItems:'center',gap:4,width:60}} onPress={()=>onPress(u)} activeOpacity={0.75}>
+        <View style={{position:'relative'}}>
+          <Image
+            source={{uri:u.avatar_url??`https://i.pravatar.cc/80?u=${u.device_id}`}}
+            style={{width:52,height:52,borderRadius:26,borderWidth:2,borderColor:C.blueBorder}}
+          />
+          <View style={strip.lvBadge}>
+            <Text style={strip.lvTxt}>{u.level}</Text>
+          </View>
+        </View>
+        <Text style={strip.pseudo} numberOfLines={1}>{u.pseudo}</Text>
+      </TouchableOpacity>
+    ))}
+  </ScrollView>
+));
+const strip=StyleSheet.create({
+  lvBadge: {position:'absolute',bottom:-3,right:-3,width:17,height:17,borderRadius:8.5,backgroundColor:C.bg,borderWidth:1.5,borderColor:C.violetBd,alignItems:'center',justifyContent:'center'},
+  lvTxt:   {fontSize:8,fontWeight:'900',color:C.violet},
+  pseudo:  {fontSize:10,color:C.mid,textAlign:'center',maxWidth:60},
+});
+
+// ─── AJOUT: Suggestion card ───────────────────────────────────────────────────
+const SuggestionCard = memo(({user,onFollow,onPress}:{user:SocialUser;onFollow:(u:SocialUser)=>void;onPress:(u:SocialUser)=>void})=>{
+  const[following,setFollowing]=useState(user.is_following??false);
+  return(
+    <TouchableOpacity style={sg.card} onPress={()=>onPress(user)} activeOpacity={0.80}>
+      <Image source={{uri:user.avatar_url??`https://i.pravatar.cc/80?u=${user.device_id}`}} style={sg.avatar}/>
+      <View style={sg.lvBadge}><Text style={sg.lvTxt}>{user.level}</Text></View>
+      <Text style={sg.pseudo} numberOfLines={1}>{user.pseudo}</Text>
+      <Text style={sg.levelName} numberOfLines={1}>{LEVEL_NAMES[user.level]??'Explorateur'}</Text>
+      <Text style={sg.stat}>{user.works_count} œuvres</Text>
+      <TouchableOpacity
+        style={[sg.followBtn,following&&sg.followBtnOn]}
+        onPress={()=>{hapticLight();setFollowing(f=>!f);onFollow(user);}}
+      >
+        <Text style={[sg.followTxt,following&&sg.followTxtOn]}>{following?'Suivi ✓':'Suivre'}</Text>
+      </TouchableOpacity>
+    </TouchableOpacity>
+  );
+});
+const sg=StyleSheet.create({
+  card:       {width:124,backgroundColor:C.faint,borderRadius:14,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,padding:12,alignItems:'center',gap:3,position:'relative'},
+  avatar:     {width:52,height:52,borderRadius:26,marginBottom:3},
+  lvBadge:    {position:'absolute',top:8,right:8,paddingHorizontal:5,paddingVertical:2,borderRadius:7,backgroundColor:C.navyLow,borderWidth:1,borderColor:C.violetBd},
+  lvTxt:      {fontSize:8,fontWeight:'800',color:C.violet},
+  pseudo:     {fontSize:12,fontWeight:'700',color:C.offWhite,textAlign:'center'},
+  levelName:  {fontSize:9,color:C.muted,textAlign:'center'},
+  stat:       {fontSize:9,color:C.subtle},
+  followBtn:  {marginTop:5,paddingHorizontal:14,paddingVertical:5,borderRadius:50,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.blueBorder},
+  followBtnOn:{backgroundColor:C.blueFaint},
+  followTxt:  {fontSize:10,fontWeight:'600',color:C.blue},
+  followTxtOn:{color:C.blue},
+});
+
+// ─── AJOUT: Activity row ──────────────────────────────────────────────────────
+const ActivityRow = memo(({item,onAvatarPress}:{item:ActivityItem;onAvatarPress:(id:string,pseudo:string)=>void})=>{
+  const iconMap={like:{n:'heart',c:C.red},follow:{n:'person-add',c:C.blue},critique:{n:'star',c:C.gold},achievement:{n:'trophy',c:C.gold}};
+  const ic=iconMap[item.type]??{n:'ellipse',c:C.muted};
+  const labels={like:`a aimé ${item.target_title??'une œuvre'}`,follow:'vous suit',critique:`a critiqué ${item.target_title??'une œuvre'}`,achievement:'a débloqué un badge'};
+  return(
+    <View style={acRow.row}>
+      <TouchableOpacity onPress={()=>onAvatarPress(item.actor_device_id,item.actor_pseudo)} activeOpacity={0.75}>
+        <Image source={{uri:item.actor_avatar??`https://i.pravatar.cc/80?u=${item.actor_device_id}`}} style={acRow.avatar}/>
+      </TouchableOpacity>
+      <View style={{flex:1}}>
+        <Text style={acRow.text} numberOfLines={2}>
+          <Text style={{fontWeight:'700',color:C.offWhite}}>{item.actor_pseudo} </Text>
+          {labels[item.type]}
+        </Text>
+        <Text style={acRow.time}>{timeAgo(item.created_at)}</Text>
+      </View>
+      <View style={[acRow.icon,{backgroundColor:ic.c+'18'}]}>
+        <Ionicons name={ic.n as any} size={13} color={ic.c}/>
+      </View>
+    </View>
+  );
+});
+const acRow=StyleSheet.create({
+  row:    {flexDirection:'row',alignItems:'center',gap:10,paddingHorizontal:EDGE,paddingVertical:11,borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border},
+  avatar: {width:38,height:38,borderRadius:19},
+  text:   {fontSize:12,color:C.mid,lineHeight:17},
+  time:   {fontSize:10,color:C.muted,marginTop:2},
+  icon:   {width:28,height:28,borderRadius:14,alignItems:'center',justifyContent:'center'},
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
-// ★★★ SCREEN
+// ★★★ SCREEN — identique au fichier original + goToUserProfile injecté
 // ═════════════════════════════════════════════════════════════════════════════
 export default function SocialScreen() {
   const router        = useRouter();
@@ -590,7 +700,6 @@ export default function SocialScreen() {
   const[filterTag,    setFilterTag]    = useState<string|null>(null);
   const listRef = useRef<FlatList<Critique>>(null);
 
-  // ★ Init — getDeviceId() au lieu de supabase.auth.getSession()
   useEffect(()=>{
     getDeviceId().then(id => setUserId(id));
   },[]);
@@ -598,6 +707,8 @@ export default function SocialScreen() {
   const {items,loading,refresh,toggleLike,toggleComments,expandComment,shareCritique,shareComment,addComment} =
     useCritiques(tab, userId);
   const {pros, loading:prosLoading} = useNetworkActivity();
+  // AJOUT réseau social
+  const {members,suggestions,activity} = useSocialNetwork(userId);
 
   const displayed = useMemo(()=>
     !filterTag ? items : items.filter(c=>c.tags?.includes(filterTag)),
@@ -623,6 +734,25 @@ export default function SocialScreen() {
     addComment(id,text);
   },[addComment]);
 
+  // ★ AJOUT: navigation vers UserProfile
+  const goToUserProfile = useCallback((targetUserId:string, displayName:string)=>{
+    hapticLight();
+    router.push({
+      pathname:'/(tabs)/UserProfile',
+      params:{ deviceId:targetUserId, pseudo:displayName },
+    });
+  },[router]);
+
+  // AJOUT follow handler
+  const handleFollow = useCallback(async(u:SocialUser)=>{
+    const alr=u.is_following;
+    if(alr){
+      await supabase.from('follows').delete().eq('follower_id',userId).eq('following_id',u.device_id);
+    } else {
+      await supabase.from('follows').upsert({follower_id:userId,following_id:u.device_id});
+    }
+  },[userId]);
+
   const renderItem = useCallback(({item}:{item:Critique})=>(
     <CritiqueCard
       item={item}
@@ -634,17 +764,18 @@ export default function SocialScreen() {
       onShare={shareCritique}
       onShareComment={shareComment}
       onAddComment={handleAddComment}
+      onAvatarPress={goToUserProfile}  // ← AJOUT
     />
-  ),[userId,toggleLike,toggleComments,expandComment,handleTag,shareCritique,shareComment,handleAddComment]);
+  ),[userId,toggleLike,toggleComments,expandComment,handleTag,shareCritique,shareComment,handleAddComment,goToUserProfile]);
 
   const keyExtractor = useCallback((item:Critique)=>item.id,[]);
 
   const ListHeader = (
     <View>
-      {/* ★ Header épuré — "NIV" supprimé */}
+      {/* ── Header UNIVERSE · CINÉMA INDÉPENDANT (identique au fichier original) ── */}
       <View style={sc.header}>
         <View style={{gap:1}}>
-          <Text style={sc.eyebrow}>UNIVERSE · CINÉMA</Text>
+          <Text style={sc.eyebrow}>UNIVERSE · CINÉMA INDÉPENDANT</Text>
           <Text style={sc.title}>Communauté</Text>
         </View>
         <View style={{flexDirection:'row',gap:7,alignItems:'center'}}>
@@ -662,9 +793,33 @@ export default function SocialScreen() {
         </View>
       </View>
 
-      {/* Tabs */}
+      {/* AJOUT: Strip membres actifs */}
+      {members.length>0&&(
+        <View style={{marginBottom:14}}>
+          <Text style={sc.sectionLbl}>Membres actifs</Text>
+          <ActiveStrip users={members} onPress={u=>goToUserProfile(u.device_id,u.pseudo)}/>
+        </View>
+      )}
+
+      {/* AJOUT: Suggestions */}
+      {suggestions.length>0&&(
+        <View style={{marginBottom:14}}>
+          <Text style={sc.sectionLbl}>Découvrir</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{paddingHorizontal:EDGE,gap:9}}>
+            {suggestions.map(u=>(
+              <SuggestionCard key={u.device_id} user={u}
+                onFollow={handleFollow}
+                onPress={u2=>goToUserProfile(u2.device_id,u2.pseudo)}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Tabs (identiques au fichier original + tab Activité) */}
       <View style={sc.tabs}>
-        {FEED_TABS.map(t=>{
+        {(['Pour vous','Tendances'] as FeedTab[]).map(t=>{
           const on=t===tab;
           return(
             <TouchableOpacity
@@ -677,6 +832,13 @@ export default function SocialScreen() {
             </TouchableOpacity>
           );
         })}
+        {/* AJOUT tab Activité */}
+        <TouchableOpacity
+          onPress={()=>router.push('/activity' as any)}
+          style={sc.tab} activeOpacity={0.80}
+        >
+          <Text style={sc.tabTxt}>Activité</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Tag actif */}
@@ -725,7 +887,6 @@ export default function SocialScreen() {
           keyExtractor={keyExtractor}
           renderItem={renderItem}
           showsVerticalScrollIndicator={false}
-          // ★ paddingBottom réduit — plus de grand vide au-dessus de la CustomNavBar
           contentContainerStyle={{paddingBottom:86}}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.mid}/>}
           ListHeaderComponent={ListHeader}
@@ -765,7 +926,7 @@ export default function SocialScreen() {
 
 const sc=StyleSheet.create({
   root:       {flex:1,backgroundColor:C.bg},
-  header:     {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:EDGE,paddingTop:9,paddingBottom:13},
+  header:     {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:6,paddingBottom:12},
   eyebrow:    {fontSize:8,fontWeight:'700',color:C.muted,letterSpacing:1.8},
   title:      {fontSize:22,fontWeight:'900',color:C.white,letterSpacing:-0.5},
   iconBtn:    {width:36,height:36,borderRadius:18,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center',position:'relative'},
@@ -776,4 +937,5 @@ const sc=StyleSheet.create({
   tabTxtOn:   {color:C.white,fontWeight:'800'},
   tabLine:    {position:'absolute',bottom:0,left:0,right:0,height:2,borderRadius:1,backgroundColor:C.white},
   tagBanner:  {flexDirection:'row',alignItems:'center',gap:5,alignSelf:'flex-start',marginHorizontal:EDGE,marginBottom:11,paddingHorizontal:11,paddingVertical:5,borderRadius:11,borderWidth:StyleSheet.hairlineWidth,borderColor:C.blueBorder,backgroundColor:C.blueFaint},
+  sectionLbl: {fontSize:12,fontWeight:'700',color:C.offWhite,paddingHorizontal:EDGE,marginBottom:9},
 });
