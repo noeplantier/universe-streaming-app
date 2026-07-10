@@ -592,17 +592,17 @@ export default function ProfileScreen() {
   const [activeTab,    setTab]     = useState<GridTab>(0);
   const [modal,        setModal]   = useState<ModalType|null>(null);
   const [streak,       setStreak]  = useState(0);
-  // ★ Gamification réelle depuis GamificationSystem (cinephile_profiles)
+  // ★ Gamification réelle depuis GamificationSystem (profiles)
   const [gamiProfile, setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
   const [showLevel,   setShowLevel]  = useState(true);
 
   const { score, level, badges } = useLocalGamification(uid);
   const isFirstLoad = useRef(false);
 
-  // Charge le profil gamification depuis cinephile_profiles
+  // Charge le profil gamification depuis profiles
   const loadGami = useCallback(async(userId:string)=>{
     try {
-      const{data}=await supabase.from('cinephile_profiles')
+      const{data}=await supabase.from('profiles')
         .select('xp,level,title,streak_days,contribution_score')
         .eq('user_id',userId).maybeSingle();
       if(data){

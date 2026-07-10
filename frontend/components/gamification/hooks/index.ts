@@ -57,7 +57,7 @@ export function useProfile(userId: string) {
   const load = useCallback(async () => {
     if (!isValidUUID(userId)) { setLoading(false); return; }
     const { data } = await supabase
-      .from('cinephile_profiles')
+      .from('profiles')
       .select('xp,level,title,streak_days,longest_streak,contribution_score,gems,total_days_active')
       .eq('user_id', userId).maybeSingle();
     if (data) {
@@ -73,7 +73,7 @@ export function useProfile(userId: string) {
       prevLevel.current = p.level;
       setProfile(p);
     } else {
-      await supabase.from('cinephile_profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).match(() => {});
+      await supabase.from('profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).match(() => {});
       setProfile({ xp: 0, level: 1, title: TITLES[0], streak_days: 0, longest_streak: 0, pct: 0, xpToNext: 100, xpInLevel: 0, contribution_score: 0, gems: 0, total_days_active: 0 });
     }
     setLoading(false);
@@ -95,7 +95,7 @@ export function useProfile(userId: string) {
 
   const addGems = useCallback(async (n: number) => {
     if (!isValidUUID(userId)) return;
-    await supabase.from('cinephile_profiles')
+    await supabase.from('profiles')
       .upsert({ user_id: userId, gems: (profile?.gems ?? 0) + n }, { onConflict: 'user_id' }).match(() => {});
     setProfile(prev => prev ? { ...prev, gems: (prev.gems ?? 0) + n } : prev);
   }, [userId, profile?.gems]);
@@ -216,7 +216,7 @@ export function useDailyCheckin(userId: string) {
         { user_id: userId, date: today, streak_day: newStreak, xp_earned: reward.xp, claimed: true, reward_type: 'streak', badge_id: reward.badge ?? null },
         { onConflict: 'user_id,date' },
       ).match(() => {});
-      await supabase.from('cinephile_profiles').upsert(
+      await supabase.from('profiles').upsert(
         { user_id: userId, streak_days: newStreak, last_active_date: today, updated_at: new Date().toISOString() },
         { onConflict: 'user_id' },
       ).match(() => {});

@@ -105,21 +105,34 @@ function useCritiques(tab: FeedTab, userId: string) {
     let dead = false;
     setLoading(true);
     const order = tab==='Tendances' ? 'likes_count' : 'created_at';
+  
     supabase.from('critiques')
       .select('id,user_id,reel_id,title,film_title,content,rating,tags,likes_count,created_at,author')
       .order(order,{ascending:false}).limit(60)
       .then(async ({data,error})=>{
         if(dead||error){setLoading(false);return;}
         const rows=(data??[]) as Critique[];
-        const uids=[...new Set(rows.map(r=>r.user_id))];
-        const{data:profiles}=await supabase.from('profiles').select('id,display_name,avatar_url').in('id',uids);
-        const pm:Record<string,any>={};(profiles??[]).forEach((p:any)=>{pm[p.id]=p;});
+  
+        // ✅ enlève null/undefined avant le .in(...) pour éviter le 400
+        const uids=[...new Set(rows.map(r=>r.user_id).filter((id): id is string => !!id))];
+  
+        const pm:Record<string,any>={};
+        if (uids.length > 0) {
+          const { data:profiles } = await supabase
+            .from('profiles')
+            .select('id,display_name,avatar_url')
+            .in('id',uids);
+  
+          (profiles??[]).forEach((p:any)=>{pm[p.id]=p;});
+        }
+  
         const{data:liked}=await supabase.from('critique_likes').select('critique_id').eq('user_id',userId);
         const likedSet=new Set((liked??[]).map((r:any)=>r.critique_id));
+  
         if(!dead){
           setItems(rows.map(r=>({
             ...r,
-            profile:pm[r.user_id],
+            profile:pm[r.user_id as string],
             is_liked:likedSet.has(r.id),
             comments:[],
             show_comments:false,
@@ -127,7 +140,9 @@ function useCritiques(tab: FeedTab, userId: string) {
           })));
           setLoading(false);
         }
-      }).catch(()=>{if(!dead)setLoading(false);});
+      })
+      .catch(()=>{if(!dead)setLoading(false);});
+  
     return()=>{dead=true;};
   },[tab,userId,rk]);
 

@@ -60,7 +60,7 @@ else
 fi
 
 # Peut-on lire les profils d'autres users ?
-PROFILES=$(api "${REST}/cinephile_profiles?limit=5&select=user_id,xp,level" 2>/dev/null || echo "[]")
+PROFILES=$(api "${REST}/profiles?limit=5&select=user_id,xp,level" 2>/dev/null || echo "[]")
 PCOUNT=$(echo "$PROFILES" | jq 'length' 2>/dev/null || echo 0)
 if [[ "$PCOUNT" -gt 0 ]]; then
   warn "Profils XP/niveau lisibles publiquement ($PCOUNT). Acceptable si intentionnel, sinon restreindre via RLS."
