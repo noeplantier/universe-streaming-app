@@ -62,7 +62,7 @@ export const GlowAccentCard = memo(function GlowAccentCard({
 
   return (
     <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity onPress={press} activeOpacity={0.88}>
+      <TouchableOpacity onPress={press} activeOpacity={8888}>
         {card}
       </TouchableOpacity>
     </Animated.View>
@@ -70,7 +70,7 @@ export const GlowAccentCard = memo(function GlowAccentCard({
 });
 
 const styles = StyleSheet.create({
-  wrap: { borderWidth: 1, overflow: 'hidden' },
+  wrap: { borderWidth: 1, color: 'white' },
 });
 
 export default GlowAccentCard;

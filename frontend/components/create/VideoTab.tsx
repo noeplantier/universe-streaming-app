@@ -134,10 +134,6 @@ const VIDEO_MIME_BY_EXT: Record<string,string> = {
 const mimeFromExt = (fileName: string) =>
   VIDEO_MIME_BY_EXT[fileName.split('.').pop()?.toLowerCase() ?? ''] ?? 'video/mp4';
 
-const oversizeMsg = (bytes?: number | null) =>
-  bytes != null && bytes > MAX_FILE_MB * 1_000_000
-    ? `Vidéo trop volumineuse (${(bytes/1e6).toFixed(0)} Mo) — ${MAX_FILE_MB} Mo maximum. Réduis la résolution ou la durée et réessaie.`
-    : null;
 
 // Fallback uniquement pour les URI natives (file://) — jamais utilisé sur web
 // quand un Blob a déjà été capturé à la sélection.
@@ -522,8 +518,6 @@ const VideoTab = memo(function VideoTab() {
       input.type = 'file'; input.accept = 'video/*';
       input.onchange = (e: any) => {
         const file = e.target.files?.[0]; if (!file) return;
-        const sizeErr = oversizeMsg(file.size);
-        if (sizeErr) { setError(sizeErr); return; }
         const uri = URL.createObjectURL(file);
         const fileName = file.name || 'video.mp4';
         const asset: VideoAsset = {
