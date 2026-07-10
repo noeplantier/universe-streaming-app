@@ -832,13 +832,7 @@ export default function SocialScreen() {
             </TouchableOpacity>
           );
         })}
-        {/* AJOUT tab Activité */}
-        <TouchableOpacity
-          onPress={()=>router.push('/activity' as any)}
-          style={sc.tab} activeOpacity={0.80}
-        >
-          <Text style={sc.tabTxt}>Activité</Text>
-        </TouchableOpacity>
+   
       </View>
 
       {/* Tag actif */}

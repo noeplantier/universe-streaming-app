@@ -29,7 +29,7 @@ export const C = {
   offWhite: 'rgba(255,255,255,0.85)',
   muted:    'rgba(255,255,255,0.38)',
   faint:    'rgba(255,255,255,0.14)',
-  neon:     '#7C5EFC',
+  neon:      '#FFFFFF',
   neonL:    'rgba(13,34,64,0.55)',
   gold:     '#F5C842',
   success:  '#22C55E',

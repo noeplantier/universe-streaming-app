@@ -77,7 +77,7 @@ const C = {
   mid:      'rgba(255,255,255,0.55)',
   muted:    'rgba(255,255,255,0.36)',
   faint:    'rgba(255,255,255,0.10)',
-  accent:   '#A78BFA',
+  accent:   '#FFFFFF',
   amber:    '#F59E0B',
   success:  '#22C55E',
   error:    '#EF4444',

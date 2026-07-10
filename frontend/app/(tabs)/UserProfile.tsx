@@ -50,7 +50,7 @@ import React, {
     faint:     'rgba(255,255,255,0.07)',
     border:    'rgba(255,255,255,0.09)',
     borderHi:  'rgba(255,255,255,0.22)',
-    violet:    '#A78BFA',
+    violet:    '#FFFFFF',
     violetFt:  'rgba(167,139,250,0.10)',
     violetBd:  'rgba(167,139,250,0.25)',
     gold:      '#F5C842',
@@ -240,27 +240,13 @@ import React, {
       setLoading(true);
   
       Promise.all([
-        // Public user info — NO confidential fields
-        supabase
-          .from('users')
-          .select(`
-            device_id,
-            pseudo,
-            avatar_url,
-            bio,
-            level,
-            xp,
-            xp_to_next,
-            title,
-            followers_count,
-            following_count,
-            works_count,
-            critiques_count,
-            joined_at,
-            badges
-          `)
-          .eq('device_id', deviceId)
-          .single(),
+    // Public profiles info — NO confidential fields
+supabase
+.from('profiles')
+.select('id, username, display_name, avatar_url, bio, is_verified, follower_count, following_count, created_at, updated_at, location, website, equipment, contact_email, social_instagram, social_vimeo, social_youtube, social_imdb, specialties, festivals, open_to, notable_works, is_pro, is_industry_contact, films_seen_count, followers_count, role')
+.eq('id', deviceId)
+.maybeSingle(),
+       
   
         // Public works
         supabase
@@ -286,7 +272,7 @@ import React, {
           .eq('following_id', deviceId)
           .maybeSingle(),
       ]).then(([{ data: u }, { data: w }, { data: c }, { data: f }]) => {
-        setUser(u as PublicUser ?? null);
+        setUser(u as unknown as PublicUser ?? null);
         setWorks(w as PublicWork[] ?? []);
         setCritiques(c as PublicCritique[] ?? []);
         setFollowing(!!f);
