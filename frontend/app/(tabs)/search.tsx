@@ -1,11 +1,36 @@
 /**
- * app/(tabs)/search.tsx  —  UNIVERSE v11
+ * app/(tabs)/search.tsx  —  UNIVERSE v12
  * ─────────────────────────────────────────────────────────────────────────────
  *  ★ Découverte de catalogue : hero, sections, recherche
  *  ★ Galaxie XP — Cosmos uniquement : niveau, XP, défis du jour créateur
- *  ★ 3 défis tirés chaque jour d'un pool de 8 (regarder/critiquer/créer/réseauter…)
+ *  ★★ FIX : les défis du jour viennent maintenant EXCLUSIVEMENT de
+ *     GamificationSystem.tsx (useDailyQuests + DailyQuestsPanel). L'ancien
+ *     système local (DAILY_POOL de 8 entrées, useDailyChallenges,
+ *     DailyRow, table daily_checkins avec un schéma différent) a été
+ *     entièrement supprimé — c'était lui, et non GamificationSystem, qui
+ *     affichait 8 défis au lieu de 4. Au clic sur le bouton de
+ *     gamification, la modale affiche désormais le vrai panel à 4 cartes,
+ *     avec le Claim vérifié côté serveur (voir GamificationSystem.tsx).
  *  ★ Palette or/blanc · C.card (#0D2040) · aura divine breathing
  *  ★ ZERO supabase.auth.* · getDeviceId()
+ *
+ * ★★ SEULES MODIFICATIONS APPORTÉES DANS CETTE PASSE ★★
+ *   - Suppression de DAILY_POOL, DailyTpl, DailyId, todaysChallenges,
+ *     useDailyChallenges, DailyRow.
+ *   - Import de `useDailyQuests` et `DailyQuestsPanel` depuis
+ *     GamificationSystem.tsx.
+ *   - `GalaxyModal` instancie désormais `useDailyQuests(userId, ...)`
+ *     lui-même (il a déjà `userId` et `awardXP` en props) et rend
+ *     `<DailyQuestsPanel />` à la place de la liste `DailyRow` locale.
+ *   - `onAction` du panel navigue via une table de routes par
+ *     `deepAction` (go_catalog / go_create / go_social / go_profile) au
+ *     lieu d'incrémenter une progression locale au clic — la progression
+ *     réelle est incrémentée ailleurs dans l'app, à la fin de l'action
+ *     effectivement terminée (conforme au garde-fou anti-triche déjà en
+ *     place dans GamificationSystem.tsx).
+ *   - Tout le reste (hero, sections, cards, recherche, badge d'entrée,
+ *     streak card, badges débloqués, astuces XP) est strictement
+ *     inchangé.
  */
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState,
@@ -26,7 +51,8 @@ import { getDeviceId }       from '@/services/api';
 import GalaxyBackground      from '@/components/shared/GalaxyBackground';
 import { GlowAccentCard }    from '@/components/shared/GlowAccentCard';
 import {
-  resolveImg, useGamification, XPFloat, XPBar as GamiXPBar, LevelUpCelebration,
+  resolveImg, useGamification, useDailyQuests, XPFloat,
+  XPBar as GamiXPBar, LevelUpCelebration, DailyQuestsPanel,
   type Work, type GamiProfile, type GamiBadge,
 } from '@/contexts/GamificationSystem';
 
@@ -77,22 +103,17 @@ const Shimmer=memo(({w,h,r=8}:{w:number|string;h:number;r?:number})=>{
 const LEVEL_ICONS = ['star-outline','sparkles-outline','flash-outline','rocket-outline','flash-outline','nuclear-outline','infinite-outline','planet-outline','planet-outline','planet-outline'] as const;
 const levelIcon = (level:number) => LEVEL_ICONS[Math.min(Math.max(level,1),10)-1];
 
-// ─── DÉFIS DU JOUR — 8 actions ancrées dans les vraies features de l'app ────
-const DAILY_POOL = [
-  { id:'upload',     icon:'cloud-upload-outline'  as const, title:'Premier Clap',     desc:"Importer et publier une nouvelle vidéo dans Universe",           xp:80, total:1, cta:'Créer'     },
-  { id:'comment',    icon:'chatbubble-outline'     as const, title:'Retour Créateur',  desc:"Laisser un commentaire sur une critique ou un post",              xp:35, total:1, cta:'Commenter' },
-  { id:'watch',      icon:'play-circle-outline'    as const, title:'Scout du Jour',    desc:"Visionner un reel ou une vidéo sur le feed principal",            xp:30, total:1, cta:'Visionner' },
-  { id:'write_crit', icon:'create-outline'         as const, title:'Plume Critique',   desc:"Rédiger et publier une critique argumentée sur une œuvre",        xp:60, total:1, cta:'Rédiger'   },
-  { id:'like_crit',  icon:'heart-outline'          as const, title:'Coup de Cœur',    desc:"Liker le commentaire ou la critique d'un autre membre",           xp:20, total:1, cta:'Explorer'  },
-  { id:'like_reel',  icon:'thumbs-up-outline'      as const, title:'Applaudissement',  desc:"Liker une vidéo ou un reel dans le feed Reels",                   xp:20, total:1, cta:'Feed'      },
-  { id:'share',      icon:'share-outline'          as const, title:'Porte-Voix',       desc:"Partager une vidéo par mail, message ou WhatsApp",                xp:30, total:1, cta:'Partager'  },
-  { id:'favorite',   icon:'bookmark-outline'       as const, title:'Cinémathèque',     desc:"Mettre une vidéo ou un film en favoris dans ta liste",            xp:25, total:1, cta:'Explorer'  },
-] as const;
-type DailyTpl = typeof DAILY_POOL[number];
-type DailyId  = DailyTpl['id'];
-
-// Tous les défis affichés chaque jour — 8 actions, 1 par feature
-function todaysChallenges(): DailyTpl[] { return [...DAILY_POOL] as DailyTpl[]; }
+// ★ Table de routage des défis du jour — mappe le `deepAction` défini dans
+// GamificationSystem.DAILY_QUEST_DEFINITIONS vers une route réelle de l'app.
+// C'est la SEULE responsabilité de search.tsx sur les défis : naviguer.
+// La progression elle-même est incrémentée ailleurs (fin de visionnage,
+// publication de critique, etc.) — jamais au clic sur ce bouton.
+const DAILY_ACTION_ROUTES: Record<string, string> = {
+  go_catalog: '/(tabs)',
+  go_create: '/(tabs)/create',
+  go_social: '/(tabs)/social',
+  go_profile: '/(tabs)/profile',
+};
 
 // ─── FOMO + EN-TÊTE ROTATIF DU BOUTON ────────────────────────────────────────
 const FOMO = [
@@ -119,90 +140,6 @@ const SECTIONS = [
   { label:'Cosmos',     icon:'infinite-outline' as const },
 ] as const;
 
-// ─── HOOK DÉFIS DU JOUR — Supabase daily_checkins ────────────────────────────
-function useDailyChallenges(userId:string) {
-  const today = useMemo(()=>new Date().toISOString().split('T')[0],[]);
-  const challenges = useMemo(()=>todaysChallenges(),[today]);
-  const [progress, setProgress] = useState<Record<string,number>>({});
-  const [claimed,  setClaimed]  = useState<DailyId[]>([]);
-
-  useEffect(()=>{
-    if(!userId)return;
-    supabase.from('daily_checkins')
-      .select('badge_id,claimed,steps_done')
-      .eq('user_id',userId).eq('date',today)
-      .then(({data})=>{
-        if(!data)return;
-        setClaimed(data.filter(r=>r.claimed&&r.badge_id).map(r=>r.badge_id as DailyId));
-        const p:Record<string,number>={};
-        data.forEach(r=>{ if(r.badge_id&&r.steps_done!=null)p[r.badge_id]=r.steps_done; });
-        setProgress(p);
-      },()=>{});
-  },[userId,today]);
-
-  const bump=useCallback((id:DailyId,total:number)=>{
-    setProgress(p=>({...p,[id]:Math.min((p[id]??0)+1,total)}));
-    if(!userId)return;
-    supabase.from('daily_checkins').upsert({
-      user_id:userId,date:today,badge_id:id,steps_done:1,claimed:false,xp_earned:0,streak_day:1,
-    }).then(()=>{},()=>{});
-  },[userId,today]);
-
-  const claimChallenge=useCallback((id:DailyId,xp:number)=>{
-    if(claimed.includes(id))return;
-    setClaimed(c=>[...c,id]);
-    if(!userId)return;
-    supabase.from('daily_checkins').upsert({
-      user_id:userId,date:today,badge_id:id,steps_done:1,claimed:true,xp_earned:xp,streak_day:1,
-    }).then(()=>{},()=>{});
-  },[claimed,userId,today]);
-
-  return{challenges,progress,claimed,bump,claimChallenge};
-}
-
-// ─── DAILY ROW ────────────────────────────────────────────────────────────────
-const DailyRow=memo(({ch,progress:rawProg,claimed,onClaim,onAction}:{
-  ch:DailyTpl;progress:number;claimed:boolean;onClaim:()=>void;onAction:()=>void;
-})=>{
-  const p=rawProg/ch.total;
-  const done=p>=1||claimed;
-  const barAnim=useRef(new Animated.Value(0)).current;
-  useEffect(()=>{Animated.timing(barAnim,{toValue:done?1:p,duration:700,easing:Easing.out(Easing.quad),useNativeDriver:false}).start();},[done,p]);
-  return(
-    <View style={{marginBottom:9,borderRadius:16,overflow:'hidden',borderWidth:1,borderColor:done?C.goldBd:'rgba(255,255,255,0.08)'}}>
-      <LinearGradient
-        colors={done?['rgba(245,200,66,0.11)','rgba(13,26,54,0.97)']:['rgba(13,26,54,0.94)','rgba(4,8,15,0.98)']}
-        start={{x:0,y:0}} end={{x:1,y:1}}
-        style={{paddingHorizontal:14,paddingVertical:13,flexDirection:'row',alignItems:'center',gap:12}}>
-        {/* Icon */}
-        <View style={{width:42,height:42,borderRadius:13,backgroundColor:done?C.goldFaint:'rgba(255,255,255,0.05)',borderWidth:1,borderColor:done?C.goldBd:'rgba(255,255,255,0.09)',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-          <Ionicons name={done?'checkmark-circle':ch.icon} size={done?20:18} color={done?C.gold:C.muted}/>
-        </View>
-        {/* Body */}
-        <View style={{flex:1,gap:5}}>
-          <View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8}}>
-            <Text style={{color:done?C.gold:C.white,fontSize:12,fontWeight:'800',flex:1}} numberOfLines={1}>{ch.title}</Text>
-            <View style={{flexDirection:'row',alignItems:'center',gap:2}}>
-              <Ionicons name="flash" size={9} color={C.gold}/>
-              <Text style={{color:C.gold,fontSize:11,fontWeight:'800'}}>+{ch.xp}</Text>
-            </View>
-          </View>
-          <View style={{height:2.5,backgroundColor:'rgba(255,255,255,0.07)',borderRadius:2,overflow:'hidden'}}>
-            <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:done?C.gold:'rgba(255,255,255,0.45)',width:barAnim.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}}/>
-          </View>
-          <Text style={{color:C.muted,fontSize:10,lineHeight:14}} numberOfLines={2}>{ch.desc}</Text>
-        </View>
-        {/* CTA */}
-        <View style={{flexShrink:0}}>
-          {claimed&&<View style={{width:30,height:30,borderRadius:15,backgroundColor:'rgba(245,200,66,0.12)',borderWidth:1,borderColor:C.goldBd,alignItems:'center',justifyContent:'center'}}><Ionicons name="checkmark" size={14} color={C.gold}/></View>}
-          {!claimed&&done&&<TouchableOpacity onPress={()=>{hL();onClaim();}} style={{backgroundColor:C.gold,borderRadius:11,paddingHorizontal:13,paddingVertical:8}} activeOpacity={0.82}><Text style={{color:C.bg,fontSize:11,fontWeight:'900'}}>CLAIM</Text></TouchableOpacity>}
-          {!claimed&&!done&&<TouchableOpacity onPress={()=>{hL();onAction();}} style={{borderRadius:11,paddingHorizontal:12,paddingVertical:8,borderWidth:1,borderColor:C.goldBd,backgroundColor:C.goldFaint}} activeOpacity={0.82}><Text style={{color:C.gold,fontSize:11,fontWeight:'700'}}>{ch.cta}</Text></TouchableOpacity>}
-        </View>
-      </LinearGradient>
-    </View>
-  );
-});
-
 // ─── GALAXY MODAL — helpers ───────────────────────────────────────────────────
 const RARITY_COLOR:Record<string,string>={commun:'rgba(255,255,255,0.38)',rare:'#5A96E6',épique:'#9B6BFF',légendaire:'#F5C842'};
 const streakMultiplier=(d:number)=>d>=30?2.0:d>=14?1.5:d>=7?1.25:d>=3?1.1:1.0;
@@ -214,14 +151,13 @@ const XP_TIPS=[
   {icon:'flame-outline',    color:C.orange, title:'Maintenir son streak', desc:'7 jours consécutifs = ×1.25 XP',           xp:175},
 ] as const;
 
-// ─── GALAXY MODAL — Cosmos + Défis du jour ; XP réel via GamificationSystem ──
+// ─── GALAXY MODAL — Cosmos + Défis du jour (GamificationSystem) ──────────────
 const GalaxyModal=memo(({
-  visible,onClose,profile,awardXP,daily,userId,badges,
+  visible,onClose,profile,awardXP,userId,badges,
 }:{
   visible:boolean;onClose:()=>void;
   profile:GamiProfile;
   awardXP:(amount:number,reason:string)=>void;
-  daily:ReturnType<typeof useDailyChallenges>;
   userId:string;badges:GamiBadge[];
 })=>{
   const router=useRouter(),insets=useSafeAreaInsets();
@@ -230,6 +166,16 @@ const GalaxyModal=memo(({
   const[levelUp,setLevelUp]=useState<{level:number;title:string}|null>(null);
   const[activeBadge,setActiveBadge]=useState<string|null>(null);
   const[tipsOpen,setTipsOpen]=useState(false);
+
+  const showBurst=useCallback((n:number)=>{setBurst({v:true,n});setTimeout(()=>setBurst({v:false,n:0}),1300);},[]);
+
+  // ★ Défis du jour — EXCLUSIVEMENT via GamificationSystem. Le Claim est
+  // vérifié côté serveur dans le hook lui-même ; ici on ne fait que relayer
+  // l'XP gagné vers awardXP() et déclencher l'effet visuel local.
+  const daily = useDailyQuests(userId, (xp, questId) => {
+    awardXP(xp, `daily_${questId}`);
+    showBurst(xp);
+  });
 
   // Singleton-based guard: only fire for genuine in-session level gains.
   // Module-level map survives remounts and tab switches — immune to hydration.
@@ -252,23 +198,12 @@ const GalaxyModal=memo(({
     else{Animated.timing(slideY,{toValue:SH,duration:280,useNativeDriver:true}).start();}
   },[visible]);
 
-  const showBurst=useCallback((n:number)=>{setBurst({v:true,n});setTimeout(()=>setBurst({v:false,n:0}),1300);},[]);
-  const handleClaim=useCallback((id:DailyId,xp:number)=>{daily.claimChallenge(id,xp);awardXP(xp,`défi_du_jour_${id}`);showBurst(xp);},[daily,awardXP,showBurst]);
   const go=useCallback((route:string)=>{onClose();setTimeout(()=>router.push(route as any),320);},[onClose,router]);
-
-  const dailyActions:Partial<Record<DailyId,()=>void>>={
-    upload:     ()=>go('/(tabs)/create'),
-    comment:    ()=>go('/(tabs)/social'),
-    watch:      ()=>go('/(tabs)'),
-    write_crit: ()=>go('/(tabs)/create'),
-    like_crit:  ()=>go('/(tabs)/social'),
-    like_reel:  ()=>go('/(tabs)'),
-    share:      ()=>go('/(tabs)'),
-    favorite:   ()=>go('/(tabs)/search'),
-  };
+  const handleDailyAction=useCallback((action:string)=>{go(DAILY_ACTION_ROUTES[action] ?? '/(tabs)');},[go]);
+  const handleDailyClaim=useCallback((questId:string)=>{daily.claimDailyQuest(questId);},[daily]);
 
   const mult=streakMultiplier(profile.streak_days);
-  const claimedToday=daily.claimed.length;
+  const claimedToday=daily.completedToday;
   const activeBadgeData=useMemo(()=>badges.find(b=>b.id===activeBadge),[badges,activeBadge]);
 
   if(!visible)return null;
@@ -349,14 +284,19 @@ const GalaxyModal=memo(({
               </View>
             )}
 
-            {/* Daily challenges */}
-            <Text style={{color:C.white,fontSize:15,fontWeight:'800',marginTop:18,marginBottom:4}}>Défis du jour</Text>
-            <Text style={{color:C.muted,fontSize:11,marginBottom:10,fontStyle:'italic'}}>Renouvelés à minuit — XP réel au CLAIM</Text>
-            {daily.challenges.map(ch=>(
-              <DailyRow key={ch.id} ch={ch} progress={daily.progress[ch.id]??0} claimed={daily.claimed.includes(ch.id)}
-                onClaim={()=>handleClaim(ch.id,ch.xp)}
-                onAction={()=>{daily.bump(ch.id,ch.total);dailyActions[ch.id]?.();}}/>
-            ))}
+            {/* ★ Défis du jour — panel canonique GamificationSystem, 4 cartes,
+                jamais plus (verrou dur intégré au composant lui-même).
+                marginHorizontal négatif pour annuler le padding:E du
+                ScrollView parent — DailyQuestsPanel gère déjà son propre
+                paddingHorizontal:20 en interne. */}
+            <View style={{marginHorizontal:-E,marginTop:18}}>
+              <DailyQuestsPanel
+                questsWithStatus={daily.questsWithStatus}
+                completedToday={daily.completedToday}
+                onAction={handleDailyAction}
+                onClaim={handleDailyClaim}
+              />
+            </View>
 
             {/* XP Tips accordion */}
             <TouchableOpacity onPress={()=>setTipsOpen(x=>!x)} activeOpacity={0.78}
@@ -509,9 +449,10 @@ export default function SearchScreen(){
   const scrollY=useRef(new Animated.Value(0)).current;
   const scrollRef=useRef<ScrollView>(null);
 
-  // ★ XP/niveau réels — intrinsèquement liés à GamificationSystem (cinephile_profiles)
+  // ★ XP/niveau réels — intrinsèquement liés à GamificationSystem (cinephile_profiles).
+  // Les défis du jour sont désormais entièrement gérés à l'intérieur de
+  // GalaxyModal via useDailyQuests — plus de duplication ici.
   const{profile:gamiProfile,earnedBadges,awardXP}=useGamification(userId);
-  const daily=useDailyChallenges(userId);
 
   useEffect(()=>{getDeviceId().then(id=>setUserId(id));},[]);
   useEffect(()=>{let dead=false;setLoading(true);fetchWorks().then(d=>{if(!dead){setWorks(d);setLoading(false);}}).catch(()=>{if(!dead)setLoading(false);});return()=>{dead=true;};},[]);
@@ -539,7 +480,7 @@ export default function SearchScreen(){
         </TouchableOpacity>
       </Animated.View>
       <SearchOverlay visible={srch} onClose={()=>setSrch(false)} works={works}/>
-      <GalaxyModal visible={galaxy} onClose={()=>setGalaxy(false)} profile={gamiProfile} awardXP={awardXP} daily={daily} userId={userId} badges={earnedBadges}/>
+      <GalaxyModal visible={galaxy} onClose={()=>setGalaxy(false)} profile={gamiProfile} awardXP={awardXP} userId={userId} badges={earnedBadges}/>
       <Animated.ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom:120}} scrollEventThrottle={16}
         onScroll={Animated.event([{nativeEvent:{contentOffset:{y:scrollY}}}],{useNativeDriver:true})}>
         <HeroBanner works={hero} loading={loading} onFilmPress={item=>router.push(`/film/${item.id}` as any)}/>
@@ -559,4 +500,3 @@ export default function SearchScreen(){
     </View>
   );
 }
-

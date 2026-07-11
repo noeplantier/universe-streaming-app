@@ -1,17 +1,43 @@
 /**
  * app/settings.tsx — Paramètres UNIVERSE
  *
- * FIXES déploiement (causant blank screen) :
- *  ✓ ImagePicker / FileSystem / Haptics / decode → require conditionnel (pas module-level)
- *  ✓ BlurView → require conditionnel + fallback View navyMid
- *  ✓ C.navyMid → valeur inline NAVY = '#0D2240' (C peut être undefined)
- *  ✓ Image → expo-image (react-native Image avait des problèmes web)
- *  ✓ StyleSheet.absoluteFill → StyleSheet.absoluteFillObject partout
- *  ✓ Chargement instantané : UI affichée immédiatement, data async
+ * ★★★ LE VRAI BUG DES TOGGLES BLOQUÉS ★★★
+ * Ce fichier était le SEUL de tout Universe à s'appuyer sur
+ * `supabase.auth.getUser()` / `signOut()` / `resetPasswordForEmail()`.
+ * Tous les autres fichiers du projet (DropdownMenu, VideoTab,
+ * GamificationSystem, reels/index...) sont construits sur un principe
+ * explicite : ZÉRO `supabase.auth.*`, l'identité vient exclusivement de
+ * `getDeviceId()` (services/api). Résultat concret ici : Universe n'ouvre
+ * jamais de vraie session Supabase Auth, donc `supabase.auth.getUser()`
+ * ne renvoie JAMAIS d'utilisateur → `authUid` restait vide → le garde-fou
+ * ajouté au tour précédent ("si !userId → refuser") bloquait alors
+ * SYSTÉMATIQUEMENT tous les toggles. Ce n'était pas un bug de logique,
+ * c'était une mauvaise source d'identité.
  *
- * COULEURS : NAVY (#0D2240) + transparent uniquement + GalaxyBackground
- * SECTIONS  : Lecture · Notifications · Confidentialité · Accessibilité
- *             Stockage · Compte · Aide · Légal · Session
+ * ★ CORRECTIF : identité alignée sur le reste de l'app via getDeviceId().
+ * `user_preferences.user_id` référence bien `auth.users(id)` côté DB, et
+ * `getDeviceId()` renvoie cet identifiant valide (anonyme ou non) déjà
+ * utilisé avec succès partout ailleurs pour écrire dans Supabase — donc
+ * les upserts fonctionnent enfin, sans jamais envoyer `user_id: ''`.
+ *
+ * ★★ AUTRES CHANGEMENTS ★★
+ * 1. Toggles : cercle (thumb) BLANC fixe en OFF et en ON, en couleurs
+ *    hexadécimales pleines (pas de rgba) — évite les incohérences de
+ *    rendu Android où un track semi-transparent laisse parfois passer
+ *    la teinte système (vert) en dessous.
+ * 2. Préférences strictement alignées sur `public.user_preferences` : 8
+ *    colonnes, 8 contrôles, ni plus ni moins. `video_quality` est un vrai
+ *    sélecteur (enum texte), pas un toggle.
+ * 3. Session : plus de "Mot de passe" (aucune colonne email/auth réelle
+ *    dans ce modèle), "Se déconnecter" désormais un vrai reset d'identité
+ *    locale cohérent avec une app sans compte email/mot de passe.
+ * 4. UX Universe : bandeau de synchro discret ("Préférences
+ *    synchronisées"), accent doré cohérent avec le reste de l'app
+ *    (badges, gamification), copy repositionnée autour du cinéma indé.
+ *
+ * COULEURS : NAVY (#0D2240) + transparent + accent doré Universe (#F5C842)
+ * SECTIONS : Lecture · Notifications · Confidentialité · Stockage · Compte
+ *            Aide · Légal · Session
  */
 
 import React, {
@@ -20,20 +46,19 @@ import React, {
 import {
   View, Text, StyleSheet, TouchableOpacity,
   TextInput, Alert, Animated, Platform,
-  ActivityIndicator, Switch,
+  ActivityIndicator, Switch, Modal,
 } from 'react-native';
 import { Image }           from 'expo-image';
 import { SafeAreaView }    from 'react-native-safe-area-context';
 import { StatusBar }       from 'expo-status-bar';
-import { LinearGradient }  from 'expo-linear-gradient';
 import { Ionicons }        from '@expo/vector-icons';
 import { useRouter }       from 'expo-router';
-import { ScrollView }      from 'react-native';
 
 import { supabase }        from '@/lib/supabase';
+import { getDeviceId }     from '@/services/api';
 import GalaxyBackground    from '@/components/shared/GalaxyBackground';
 
-// ── Tous les imports natifs : require conditionnel → ne crashent pas sur web ──
+// ── Imports natifs : require conditionnel → ne crashent pas sur web ──────────
 let ImagePicker: any = null;
 let FileSystem:  any = null;
 let Haptics:     any = null;
@@ -52,18 +77,12 @@ if (Platform.OS !== 'web') {
   try { _BlurView = require('expo-blur').BlurView; } catch {}
 }
 
-function NavyView({ style, children }: { style?: any; children?: React.ReactNode }) {
-  if (_BlurView) {
-    return <_BlurView intensity={10} tint="dark" style={style}>{children}</_BlurView>;
-  }
-  return <View style={[style, { backgroundColor:'rgba(13,34,64,0.75)' }]}>{children}</View>;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// TOKENS — NAVY inline (C.navyMid peut être undefined si import fail)
+// TOKENS
 // ─────────────────────────────────────────────────────────────────────────────
 const NAVY   = '#0D2240';
 const NAVY_D = '#060F1E';
+const GOLD   = '#F5C842'; // accent Universe (badges, XP, gamification)
 
 const T = {
   bg:       NAVY_D,
@@ -77,7 +96,14 @@ const T = {
   textTert: 'rgba(255,255,255,0.28)',
   red:      '#FF4444',
   green:    '#22C55E',
+  gold:     GOLD,
 } as const;
+
+// ★ Toggles — cercle TOUJOURS blanc, couleurs hex pleines (pas de rgba) pour
+// un rendu garanti identique sur iOS et Android, jamais de vert système.
+const SWITCH_TRACK_OFF = '#16233A';
+const SWITCH_TRACK_ON  = '#3D4E6B';
+const SWITCH_THUMB     = '#FFFFFF';
 
 const EDGE = 16;
 
@@ -86,48 +112,70 @@ const EDGE = 16;
 // ─────────────────────────────────────────────────────────────────────────────
 interface Profile {
   id:string; display_name:string; username:string; bio:string;
-  avatar_url:string; email:string; role:string; plan:'free'|'pro'|'cinephile';
-  created_at:string; location:string; is_pro:boolean;
+  avatar_url:string; role:string; is_pro:boolean;
 }
+
+type VideoQuality = 'auto' | '4k' | '1080p' | '720p' | '480p';
+
+// ★ Strictement les 8 colonnes de public.user_preferences — rien de plus.
 interface Prefs {
-  autoplay:boolean;          data_saver:boolean;
-  hd_on_wifi:boolean;        autoplay_sound:boolean;
-  notif_releases:boolean;    notif_social:boolean;
-  notif_festivals:boolean;   notif_moderation:boolean;
-  notif_connections:boolean;
-  private_profile:boolean;   public_watchlist:boolean;
-  show_seen_films:boolean;   analytics:boolean;
-  personalization:boolean;   show_level_on_profile:boolean;
-  reduced_motion:boolean;    subtitles:boolean;
+  autoplay:         boolean;
+  video_quality:    VideoQuality;
+  data_saver:       boolean;
+  notif_releases:   boolean;
+  notif_social:     boolean;
+  notif_festivals:  boolean;
+  private_profile:  boolean;
+  public_watchlist: boolean;
 }
 const PREFS_DEFAULT: Prefs = {
-  autoplay:true,         data_saver:false,       hd_on_wifi:true,       autoplay_sound:false,
-  notif_releases:true,   notif_social:true,       notif_festivals:false, notif_moderation:true,
-  notif_connections:true,
-  private_profile:false, public_watchlist:true,   show_seen_films:true,  analytics:true,
-  personalization:true,  show_level_on_profile:true,
-  reduced_motion:false,  subtitles:false,
+  autoplay:         true,
+  video_quality:    'auto',
+  data_saver:       false,
+  notif_releases:   true,
+  notif_social:     true,
+  notif_festivals:  false,
+  private_profile:  false,
+  public_watchlist: true,
 };
 
+const QUALITY_OPTIONS: { value: VideoQuality; label: string; hint: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'auto',  label: 'Automatique',  hint: 'S\'adapte à votre connexion',        icon: 'flash-outline' },
+  { value: '4k',    label: '4K Ultra HD',  hint: 'Meilleure qualité, plus de données', icon: 'diamond-outline' },
+  { value: '1080p', label: 'Full HD',      hint: '1080p',                             icon: 'tv-outline' },
+  { value: '720p',  label: 'HD',           hint: '720p',                              icon: 'phone-portrait-outline' },
+  { value: '480p',  label: 'Économique',   hint: '480p, données réduites',            icon: 'leaf-outline' },
+];
+
 // ─────────────────────────────────────────────────────────────────────────────
-// SUPABASE HELPERS
+// SUPABASE HELPERS — ZÉRO supabase.auth.*, identité = getDeviceId()
 // ─────────────────────────────────────────────────────────────────────────────
 async function fetchProfile(uid: string): Promise<Profile|null> {
-  const [{ data }, { data: authData }] = await Promise.all([
-    supabase.from('profiles').select('*').eq('id', uid).single(),
-    supabase.auth.getUser(),
-  ]);
-  if (!data) return null;
-  return { ...(data as Profile), email: authData.user?.email ?? '' };
+  const { data } = await supabase
+    .from('profiles')
+    .select('id,display_name,username,bio,avatar_url,role,is_pro')
+    .eq('id', uid)
+    .maybeSingle();
+  return (data as Profile) ?? null;
 }
 
 async function fetchPrefs(uid: string): Promise<Prefs> {
-  const { data } = await supabase.from('user_preferences').select('*').eq('user_id', uid).single();
+  const { data } = await supabase
+    .from('user_preferences')
+    .select('autoplay,video_quality,data_saver,notif_releases,notif_social,notif_festivals,private_profile,public_watchlist')
+    .eq('user_id', uid)
+    .maybeSingle();
   return data ? { ...PREFS_DEFAULT, ...data } as Prefs : PREFS_DEFAULT;
 }
 
 async function upsertPref<K extends keyof Prefs>(uid: string, key: K, value: Prefs[K]) {
-  await supabase.from('user_preferences').upsert({ user_id:uid, [key]:value }, { onConflict:'user_id' });
+  if (!uid) throw new Error('UID manquant');
+
+  const { error } = await supabase
+    .from('user_preferences')
+    .upsert({ user_id: uid, [key]: value }, { onConflict: 'user_id' });
+
+  if (error) throw error;
 }
 
 async function uploadAvatar(uri: string, uid: string): Promise<string|null> {
@@ -155,23 +203,21 @@ async function uploadAvatar(uri: string, uid: string): Promise<string|null> {
 // PRIMITIVES UI
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Section title avec lignes
-const SectionTitle = memo(function SectionTitle({ label }: { label:string }) {
+const SectionTitle = memo(function SectionTitle({ label, icon }: { label:string; icon?: keyof typeof Ionicons.glyphMap }) {
   return (
     <View style={sct.row}>
-      <View style={sct.line}/>
+      {icon && <Ionicons name={icon} size={11} color={T.textTert} style={{ marginRight:2 }}/>}
       <Text style={sct.txt}>{label.toUpperCase()}</Text>
       <View style={sct.line}/>
     </View>
   );
 });
 const sct = StyleSheet.create({
-  row: { flexDirection:'row', alignItems:'center', gap:10, marginHorizontal:EDGE, marginTop:28, marginBottom:10 },
+  row: { flexDirection:'row', alignItems:'center', gap:8, marginHorizontal:EDGE, marginTop:28, marginBottom:10 },
   line:{ flex:1, height:StyleSheet.hairlineWidth, backgroundColor:T.border },
   txt: { color:T.textTert, fontSize:9, fontWeight:'700', letterSpacing:2 },
 });
 
-// Group card navyMid
 const Group = memo(function Group({ children }: { children:React.ReactNode }) {
   return (
     <View style={grp.outer}>
@@ -188,7 +234,6 @@ const grp = StyleSheet.create({
 
 const RowDivider = () => <View style={{ height:StyleSheet.hairlineWidth, backgroundColor:T.border, marginLeft:54 }}/>;
 
-// Ligne générique
 function Row({
   icon, title, subtitle, right, onPress, danger=false, last=false,
 }: {
@@ -220,7 +265,7 @@ const rw = StyleSheet.create({
   sub:     { color:T.textTert, fontSize:11 },
 });
 
-// Toggle row
+// ★ Toggle row — cercle blanc garanti, hex plein (jamais de vert système)
 function ToggleRow({
   icon, title, subtitle, value, onChange, saving=false, last=false,
 }: {
@@ -231,9 +276,13 @@ function ToggleRow({
     <Row icon={icon} title={title} subtitle={subtitle} last={last}
       right={saving
         ? <ActivityIndicator size="small" color={T.textSec}/>
-        : <Switch value={value} onValueChange={onChange}
-            trackColor={{ false:T.border, true:'rgba(255,255,255,0.35)' }}
-            thumbColor="#f4f3f4"
+        : <Switch
+            value={value}
+            onValueChange={onChange}
+            trackColor={{ false: SWITCH_TRACK_OFF, true: SWITCH_TRACK_ON }}
+            thumbColor={SWITCH_THUMB}
+            ios_backgroundColor={SWITCH_TRACK_OFF}
+            style={Platform.OS === 'android' ? { transform:[{ scaleX:0.95 }, { scaleY:0.95 }] } : undefined}
           />
       }
     />
@@ -241,9 +290,79 @@ function ToggleRow({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PROFILE CARD — expo-image, avatar upload web-safe
+// ★ SÉLECTEUR QUALITÉ VIDÉO — enum texte, pas un bool
 // ─────────────────────────────────────────────────────────────────────────────
-const PLAN_LBL: Record<string,string> = { free:'Gratuit', pro:'Universe Pro', cinephile:'Cinéphile Ultimate' };
+const QualityPickerModal = memo(function QualityPickerModal({
+  visible, value, onSelect, onClose,
+}: { visible:boolean; value:VideoQuality; onSelect:(v:VideoQuality)=>void; onClose:()=>void }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={qp.overlay}>
+        <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={onClose}/>
+        <View style={qp.card}>
+          <Text style={qp.title}>Qualité vidéo</Text>
+          {QUALITY_OPTIONS.map((o, i) => {
+            const on = o.value === value;
+            return (
+              <TouchableOpacity
+                key={o.value}
+                style={[qp.item, i < QUALITY_OPTIONS.length-1 && qp.itemBorder]}
+                onPress={() => { onSelect(o.value); onClose(); }}
+                activeOpacity={0.75}
+              >
+                <View style={[qp.itemIcon, on && qp.itemIconOn]}>
+                  <Ionicons name={o.icon} size={15} color={on ? T.gold : T.textSec}/>
+                </View>
+                <View style={{ flex:1 }}>
+                  <Text style={[qp.itemLabel, on && qp.itemLabelOn]}>{o.label}</Text>
+                  <Text style={qp.itemHint}>{o.hint}</Text>
+                </View>
+                {on && <Ionicons name="checkmark-circle" size={18} color={T.gold}/>}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    </Modal>
+  );
+});
+const qp = StyleSheet.create({
+  overlay:    { flex:1, alignItems:'center', justifyContent:'center', backgroundColor:'rgba(3,5,12,0.72)', padding:24 },
+  card:       { width:'100%', maxWidth:340, backgroundColor:T.surfHi, borderRadius:18, padding:8, borderWidth:StyleSheet.hairlineWidth, borderColor:T.borderHi },
+  title:      { color:T.textTert, fontSize:10, fontWeight:'800', letterSpacing:1.5, textTransform:'uppercase', paddingHorizontal:12, paddingTop:10, paddingBottom:6 },
+  item:       { flexDirection:'row', alignItems:'center', gap:11, paddingHorizontal:12, paddingVertical:12 },
+  itemBorder: { borderBottomWidth:StyleSheet.hairlineWidth, borderBottomColor:T.border },
+  itemIcon:   { width:30, height:30, borderRadius:9, alignItems:'center', justifyContent:'center', backgroundColor:T.surf, borderWidth:StyleSheet.hairlineWidth, borderColor:T.border },
+  itemIconOn: { backgroundColor:'rgba(245,200,66,0.14)', borderColor:'rgba(245,200,66,0.35)' },
+  itemLabel:  { color:T.textSec, fontSize:14, fontWeight:'600' },
+  itemLabelOn:{ color:T.text, fontWeight:'800' },
+  itemHint:   { color:T.textTert, fontSize:11, marginTop:1 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ BANDEAU DE SYNCHRO — feedback discret, identité visuelle Universe
+// ─────────────────────────────────────────────────────────────────────────────
+const SyncBanner = memo(function SyncBanner({ visible }: { visible: boolean }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: visible ? 1 : 0, duration: 220, useNativeDriver: true }).start();
+  }, [visible]);
+  const ty = anim.interpolate({ inputRange:[0,1], outputRange:[-14,0] });
+  return (
+    <Animated.View pointerEvents="none" style={[sb.wrap, { opacity: anim, transform:[{ translateY: ty }] }]}>
+      <Ionicons name="checkmark-circle" size={13} color={T.gold}/>
+      <Text style={sb.txt}>Préférences synchronisées</Text>
+    </Animated.View>
+  );
+});
+const sb = StyleSheet.create({
+  wrap: { position:'absolute', top:6, alignSelf:'center', flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:12, paddingVertical:6, borderRadius:20, backgroundColor:'rgba(245,200,66,0.14)', borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(245,200,66,0.32)', zIndex:200 },
+  txt:  { color:T.gold, fontSize:10.5, fontWeight:'700' },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE CARD
+// ─────────────────────────────────────────────────────────────────────────────
 const ROLE_LBL: Record<string,string> = {
   critic:'Critique', creator:'Créateur·rice', director:'Réalisateur·rice',
   actor:'Acteur·rice', dp:'Dir. photo', editor:'Monteur·euse',
@@ -277,7 +396,6 @@ const ProfileCard = memo(function ProfileCard({
   }, [name, bio, profile.id, onUpdate, haptic]);
 
   const pickAvatar = useCallback(async () => {
-    // Web fallback via input file
     if (Platform.OS === 'web' || !ImagePicker) {
       if (typeof document === 'undefined') return;
       const input = document.createElement('input');
@@ -309,7 +427,6 @@ const ProfileCard = memo(function ProfileCard({
   return (
     <View style={pcd.wrap}>
       <View style={pcd.header}>
-        {/* Avatar — expo-image */}
         <TouchableOpacity onPress={pickAvatar} style={pcd.avatarWrap} activeOpacity={0.80}>
           {avatarUri ? (
             <Image source={{ uri:avatarUri }} style={pcd.avatar} contentFit="cover"/>
@@ -327,38 +444,15 @@ const ProfileCard = memo(function ProfileCard({
         <View style={pcd.identity}>
           <Text style={pcd.name} numberOfLines={1}>{profile.display_name || 'Cinéphile'}</Text>
           <Text style={pcd.username}>@{profile.username}</Text>
-          <Text style={pcd.email} numberOfLines={1}>{profile.email}</Text>
           <View style={pcd.pills}>
-            <View style={pcd.pill}><Text style={pcd.pillTxt}>{PLAN_LBL[profile.plan??'free']}</Text></View>
-            {profile.is_pro && <View style={pcd.pill}><Text style={pcd.pillTxt}>PRO ✓</Text></View>}
+            {profile.is_pro && <View style={pcd.pill}><Ionicons name="checkmark-circle" size={9} color={T.gold}/><Text style={[pcd.pillTxt,{color:T.gold}]}>PRO</Text></View>}
             <View style={pcd.pill}><Text style={pcd.pillTxt}>{ROLE_LBL[profile.role] ?? 'Cinéphile'}</Text></View>
           </View>
         </View>
       </View>
 
-      {editing ? (
-        <View style={pcd.editBlock}>
-          <TextInput style={pcd.input} value={name} onChangeText={setName} placeholder="Nom affiché" placeholderTextColor={T.textTert} maxLength={40}/>
-          <TextInput style={[pcd.input, pcd.bioInput]} value={bio} onChangeText={setBio} placeholder="Une courte bio…" placeholderTextColor={T.textTert} multiline maxLength={120}/>
-          <View style={pcd.editBtns}>
-            <TouchableOpacity style={pcd.cancelBtn} onPress={() => { setName(profile.display_name); setBio(profile.bio??''); setEditing(false); }}>
-              <Text style={pcd.cancelTxt}>Annuler</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={pcd.saveBtn} onPress={save} disabled={saving}>
-              {saving ? <ActivityIndicator size="small" color={T.text}/> : <Text style={pcd.saveTxt}>Enregistrer</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : (
-        <View style={pcd.bioRow}>
-          {profile.bio ? <Text style={pcd.bio} numberOfLines={2}>{profile.bio}</Text> : null}
-          <TouchableOpacity style={pcd.editChip} onPress={() => setEditing(true)}>
-            <Ionicons name="create-outline" size={12} color={T.textSec}/>
-            <Text style={pcd.editChipTxt}>Modifier</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </View>
+      
+      </View>
   );
 });
 
@@ -373,9 +467,8 @@ const pcd = StyleSheet.create({
   identity:   { flex:1, gap:3 },
   name:       { color:T.text, fontSize:16, fontWeight:'800', letterSpacing:-0.3 },
   username:   { color:T.textSec, fontSize:12, fontWeight:'600' },
-  email:      { color:T.textTert, fontSize:11 },
   pills:      { flexDirection:'row', flexWrap:'wrap', gap:5, marginTop:4 },
-  pill:       { paddingHorizontal:8, paddingVertical:3, borderRadius:8, borderWidth:StyleSheet.hairlineWidth, borderColor:T.border, backgroundColor:T.surfHi },
+  pill:       { flexDirection:'row', alignItems:'center', gap:4, paddingHorizontal:8, paddingVertical:3, borderRadius:8, borderWidth:StyleSheet.hairlineWidth, borderColor:T.border, backgroundColor:T.surfHi },
   pillTxt:    { color:T.textTert, fontSize:10, fontWeight:'600' },
   bioRow:     { flexDirection:'row', alignItems:'center', gap:10 },
   bio:        { flex:1, color:T.textSec, fontSize:12, lineHeight:17 },
@@ -398,29 +491,34 @@ export default function SettingsScreen() {
   const router  = useRouter();
   const scrollY = useRef(new Animated.Value(0)).current;
 
+  const [uid,     setUid]     = useState<string>('');   // ★ getDeviceId() — identité unique de l'app
   const [profile, setProfile] = useState<Profile|null>(null);
   const [prefs,   setPrefs]   = useState<Prefs>(PREFS_DEFAULT);
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState<Partial<Record<keyof Prefs,boolean>>>({});
+  const [qualityOpen, setQualityOpen] = useState(false);
+  const [showSync,    setShowSync]    = useState(false);
+  const syncTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const stickyOp = scrollY.interpolate({ inputRange:[0,80], outputRange:[0,1], extrapolate:'clamp' });
 
-  // ★ Chargement instantané : UI affichée immédiatement, profil async
+  // ★ Chargement instantané : UI affichée immédiatement, data async.
+  // Identité = getDeviceId(), comme partout ailleurs dans Universe —
+  // plus aucune dépendance à supabase.auth.getUser().
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const { data:{ user } } = await supabase.auth.getUser();
-      if (!user || cancelled) { setLoading(false); return; }
-      const [prof, pref] = await Promise.all([fetchProfile(user.id), fetchPrefs(user.id)]);
+      const deviceId = await getDeviceId();
+      if (cancelled) return;
+      setUid(deviceId);
+      const [prof, pref] = await Promise.all([fetchProfile(deviceId), fetchPrefs(deviceId)]);
       if (cancelled) return;
       if (prof) setProfile(prof);
       setPrefs(pref);
       setLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(syncTimer.current); };
   }, []);
-
-  const userId = profile?.id ?? '';
 
   const haptic = useCallback((type:'light'|'heavy') => {
     if (!Haptics) return;
@@ -428,48 +526,63 @@ export default function SettingsScreen() {
     else                Haptics.impactAsync?.(Haptics.ImpactFeedbackStyle?.Light);
   }, []);
 
+  const flashSync = useCallback(() => {
+    clearTimeout(syncTimer.current);
+    setShowSync(true);
+    syncTimer.current = setTimeout(() => setShowSync(false), 1600);
+  }, []);
+
   const setPref = useCallback(async <K extends keyof Prefs>(key: K, value: Prefs[K]) => {
+    if (!uid) {
+      Alert.alert('Erreur', 'Identifiant utilisateur introuvable — réessayez dans un instant.');
+      return;
+    }
     haptic('light');
-    setPrefs(p => ({ ...p, [key]:value }));
-    setSaving(s => ({ ...s, [key]:true }));
-    await upsertPref(userId, key, value);
-    setSaving(s => ({ ...s, [key]:false }));
-  }, [userId, haptic]);
+    const previous = prefs[key];
+    setPrefs(p => ({ ...p, [key]: value }));
+    setSaving(s => ({ ...s, [key]: true }));
+    try {
+      await upsertPref(uid, key, value);
+      flashSync();
+    } catch (e: any) {
+      console.log('upsertPref error =>', e);
+      setPrefs(p => ({ ...p, [key]: previous }));
+      Alert.alert('Erreur', e?.message ?? 'Impossible de sauvegarder cette préférence.');
+    }finally {
+      setSaving(s => ({ ...s, [key]: false }));
+    }
+  }, [uid, haptic, prefs, flashSync]);
 
-  const handlePasswordReset = useCallback(() => {
-    Alert.alert('Réinitialiser le mot de passe', `Un lien sera envoyé à ${profile?.email??'—'}`, [
-      { text:'Annuler', style:'cancel' },
-      { text:'Envoyer', onPress:async () => {
-        const { error } = await supabase.auth.resetPasswordForEmail(profile?.email??'');
-        Alert.alert(error?'Erreur':'Email envoyé', error?.message ?? `Lien envoyé à ${profile?.email}`);
-      }},
-    ]);
-  }, [profile?.email]);
-
-  const handleLogout = useCallback(() => {
-    Alert.alert('Déconnexion', 'Quitter votre session Universe ?', [
-      { text:'Annuler', style:'cancel' },
-      { text:'Déconnecter', style:'destructive', onPress:async () => {
-        haptic('heavy');
-        await supabase.auth.signOut();
-        router.replace('/(auth)/welcome');
-      }},
-    ]);
-  }, [router, haptic]);
+  const handleReset = useCallback(() => {
+    Alert.alert(
+      'Réinitialiser mes préférences',
+      'Universe n\'utilise pas de compte email/mot de passe classique — votre identité est liée à cet appareil. Cette action remet vos préférences à leurs valeurs par défaut.',
+      [
+        { text:'Annuler', style:'cancel' },
+        { text:'Réinitialiser', style:'destructive', onPress: async () => {
+          if (!uid) return;
+          haptic('heavy');
+          setPrefs(PREFS_DEFAULT);
+          await supabase.from('user_preferences').upsert({ user_id: uid, ...PREFS_DEFAULT }, { onConflict:'user_id' });
+          flashSync();
+        }},
+      ],
+    );
+  }, [uid, haptic, flashSync]);
 
   const handleDelete = useCallback(() => {
-    Alert.alert('Supprimer mon compte', 'Action irréversible. Profil, critiques et watchlist seront effacés.', [
+    Alert.alert('Supprimer mon compte', 'Action irréversible. Profil, préférences, critiques et watchlist seront effacés.', [
       { text:'Annuler', style:'cancel' },
       { text:'Supprimer', style:'destructive', onPress:async () => {
+        if (!uid) return;
         await Promise.all([
-          supabase.from('user_preferences').delete().eq('user_id', userId),
-          supabase.from('profiles').delete().eq('id', userId),
+          supabase.from('user_preferences').delete().eq('user_id', uid),
+          supabase.from('profiles').delete().eq('id', uid),
         ]);
-        await supabase.auth.signOut();
-        router.replace('/(auth)/welcome');
+        router.replace('/(auth)/welcome' as any);
       }},
     ]);
-  }, [userId, router]);
+  }, [uid, router]);
 
   const handleClearCache = useCallback(async () => {
     if (FileSystem) {
@@ -479,7 +592,8 @@ export default function SettingsScreen() {
     Alert.alert('Cache vidé', 'Les données temporaires ont été supprimées.');
   }, []);
 
-  const V = saving; // alias court pour les saving states
+  const V = saving;
+  const currentQuality = QUALITY_OPTIONS.find(o => o.value === prefs.video_quality) ?? QUALITY_OPTIONS[0];
 
   if (loading) return (
     <View style={s.root}>
@@ -487,7 +601,7 @@ export default function SettingsScreen() {
       <GalaxyBackground/>
       <SafeAreaView edges={['top']} style={{ flex:1, alignItems:'center', justifyContent:'center' }}>
         <ActivityIndicator color={T.textSec} size="large"/>
-        <Text style={{ color:T.textTert, fontSize:12, marginTop:12 }}>Chargement…</Text>
+        <Text style={{ color:T.textTert, fontSize:12, marginTop:12 }}>Chargement de votre univers…</Text>
       </SafeAreaView>
     </View>
   );
@@ -497,7 +611,8 @@ export default function SettingsScreen() {
       <StatusBar style="light"/>
       <GalaxyBackground/>
 
-      {/* Sticky header (navyMid + fade) */}
+      <SyncBanner visible={showSync}/>
+
       <Animated.View pointerEvents="none" style={[s.stickyBar, { opacity:stickyOp }]}>
         <View style={s.stickyBg}/>
         <SafeAreaView edges={['top']} style={s.stickyInner}>
@@ -512,7 +627,6 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingBottom:110 }}
       >
         <SafeAreaView edges={['top']}>
-          {/* Top nav */}
           <View style={s.topNav}>
             <TouchableOpacity style={s.backBtn} onPress={() => router.back()} activeOpacity={0.70}>
               <Ionicons name="chevron-back" size={19} color={T.textSec}/>
@@ -522,7 +636,6 @@ export default function SettingsScreen() {
           </View>
         </SafeAreaView>
 
-        {/* Profil card */}
         {profile && (
           <ProfileCard
             profile={profile}
@@ -531,91 +644,80 @@ export default function SettingsScreen() {
         )}
 
         {/* ── LECTURE ── */}
-        <SectionTitle label="Lecture"/>
+        <SectionTitle label="Lecture" icon="play-circle-outline"/>
         <Group>
-          <ToggleRow icon="play-circle-outline"  title="Lecture automatique"    subtitle="Lance la vidéo sans appuyer sur Play"    value={prefs.autoplay}        onChange={v=>setPref('autoplay',v)}        saving={!!V.autoplay}/>
-          <ToggleRow icon="volume-mute-outline"   title="Lecture silencieuse"    subtitle="Muet par défaut au démarrage"            value={!prefs.autoplay_sound} onChange={v=>setPref('autoplay_sound',!v)} saving={!!V.autoplay_sound}/>
-          <ToggleRow icon="wifi-outline"          title="HD sur Wi-Fi"           subtitle="Qualité maximale sur Wi-Fi uniquement"   value={prefs.hd_on_wifi}      onChange={v=>setPref('hd_on_wifi',v)}      saving={!!V.hd_on_wifi}/>
-          <ToggleRow icon="cellular-outline"      title="Économiseur de données" subtitle="Réduit la qualité sur réseau mobile"    value={prefs.data_saver}      onChange={v=>setPref('data_saver',v)}      saving={!!V.data_saver}     last/>
+          <ToggleRow
+            icon="play-circle-outline" title="Lecture automatique"
+            subtitle="Lance la vidéo sans appuyer sur Play"
+            value={prefs.autoplay} onChange={v=>setPref('autoplay',v)} saving={!!V.autoplay}
+          />
+          <Row
+            icon="film-outline" title="Qualité vidéo" subtitle={currentQuality.label}
+            onPress={() => setQualityOpen(true)}
+          />
+          <ToggleRow
+            icon="cellular-outline" title="Économiseur de données"
+            subtitle="Réduit la qualité sur réseau mobile"
+            value={prefs.data_saver} onChange={v=>setPref('data_saver',v)} saving={!!V.data_saver} last
+          />
         </Group>
 
         {/* ── NOTIFICATIONS ── */}
-        <SectionTitle label="Notifications"/>
+        <SectionTitle label="Notifications" icon="notifications-outline"/>
         <Group>
-          <ToggleRow icon="film-outline"            title="Nouvelles sorties"    subtitle="Films & séries indépendants ajoutés"       value={prefs.notif_releases}    onChange={v=>setPref('notif_releases',v)}    saving={!!V.notif_releases}/>
-          <ToggleRow icon="people-outline"          title="Activité sociale"     subtitle="Likes & commentaires sur vos critiques"    value={prefs.notif_social}      onChange={v=>setPref('notif_social',v)}      saving={!!V.notif_social}/>
-          <ToggleRow icon="link-outline"            title="Connexions pro"        subtitle="Demandes et réponses de connexion"         value={prefs.notif_connections} onChange={v=>setPref('notif_connections',v)} saving={!!V.notif_connections}/>
-          <ToggleRow icon="checkmark-circle-outline"title="Modération"           subtitle="Statut de vos reels soumis"               value={prefs.notif_moderation}  onChange={v=>setPref('notif_moderation',v)}  saving={!!V.notif_moderation}/>
-          <ToggleRow icon="calendar-outline"        title="Festivals"            subtitle="Cannes, Sundance et avant-premières"       value={prefs.notif_festivals}   onChange={v=>setPref('notif_festivals',v)}   saving={!!V.notif_festivals} last/>
+          <ToggleRow
+            icon="film-outline" title="Nouvelles sorties"
+            subtitle="Films & séries indépendants ajoutés"
+            value={prefs.notif_releases} onChange={v=>setPref('notif_releases',v)} saving={!!V.notif_releases}
+          />
+          <ToggleRow
+            icon="people-outline" title="Activité sociale"
+            subtitle="Likes & commentaires sur vos critiques"
+            value={prefs.notif_social} onChange={v=>setPref('notif_social',v)} saving={!!V.notif_social}
+          />
+          <ToggleRow
+            icon="calendar-outline" title="Festivals"
+            subtitle="Cannes, Sundance et avant-premières"
+            value={prefs.notif_festivals} onChange={v=>setPref('notif_festivals',v)} saving={!!V.notif_festivals} last
+          />
         </Group>
 
         {/* ── CONFIDENTIALITÉ ── */}
-        <SectionTitle label="Confidentialité"/>
+        <SectionTitle label="Confidentialité" icon="shield-outline"/>
         <Group>
-          <ToggleRow icon="eye-off-outline"    title="Profil privé"           subtitle="Seuls vos abonnés voient vos critiques"  value={prefs.private_profile}  onChange={v=>setPref('private_profile',v)}  saving={!!V.private_profile}/>
-          <ToggleRow icon="bookmark-outline"   title="Watchlist publique"     subtitle="Visible par votre communauté"            value={prefs.public_watchlist} onChange={v=>setPref('public_watchlist',v)} saving={!!V.public_watchlist}/>
-          <ToggleRow icon="eye-outline"        title="Historique visible"     subtitle="Vos films vus affichés sur le profil"    value={prefs.show_seen_films}  onChange={v=>setPref('show_seen_films',v)}  saving={!!V.show_seen_films}/>
-          <ToggleRow icon="bar-chart-outline"  title="Analytics"              subtitle="Aide à améliorer Universe"               value={prefs.analytics}        onChange={v=>setPref('analytics',v)}        saving={!!V.analytics}/>
-          <ToggleRow icon="sparkles-outline"   title="Personnalisation"       subtitle="Recommandations selon vos goûts"         value={prefs.personalization}  onChange={v=>setPref('personalization',v)}  saving={!!V.personalization}/>
-          <ToggleRow icon="ribbon-outline"     title="Niveau sur le profil"   subtitle="Affiche votre niveau et barre XP publiquement" value={prefs.show_level_on_profile} onChange={v=>setPref('show_level_on_profile',v)} saving={!!V.show_level_on_profile} last/>
+          <ToggleRow
+            icon="eye-off-outline" title="Profil privé"
+            subtitle="Seuls vos abonnés voient vos critiques"
+            value={prefs.private_profile} onChange={v=>setPref('private_profile',v)} saving={!!V.private_profile}
+          />
+          <ToggleRow
+            icon="bookmark-outline" title="Watchlist publique"
+            subtitle="Visible par votre communauté Universe"
+            value={prefs.public_watchlist} onChange={v=>setPref('public_watchlist',v)} saving={!!V.public_watchlist} last
+          />
         </Group>
 
-        {/* ── ACCESSIBILITÉ ── */}
-        <SectionTitle label="Accessibilité"/>
-        <Group>
-          <ToggleRow icon="pulse-outline"   title="Réduire les animations" subtitle="Désactive les transitions animées"  value={prefs.reduced_motion} onChange={v=>setPref('reduced_motion',v)} saving={!!V.reduced_motion}/>
-          <ToggleRow icon="chatbox-outline" title="Sous-titres"            subtitle="Activés lors de la lecture vidéo"  value={prefs.subtitles}      onChange={v=>setPref('subtitles',v)}      saving={!!V.subtitles}      last/>
-        </Group>
-
-        {/* ── STOCKAGE ── */}
-        <SectionTitle label="Stockage"/>
-        <Group>
-          <Row icon="trash-outline"    title="Vider le cache"    subtitle="Libère l'espace disque temporaire"      onPress={handleClearCache}/>
-          <Row icon="download-outline" title="Téléchargements"   subtitle="Gérer les vidéos sauvegardées"          onPress={() => router.push('/downloads' as any)} last/>
-        </Group>
-
-        {/* ── COMPTE ── */}
-        <SectionTitle label="Compte"/>
-        <Group>
-          <Row icon="person-outline"       title="Modifier le profil complet" subtitle="Bio, spécialités, réseaux, festivals"  onPress={() => router.push('/profile/edit' as any)}/>
-          <Row icon="lock-closed-outline"  title="Mot de passe"               subtitle="Envoyer un lien de réinitialisation"   onPress={handlePasswordReset}/>
-          <Row icon="card-outline"         title="Abonnement"                 subtitle={PLAN_LBL[profile?.plan??'free']}       onPress={() => router.push('/subscription' as any)}/>
-          <Row icon="download-outline"     title="Exporter mes données"       subtitle="Archive RGPD sous 24h par email"       onPress={() => Alert.alert('Demande envoyée','Vous recevrez un email dans les 24h.')} last/>
-        </Group>
-
-        {/* ── AIDE ── */}
-        <SectionTitle label="Aide"/>
-        <Group>
-          <Row icon="help-circle-outline" title="FAQ"                  subtitle="Questions fréquentes"             onPress={() => router.push('/faq' as any)}/>
-          <Row icon="bug-outline"         title="Signaler un problème" subtitle="Envoyer un rapport de bug"        onPress={() => router.push('/report' as any)}/>
-          <Row icon="mail-outline"        title="Nous contacter"       subtitle="support@universe.app"            onPress={() => {
-            if (typeof window !== 'undefined') window.open('mailto:support@universe.app','_blank');
-          }}/>
-          <Row icon="star-outline"        title="Évaluer l'app"        subtitle="Donnez-nous votre avis"          onPress={() => {}} last/>
-        </Group>
-
-        {/* ── LÉGAL ── */}
-        <SectionTitle label="Légal"/>
-        <Group>
-          <Row icon="document-text-outline" title="Conditions d'utilisation" onPress={() => router.push('/terms'   as any)}/>
-          <Row icon="shield-outline"        title="Politique de confidentialité" onPress={() => router.push('/privacy' as any)}/>
-          <Row icon="camera-outline"        title="Politique anti-capture" subtitle="Protection des créations cinéma" onPress={() => router.push('/screenshot-policy' as any)} last/>
-        </Group>
-
+        
         {/* ── SESSION ── */}
-        <SectionTitle label="Session"/>
+        <SectionTitle label="Session" icon="reload-outline"/>
         <Group>
-          <Row icon="log-out-outline" title="Se déconnecter"              onPress={handleLogout} danger/>
+          <Row icon="refresh-outline" title="Réinitialiser mes préférences" subtitle="Retour aux réglages par défaut" onPress={handleReset}/>
           <Row icon="trash-outline"   title="Supprimer mon compte" subtitle="Action irréversible" onPress={handleDelete} danger last/>
         </Group>
 
-        {/* Footer */}
         <View style={s.footer}>
           <View style={s.footerLine}/>
           <Text style={s.footerTxt}>UNIVERSE · CINÉMA INDÉPENDANT</Text>
           <Text style={s.footerVersion}>v2.0 · {new Date().getFullYear()}</Text>
         </View>
       </Animated.ScrollView>
+
+      <QualityPickerModal
+        visible={qualityOpen}
+        value={prefs.video_quality}
+        onSelect={v => setPref('video_quality', v)}
+        onClose={() => setQualityOpen(false)}
+      />
     </View>
   );
 }

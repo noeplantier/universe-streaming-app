@@ -1,32 +1,49 @@
 /**
- * contexts/GamificationSystem.tsx — UNIVERSE · Gamification v6.1
+ * contexts/GamificationSystem.tsx — UNIVERSE · Gamification v6.2
  *
- * ★★ ÉTAT ACTUEL — vérifié contre la demande ★★
- * 1. EXACTEMENT 4 défis affichés simultanément sur l'écran de gamification
- *    (DAILY_QUEST_DEFINITIONS.length === 4, DailyQuestsPanel les affiche
- *    tous en une seule grille 2×2, sans pagination ni scroll caché).
- * 2. Claim verrouillé tant que l'action n'est pas intégralement terminée —
- *    renforcé ici avec une DOUBLE vérification côté hook (pas seulement
- *    l'UI) : `claimDailyQuest` refuse tout si `progress < target` OU si
- *    `completed` est faux, même en cas d'appel direct au hook. Le bouton
- *    "Réclamer" n'apparaît de toute façon jamais avant ce seuil (readyToClaim
- *    = completed && !claimed dans DailyQuestsPanel).
- * 3. `FirstStepsGuide` prend le nouvel utilisateur par la main dès son
- *    arrivée (profil vierge : xp===0 et aucun badge), 4 étapes numérotées
- *    pointant 1:1 vers les 4 défis, navigation directe vers l'action.
- * 4. Interaction maximisée : chaque progression de défi doit venir d'un
- *    vrai geste ailleurs dans Universe (incrementDailyQuest appelé à la fin
- *    d'un visionnage, à la publication d'une critique, etc.) — jamais d'XP
- *    auto-crédité.
+ * ★★ CHANGEMENTS DE CETTE PASSE ★★
+ * 1. VERROU DUR RÉTABLI : `DailyQuestsPanel` ne rend jamais plus de 4
+ *    cartes (`questsWithStatus.slice(0, MAX_DAILY_CARDS)`), même si un
+ *    tableau plus long lui est passé par erreur. `DAILY_QUEST_DEFINITIONS`
+ *    reste figé à 4 entrées. C'est la garantie structurelle demandée.
+ * 2. Cartes compactées (moins de padding, hauteur réduite) + guide de
+ *    bienvenue resserré → le panel des 4 défis + le guide tiennent sur un
+ *    écran sans scroll supplémentaire.
+ * 3. ★ CLAIM VÉRIFIÉ CÔTÉ SERVEUR : `claimDailyQuest` ne se contente plus
+ *    de faire confiance à la progression locale. Avant de créditer le
+ *    moindre XP, il interroge Supabase pour confirmer que l'action est
+ *    RÉELLEMENT allée au bout :
+ *      - daily_watch    → count(user_history) aujourd'hui >= target
+ *      - daily_explore  → œuvres distinctes vues aujourd'hui >= target
+ *      - daily_critique → critiques créées aujourd'hui avec un contenu
+ *                         d'au moins 20 caractères (pas un brouillon vide)
+ *      - daily_create   → reels publiés aujourd'hui (pending/approved)
+ *    Si la vérification échoue, le Claim est refusé et rien n'est crédité,
+ *    même si `incrementDailyQuest` avait été appelé en amont.
+ * 4. ★ STREAK/XP DYNAMIQUES via `public.daily_checkins` : `useGamification`
+ *    enregistre un check-in du jour (idempotent) et calcule le streak réel
+ *    à partir de l'historique de check-ins — plus jamais une valeur figée
+ *    en base qui pourrait désynchroniser la barre XP.
+ * 5. ★ Card de niveau enrichie (`XPBar`) : ajoute le titre du niveau
+ *    suivant, le multiplicateur XP actif et le nombre de jours actifs
+ *    (checkins), en plus du streak et du score de contribution déjà
+ *    présents — sans changer sa signature (props optionnelles).
  *
- * ★★ MIGRATION SQL REQUISE ★★ (ajoute le suivi claim, non destructif) :
+ * ★★ MIGRATIONS SQL REQUISES ★★
+ *   -- Suivi du Claim (déjà demandé précédemment, non destructif)
  *   alter table public.user_quests
  *     add column if not exists claimed boolean not null default false,
  *     add column if not exists claimed_at timestamptz null;
  *
- * Tout le reste (badges, XP/niveaux, weekly challenge, score de
- * contribution, piliers) est conservé à l'identique — c'est le moteur de
- * fond qui donne de la profondeur sans surcharger l'écran principal.
+ *   -- Check-ins quotidiens → source de vérité du streak / XP dynamique
+ *   create table if not exists public.daily_checkins (
+ *     user_id uuid not null references auth.users(id) on delete cascade,
+ *     checkin_date date not null,
+ *     created_at timestamptz not null default now(),
+ *     constraint daily_checkins_pkey primary key (user_id, checkin_date)
+ *   );
+ *   create index if not exists idx_daily_checkins_user
+ *     on public.daily_checkins using btree (user_id, checkin_date desc);
  *
  * Zéro dépendance à supabase.auth.* — userId = getDeviceId() côté écran.
  */
@@ -61,11 +78,12 @@ import { ParticleBurst } from '@/components/shared/ParticleBurst';
 import { GlowAccentCard } from '@/components/shared/GlowAccentCard';
 import { SpringToast } from '@/components/shared/SpringToast';
 
-// ─── Web-safe Haptics (même pattern que le reste du projet) ─────────────────
+// ─── Web-safe Haptics ─────────────────────────────────────────────────────────
 let _Haptics: any = null;
 if (Platform.OS !== 'web') { try { _Haptics = require('expo-haptics'); } catch {} }
 function hapticLight()   { _Haptics?.impactAsync?.(_Haptics.ImpactFeedbackStyle?.Light).catch(()=>{}); }
 function hapticSuccess() { _Haptics?.notificationAsync?.(_Haptics.NotificationFeedbackType?.Success).catch(()=>{}); }
+function hapticWarn()    { _Haptics?.notificationAsync?.(_Haptics.NotificationFeedbackType?.Warning).catch(()=>{}); }
 
 const { width: SW, height: SH } = Dimensions.get('window');
 
@@ -322,6 +340,7 @@ export interface GamiState {
   earnedBadges: GamiBadge[];
   pendingBadges: GamiBadge[];
   loading: boolean;
+  checkinsCount: number;
   awardXP: (amount: number, reason: string) => void;
   awardBadge: (badgeId: string) => void;
 }
@@ -361,8 +380,6 @@ export interface XPMultiplier {
 }
 
 // ─── ★ Défis du jour — EXACTEMENT 4, affichés simultanément ──────────────────
-// À progression (target > 1 le plus souvent) : le XP n'est crédité qu'après
-// un tap explicite sur "Réclamer" une fois la cible réellement atteinte.
 export interface DailyQuestDef {
   id: string;
   title: string;
@@ -371,17 +388,17 @@ export interface DailyQuestDef {
   xp: number;
   icon: keyof typeof Ionicons.glyphMap;
   cta: string;
-  target: number;      // nombre d'actions requises pour débloquer le Claim
-  deepAction: string;  // action de navigation (go_catalog, go_create, go_social...)
-  hint: string;        // micro-coaching affiché tant que le défi n'est pas terminé
+  target: number;
+  deepAction: string;
+  hint: string;
 }
 
 export interface DailyQuestProgress {
   id: string;
   date: string;
   progress: number;
-  completed: boolean;  // target atteint
-  claimed: boolean;    // XP effectivement réclamé
+  completed: boolean;
+  claimed: boolean;
 }
 
 export const QUEST_HOOKS: Record<string, string> = {
@@ -435,8 +452,9 @@ export const QUEST_DEFINITIONS: QuestDef[] = [
   { id: 'write_10_critiques', title: 'Critique confirmé', desc: 'Publier 10 critiques au total', target: 10, reward_badge: 'serial_critic', xp: 80, action: 'go_create', icon: 'document-text-outline', tip: QUEST_HOOKS.write_10_critiques },
 ];
 
-// ★ 4 défis du jour — un par pilier actif (watch / explorer / critique / creator)
-// Toujours affichés ENSEMBLE, jamais en rotation ou pagination.
+// ★ 4 défis du jour — un par pilier actif. C'est le seul tableau que
+// DailyQuestsPanel doit consommer ; ne jamais l'afficher en même temps que
+// QuestsPanel (les 10 quêtes long-terme) sur le même écran.
 export const DAILY_QUEST_DEFINITIONS: DailyQuestDef[] = [
   {
     id: 'daily_watch', title: 'Session ciné', desc: 'Regardez 2 films jusqu\'au bout',
@@ -542,6 +560,33 @@ export function todayKey() {
   return new Date().toISOString().split('T')[0];
 }
 
+// ★ Début de journée locale, en ISO — utilisé par les vérifications serveur
+function startOfTodayISO(): string {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+
+// ★ Calcule le streak réel à partir d'une liste de dates de check-in
+// (format "YYYY-MM-DD"), en remontant jour par jour depuis aujourd'hui
+// (ou hier si le check-in du jour n'est pas encore posé).
+function computeStreakFromCheckins(dates: string[]): number {
+  if (!dates.length) return 0;
+  const set = new Set(dates);
+  const cursor = new Date();
+  cursor.setHours(0, 0, 0, 0);
+  if (!set.has(todayKey())) cursor.setDate(cursor.getDate() - 1);
+  let streak = 0;
+  // 400 jours de garde-fou — largement suffisant, évite toute boucle infinie
+  for (let i = 0; i < 400; i++) {
+    const key = cursor.toISOString().split('T')[0];
+    if (!set.has(key)) break;
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return streak;
+}
+
 export function computeProfilePower(opts: {
   hasAvatar: boolean;
   hasBio: boolean;
@@ -619,6 +664,7 @@ export function computePillarProgress(
   });
 }
 
+// ─── ★ Gamification principale — XP/niveau/streak dynamiques ────────────────
 export function useGamification(userId: string, works: Work[] = [], opts?: { skipBadges?: boolean }): GamiState {
   const [profile, setProfile] = useState<GamiProfile>({
     xp: 0,
@@ -632,6 +678,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
   });
   const [badges, setBadges] = useState<GamiBadge[]>([]);
   const [loading, setLoading] = useState(true);
+  const [checkinsCount, setCheckinsCount] = useState(0);
   const skipBadges = !!opts?.skipBadges;
 
   useEffect(() => {
@@ -654,16 +701,17 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
           const { xp = 0, level, title, streak_days = 0, contribution_score = 0 } = profR.data as any;
           const lvl = xpToLevel(xp);
           const effLevel = level ?? lvl.level;
-          setProfile({
+          setProfile(prev => ({
+            ...prev,
             xp,
             level: effLevel,
             title: title ?? TITLES[effLevel - 1],
-            streak_days,
+            streak_days, // ★ écrasé juste après par le streak réel (daily_checkins)
             contribution_score: contribution_score ?? 0,
             pct: lvl.pct,
             xpInLevel: lvl.xpInLevel,
             xpToNext: lvl.xpToNext,
-          });
+          }));
         } else {
           supabase.from('profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).then(() => {}, () => {});
         }
@@ -695,6 +743,34 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
     };
   }, [userId, skipBadges]);
 
+  // ★ Streak & XP dynamiques via public.daily_checkins — source de vérité
+  // unique : on pose le check-in du jour (idempotent, upsert sur la clé
+  // composite user_id+checkin_date) puis on recalcule le streak réel à
+  // partir de l'historique, sans jamais dépendre d'une colonne figée.
+  useEffect(() => {
+    if (!isValidUUID(userId)) return;
+    let dead = false;
+    (async () => {
+      const today = todayKey();
+      await supabase.from('daily_checkins')
+        .upsert({ user_id: userId, checkin_date: today }, { onConflict: 'user_id,checkin_date' })
+        .then(() => {}, () => {});
+
+      const { data } = await supabase.from('daily_checkins')
+        .select('checkin_date')
+        .eq('user_id', userId)
+        .order('checkin_date', { ascending: false })
+        .limit(120);
+      if (dead) return;
+
+      const dates = (data ?? []).map((r: any) => r.checkin_date as string);
+      const realStreak = computeStreakFromCheckins(dates);
+      setCheckinsCount(dates.length);
+      setProfile(prev => (prev.streak_days === realStreak ? prev : { ...prev, streak_days: realStreak }));
+    })();
+    return () => { dead = true; };
+  }, [userId]);
+
   const earnedBadges = useMemo(() => badges.filter(b => b.earned), [badges]);
   const pendingBadges = useMemo(() => badges.filter(b => !b.earned), [badges]);
 
@@ -719,7 +795,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
     }
   }, [userId, badges, awardXP]);
 
-  return { profile, badges, earnedBadges, pendingBadges, loading, awardXP, awardBadge };
+  return { profile, badges, earnedBadges, pendingBadges, loading, checkinsCount, awardXP, awardBadge };
 }
 
 export function useWeeklyChallenge(userId: string) {
@@ -946,11 +1022,67 @@ export function useContributionScore(userId: string) {
   return { score, loading, detectPepite };
 }
 
-// ─── ★ Défis du jour — progression + Claim explicite, à double vérification ─
+// ★ Vérifie côté serveur qu'un défi est RÉELLEMENT terminé, indépendamment
+// de la progression locale — c'est le garde-fou anti-triche/anti-bug
+// demandé : impossible de Claim une critique jamais publiée, un visionnage
+// jamais enregistré, etc. Chaque cas interroge la table qui fait foi.
+async function verifyQuestCompletion(userId: string, questId: string, target: number): Promise<boolean> {
+  const sinceISO = startOfTodayISO();
+  try {
+    switch (questId) {
+      case 'daily_watch': {
+        const { count } = await supabase
+          .from('user_history')
+          .select('work_id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .gte('watched_at', sinceISO);
+        return (count ?? 0) >= target;
+      }
+      case 'daily_explore': {
+        const { data } = await supabase
+          .from('user_history')
+          .select('work_id')
+          .eq('user_id', userId)
+          .gte('watched_at', sinceISO);
+        const distinctWorks = new Set((data ?? []).map((r: any) => r.work_id)).size;
+        return distinctWorks >= target;
+      }
+      case 'daily_critique': {
+        // ★ Une critique ne compte que si elle est réellement rédigée
+        // (contenu substantiel), pas un brouillon vide ou quasi-vide.
+        const { data } = await supabase
+          .from('critiques')
+          .select('id,content')
+          .eq('user_id', userId)
+          .gte('created_at', sinceISO);
+        const validCount = (data ?? []).filter((r: any) => (r.content ?? '').trim().length >= 20).length;
+        return validCount >= target;
+      }
+      case 'daily_create': {
+        const { count } = await supabase
+          .from('reels')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .in('status', ['pending', 'approved'])
+          .gte('created_at', sinceISO);
+        return (count ?? 0) >= target;
+      }
+      default:
+        return true;
+    }
+  } catch {
+    // En cas d'erreur réseau/permission, on refuse par prudence plutôt que
+    // de créditer de l'XP sur une vérification qu'on n'a pas pu faire.
+    return false;
+  }
+}
+
+// ─── ★ Défis du jour — progression + Claim vérifié côté serveur ─────────────
 export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questId: string) => void) {
   const today = useMemo(() => todayKey(), []);
   const [progressMap, setProgressMap] = useState<Map<string, DailyQuestProgress>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!isValidUUID(userId)) {
@@ -981,16 +1113,12 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
     return () => { dead = true; };
   }, [userId, today]);
 
-  // ── Incrémente la progression d'un défi (appelé depuis n'importe où dans
-  //    l'app : lecture d'une vidéo terminée jusqu'au bout, publication d'une
-  //    critique, etc.). Se bloque tout seul une fois la cible atteinte —
-  //    aucune sur-progression possible, `target` fait office de plafond dur.
   const incrementDailyQuest = useCallback(async (questId: string, by = 1) => {
     if (!isValidUUID(userId)) return;
     const def = DAILY_QUEST_DEFINITIONS.find(d => d.id === questId);
     if (!def) return;
     const prev = progressMap.get(questId);
-    if (prev?.completed) return; // déjà à 100%, rien à faire tant que non réclamé
+    if (prev?.completed) return;
 
     const newProg = Math.min((prev?.progress ?? 0) + by, def.target);
     const completed = newProg >= def.target;
@@ -1011,18 +1139,29 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
     }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
   }, [userId, today, progressMap]);
 
-  // ── Réclame l'XP d'un défi TERMINÉ. ★ Double garde-fou : refuse si la
-  //    cible n'est pas réellement atteinte (progress < target) OU si le
-  //    flag completed est faux — même en cas d'appel direct au hook, pas
-  //    seulement via le bouton "Réclamer" de l'UI. C'est la règle centrale :
-  //    aucun XP n'est crédité pour une action non intégralement terminée.
+  // ★ Réclame l'XP — DOUBLE vérification avant tout crédit :
+  //   1) garde locale : completed && progress >= target
+  //   2) garde serveur : verifyQuestCompletion() relit la vraie table
+  //      (critiques/reels/user_history) pour confirmer que l'action est
+  //      allée au bout. Si la vérification échoue, rien n'est crédité et
+  //      le défi reste réclamable (l'utilisateur peut réessayer une fois
+  //      l'action réellement terminée).
   const claimDailyQuest = useCallback(async (questId: string) => {
-    if (!isValidUUID(userId)) return;
+    if (!isValidUUID(userId)) return false;
     const def = DAILY_QUEST_DEFINITIONS.find(d => d.id === questId);
     const prev = progressMap.get(questId);
-    if (!def || !prev) return;
-    if (prev.claimed) return;
-    if (prev.progress < def.target || !prev.completed) return; // ★ garde-fou
+    if (!def || !prev) return false;
+    if (prev.claimed) return false;
+    if (prev.progress < def.target || !prev.completed) return false;
+
+    setVerifying(v => ({ ...v, [questId]: true }));
+    const serverConfirmed = await verifyQuestCompletion(userId, questId, def.target);
+    setVerifying(v => ({ ...v, [questId]: false }));
+
+    if (!serverConfirmed) {
+      hapticWarn();
+      return false; // ★ Claim refusé : l'action n'est pas réellement terminée en base
+    }
 
     hapticSuccess();
     setProgressMap(m => {
@@ -1042,10 +1181,10 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
     }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
 
     onXPClaimed?.(def.xp, questId);
+    return true;
   }, [userId, today, progressMap, onXPClaimed]);
 
-  // ★ Toujours EXACTEMENT 4 entrées (DAILY_QUEST_DEFINITIONS.length === 4) —
-  //   affichées ensemble par DailyQuestsPanel, sans pagination.
+  // ★ Toujours EXACTEMENT 4 entrées.
   const questsWithStatus = useMemo(() => DAILY_QUEST_DEFINITIONS.map(d => {
     const p = progressMap.get(d.id);
     return {
@@ -1054,12 +1193,12 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
       completed: p?.completed ?? false,
       claimed: p?.claimed ?? false,
       pct: Math.min(1, (p?.progress ?? 0) / d.target),
+      verifying: !!verifying[d.id],
     };
-  }), [progressMap]);
+  }), [progressMap, verifying]);
 
   const completedToday    = useMemo(() => questsWithStatus.filter(q => q.claimed).length, [questsWithStatus]);
   const readyToClaimCount = useMemo(() => questsWithStatus.filter(q => q.completed && !q.claimed).length, [questsWithStatus]);
-  // Aucune progression sur aucun défi → signal "nouvel arrivant" côté écran
   const hasAnyProgress = useMemo(() => questsWithStatus.some(q => q.progress > 0), [questsWithStatus]);
 
   return {
@@ -1226,24 +1365,20 @@ export const LevelUpCelebration = memo(function LevelUpCelebration({
       <Animated.View style={{flex:1, backgroundColor:'rgba(3,5,12,0.97)', opacity:bgOp, alignItems:'center', justifyContent:'center'}}>
         <GalaxyBackground />
 
-        {/* Rotating rays */}
         <Animated.View pointerEvents="none" style={{position:'absolute', transform:[{rotate: rayRot.interpolate({inputRange:[0,1], outputRange:['0deg','360deg']})}]}}>
           {RAY_ANGLES.map(a=>(
             <View key={a} style={{position:'absolute', width:1.5, height:180, borderRadius:1, backgroundColor:`${accent}16`, transform:[{rotate:`${a}deg`},{translateY:-90}], top:0, left:-0.75}}/>
           ))}
         </Animated.View>
 
-        {/* Pulsing halo rings */}
         <Animated.View pointerEvents="none" style={{position:'absolute', width:190, height:190, borderRadius:95, borderWidth:1, borderColor:accent, opacity:haloOp, transform:[{scale:halo1}]}}/>
         <Animated.View pointerEvents="none" style={{position:'absolute', width:190, height:190, borderRadius:95, borderWidth:1, borderColor:accent, opacity:haloOp, transform:[{scale:halo2}]}}/>
 
-        {/* Particles */}
         <View pointerEvents="none" style={{position:'absolute', alignItems:'center', justifyContent:'center'}}>
           <ParticleBurst trigger={burst} color={accent} />
         </View>
 
         <View style={{alignItems:'center', paddingHorizontal:36, width:'100%', gap:0}}>
-          {/* Top badge */}
           <Animated.View style={{opacity:ringOp, marginBottom:32}}>
             <View style={{flexDirection:'row', alignItems:'center', gap:8, paddingHorizontal:14, paddingVertical:6, borderRadius:20, borderWidth:1, borderColor:`${accent}45`, backgroundColor:`${accent}10`}}>
               <View style={{width:5, height:5, borderRadius:2.5, backgroundColor:accent}}/>
@@ -1252,7 +1387,6 @@ export const LevelUpCelebration = memo(function LevelUpCelebration({
             </View>
           </Animated.View>
 
-          {/* Level ring */}
           <Animated.View style={{transform:[{scale:numScale}], opacity:numOp, marginBottom:26}}>
             <Animated.View style={{opacity:ringOp, transform:[{scale:ringScale}]}}>
               <View style={{width:148, height:148, borderRadius:74, borderWidth:2.5, borderColor:accent, backgroundColor:`${accent}10`, alignItems:'center', justifyContent:'center',
@@ -1263,7 +1397,6 @@ export const LevelUpCelebration = memo(function LevelUpCelebration({
             </Animated.View>
           </Animated.View>
 
-          {/* Text block */}
           <Animated.View style={{alignItems:'center', gap:10, opacity:textOp, width:'100%'}}>
             <Text style={{color:`${accent}90`, fontSize:9, fontWeight:'900', letterSpacing:2.5}}>NOUVELLE IDENTITÉ</Text>
             <Text style={{color:C.white, fontSize:27, fontWeight:'900', textAlign:'center', letterSpacing:-0.8, lineHeight:32}}>{title}</Text>
@@ -1272,7 +1405,6 @@ export const LevelUpCelebration = memo(function LevelUpCelebration({
             <Text style={{color:'rgba(255,255,255,0.50)', fontSize:13, textAlign:'center', lineHeight:21, maxWidth:290}}>{copy.body}</Text>
           </Animated.View>
 
-          {/* CTA */}
           <Animated.View style={{opacity:btnOp, width:'100%', marginTop:30}}>
             <TouchableOpacity onPress={onClose} activeOpacity={0.84}
               style={{paddingVertical:17, borderRadius:18, backgroundColor:accent, alignItems:'center'}}>
@@ -1431,7 +1563,10 @@ const hud = StyleSheet.create({
   statVal: { fontSize: 10, fontWeight: '800' },
 });
 
-export const XPBar = memo(function XPBar({ profile, compact = false }: { profile: GamiProfile; compact?: boolean }) {
+// ─── ★ CARD DE NIVEAU — enrichie : titre suivant, multiplicateur, jours actifs
+export const XPBar = memo(function XPBar({
+  profile, compact = false, checkinsCount,
+}: { profile: GamiProfile; compact?: boolean; checkinsCount?: number }) {
   const prog = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -1439,6 +1574,8 @@ export const XPBar = memo(function XPBar({ profile, compact = false }: { profile
   }, [profile.pct]);
 
   const barW = prog.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  const multiplier = useMemo(() => getXPMultiplier(profile.streak_days, 0), [profile.streak_days]);
+  const nextTitle = profile.level < 10 ? TITLES[profile.level] : null;
 
   if (compact) {
     return (
@@ -1459,16 +1596,29 @@ export const XPBar = memo(function XPBar({ profile, compact = false }: { profile
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
         <View style={xb.circle}><Text style={xb.lvlBig}>{profile.level}</Text><Text style={xb.lvlLbl}>NIV</Text></View>
         <View style={{ flex: 1, gap: 7 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text style={xb.title} numberOfLines={1}>{profile.title}</Text>
             {profile.streak_days >= 3 && <View style={xb.streakBadge}><Ionicons name="flame" size={9} color={C.orange} /><Text style={[xb.streakTxt, { color: C.orange }]}>{profile.streak_days}j</Text></View>}
             {profile.contribution_score > 0 && <View style={xb.contribPill}><Ionicons name="star-outline" size={8} color={C.gold} /><Text style={xb.contribTxt}>{profile.contribution_score}</Text></View>}
+            {multiplier.value > 1 && <View style={[xb.contribPill,{backgroundColor:`${multiplier.color}18`,borderColor:`${multiplier.color}35`}]}><Ionicons name="flash" size={8} color={multiplier.color} /><Text style={[xb.contribTxt,{color:multiplier.color}]}>{multiplier.label}</Text></View>}
           </View>
           <View style={xb.track}><Animated.View style={[xb.fill, { width: barW }]} /></View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <Text style={xb.xpSub}>{profile.xpInLevel} XP</Text>
             {profile.level < 10 ? <Text style={xb.xpSub}>{profile.xpToNext} → niv. {profile.level + 1}</Text> : <Text style={[xb.xpSub, { color: C.gold }]}>NIVEAU MAX ✦</Text>}
           </View>
+          {/* ★ Ligne enrichie : prochain titre + jours actifs (daily_checkins) */}
+          {(nextTitle || typeof checkinsCount === 'number') && (
+            <View style={xb.enrichRow}>
+              {nextTitle && <Text style={xb.enrichTxt} numberOfLines={1}>Prochain : {nextTitle}</Text>}
+              {typeof checkinsCount === 'number' && (
+                <View style={xb.enrichPill}>
+                  <Ionicons name="calendar-outline" size={8} color={C.mid} />
+                  <Text style={xb.enrichPillTxt}>{checkinsCount}j actifs</Text>
+                </View>
+              )}
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -1481,7 +1631,7 @@ const xb = StyleSheet.create({
   circle: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: C.border, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
   lvlBig: { color: C.white, fontSize: 22, fontWeight: '900', letterSpacing: -0.8 },
   lvlLbl: { color: C.muted, fontSize: 7, fontWeight: '800', letterSpacing: 2, marginTop: -3 },
-  title: { color: C.white, fontSize: 13, fontWeight: '700', flex: 1 },
+  title: { color: C.white, fontSize: 13, fontWeight: '700' },
   track: { height: 3, borderRadius: 2, backgroundColor: C.faint, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.45)' },
   xpLabel: { color: C.muted, fontSize: 10, fontWeight: '700' },
@@ -1493,6 +1643,10 @@ const xb = StyleSheet.create({
   streakTxt: { fontSize: 9.5, fontWeight: '800' },
   contribPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, backgroundColor: C.goldDim, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.25)' },
   contribTxt: { color: C.gold, fontSize: 8, fontWeight: '700' },
+  enrichRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  enrichTxt: { color: C.muted, fontSize: 9, fontWeight: '600', flexShrink: 1 },
+  enrichPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, backgroundColor: C.faint, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  enrichPillTxt: { color: C.mid, fontSize: 8, fontWeight: '700' },
 });
 
 export const BadgeChip = memo(function BadgeChip({ b, size = 'normal' }: { b: GamiBadge; size?: 'normal' | 'small' }) {
@@ -1646,13 +1800,16 @@ const cc = StyleSheet.create({
   rowPts: { color: C.muted, fontSize: 10, width: 44, textAlign: 'right' },
 });
 
-// ─── ★ Panel des 4 défis du jour — TOUS affichés ensemble, Claim verrouillé ──
+// ─── ★ Panel des 4 défis du jour — VERROU DUR À 4, UI compacte ───────────────
 type DailyQuestWithStatus = DailyQuestDef & {
   progress: number;
   completed: boolean;
   claimed: boolean;
   pct: number;
+  verifying?: boolean;
 };
+
+const MAX_DAILY_CARDS = 4;
 
 export const DailyQuestsPanel = memo(function DailyQuestsPanel({
   questsWithStatus,
@@ -1665,29 +1822,35 @@ export const DailyQuestsPanel = memo(function DailyQuestsPanel({
   onAction: (action: string) => void;
   onClaim: (questId: string) => void;
 }) {
-  // Prochain défi à mettre en avant : le premier non réclamé, priorité à
-  // ceux déjà "prêts à réclamer" pour ne jamais laisser d'XP en attente.
-  const nextId = useMemo(() => {
-    const ready = questsWithStatus.find(q => q.completed && !q.claimed);
-    if (ready) return ready.id;
-    const inProgress = questsWithStatus.find(q => !q.claimed);
-    return inProgress?.id;
+  // ★ Verrou dur : jamais plus de 4 cartes, quoi qu'on reçoive en props.
+  const items = useMemo(() => {
+    if (__DEV__ && questsWithStatus.length > MAX_DAILY_CARDS) {
+      console.warn(
+        `[DailyQuestsPanel] ${questsWithStatus.length} défis reçus — seuls les ${MAX_DAILY_CARDS} premiers sont affichés. ` +
+        `Vérifie que l'écran parent ne monte pas aussi QuestsPanel (10 quêtes) en plus de ce panel.`,
+      );
+    }
+    return questsWithStatus.slice(0, MAX_DAILY_CARDS);
   }, [questsWithStatus]);
+
+  const nextId = useMemo(() => {
+    const ready = items.find(q => q.completed && !q.claimed);
+    if (ready) return ready.id;
+    const inProgress = items.find(q => !q.claimed);
+    return inProgress?.id;
+  }, [items]);
 
   return (
     <View style={dq.wrap}>
       <View style={dq.header}>
         <Ionicons name="today-outline" size={13} color={C.mid} />
         <Text style={dq.title}>Défis du jour</Text>
-        <View style={dq.badge}><Text style={dq.badgeTxt}>{completedToday}/{questsWithStatus.length}</Text></View>
+        <View style={dq.badge}><Text style={dq.badgeTxt}>{completedToday}/{items.length}</Text></View>
       </View>
 
-      {/* ★ Grille 2×2 fixe — les 4 défis toujours visibles ensemble */}
+      {/* Grille 2×2 fixe, compacte — tient sur l'écran sans scroll additionnel */}
       <View style={dq.grid}>
-        {questsWithStatus.map(q => {
-          // ★ readyToClaim (donc bouton Réclamer visible) exige que la cible
-          // soit RÉELLEMENT atteinte : q.completed est calculé côté hook à
-          // partir de progress >= target, jamais déclaré manuellement ici.
+        {items.map(q => {
           const readyToClaim = q.completed && !q.claimed;
           const isNext = q.id === nextId;
           const pillarColor = PILLAR_DEFS[q.pillar].color;
@@ -1727,19 +1890,23 @@ const DailyQuestCard = memo(function DailyQuestCard({
     return () => loop.stop();
   }, [readyToClaim]);
 
+  // ★ Le bouton Claim n'apparaît / n'est cliquable QUE si la progression
+  // locale confirme la cible atteinte. La vérification serveur définitive
+  // a lieu dans claimDailyQuest lui-même (voir useDailyQuests ci-dessus).
+  const trulyReady = readyToClaim && quest.progress >= quest.target;
   const pctStr = `${Math.round(quest.pct * 100)}%`;
 
   return (
-    <Animated.View style={[{ transform: [{ scale: readyToClaim ? pulseAnim : 1 }] }, dq.cardWrap]}>
+    <Animated.View style={[{ transform: [{ scale: trulyReady ? pulseAnim : 1 }] }, dq.cardWrap]}>
       <TouchableOpacity
         activeOpacity={0.85}
-        disabled={quest.claimed}
-        onPress={readyToClaim ? onClaim : onPress}
+        disabled={quest.claimed || quest.verifying}
+        onPress={trulyReady ? onClaim : onPress}
         style={[
           dq.card,
           quest.claimed && dq.cardDone,
-          readyToClaim && { borderColor: `${accent}55`, backgroundColor: `${accent}0F` },
-          highlighted && !readyToClaim && { borderColor: `${accent}35` },
+          trulyReady && { borderColor: `${accent}55`, backgroundColor: `${accent}0F` },
+          highlighted && !trulyReady && { borderColor: `${accent}35` },
         ]}
       >
         {highlighted && !quest.claimed && (
@@ -1749,12 +1916,12 @@ const DailyQuestCard = memo(function DailyQuestCard({
         )}
 
         <View style={[dq.iconWrap, { borderColor: `${accent}35`, backgroundColor: `${accent}14` }]}>
-          <Ionicons name={quest.claimed ? 'checkmark-circle' : quest.icon} size={18} color={quest.claimed ? C.green : accent} />
+          <Ionicons name={quest.claimed ? 'checkmark-circle' : quest.icon} size={17} color={quest.claimed ? C.green : accent} />
         </View>
 
         <Text style={dq.cardTitle} numberOfLines={1}>{quest.title}</Text>
         <Text style={dq.cardDesc} numberOfLines={2}>
-          {quest.claimed ? 'Défi réclamé aujourd\'hui.' : readyToClaim ? 'Terminé — réclamez votre XP !' : quest.hint}
+          {quest.claimed ? 'Réclamé aujourd\'hui.' : quest.verifying ? 'Vérification en cours…' : trulyReady ? 'Terminé — réclamez votre XP !' : quest.hint}
         </Text>
 
         <View style={dq.track}>
@@ -1767,7 +1934,9 @@ const DailyQuestCard = memo(function DailyQuestCard({
             <Ionicons name="flash" size={8} color={C.gold} />
             <Text style={dq.xpTxt}>+{quest.xp} XP</Text>
           </View>
-          {readyToClaim ? (
+          {quest.verifying ? (
+            <Text style={dq.cta}>…</Text>
+          ) : trulyReady ? (
             <View style={dq.claimBtn}><Text style={dq.claimTxt}>Réclamer</Text></View>
           ) : (
             <Text style={dq.cta}>{quest.claimed ? 'Terminé' : quest.cta}</Text>
@@ -1779,37 +1948,32 @@ const DailyQuestCard = memo(function DailyQuestCard({
 });
 
 const dq = StyleSheet.create({
-  wrap: { gap: 8 },
+  wrap: { gap: 6 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 20, marginBottom: 2 },
-  title: { color: C.white, fontSize: 15, fontWeight: '800', flex: 1 },
+  title: { color: C.white, fontSize: 14, fontWeight: '800', flex: 1 },
   badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: C.navyMid, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
   badgeTxt: { color: C.muted, fontSize: 9, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20 },
-  cardWrap: { width: (SW - 20 * 2 - 10) / 2 },
-  card: { padding: 13, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint, gap: 7, minHeight: 154 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20 },
+  cardWrap: { width: (SW - 20 * 2 - 8) / 2 },
+  card: { padding: 11, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint, gap: 5, minHeight: 128 },
   cardDone: { borderColor: 'rgba(46,204,138,0.22)', backgroundColor: 'rgba(46,204,138,0.05)' },
-  nextPill: { position: 'absolute', top: 10, right: 10, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth },
-  nextTxt: { fontSize: 7, fontWeight: '900', letterSpacing: 1 },
-  iconWrap: { width: 32, height: 32, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
-  cardTitle: { color: C.white, fontSize: 12.5, fontWeight: '800' },
-  cardDesc: { color: C.muted, fontSize: 9.5, lineHeight: 13, minHeight: 26 },
-  track: { height: 3, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 2 },
+  nextPill: { position: 'absolute', top: 8, right: 8, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth },
+  nextTxt: { fontSize: 6.5, fontWeight: '900', letterSpacing: 1 },
+  iconWrap: { width: 28, height: 28, borderRadius: 9, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
+  cardTitle: { color: C.white, fontSize: 11.5, fontWeight: '800' },
+  cardDesc: { color: C.muted, fontSize: 8.5, lineHeight: 11.5, minHeight: 23 },
+  track: { height: 3, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 1 },
   fill: { height: '100%', borderRadius: 999 },
-  progLabel: { color: C.muted, fontSize: 8.5, fontWeight: '700' },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
-  xpPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 999, backgroundColor: C.goldDim, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.22)' },
-  xpTxt: { color: C.gold, fontSize: 9, fontWeight: '800' },
-  cta: { color: C.blue, fontSize: 10, fontWeight: '800' },
-  claimBtn: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, backgroundColor: C.gold },
-  claimTxt: { color: C.navyDark, fontSize: 9.5, fontWeight: '900' },
+  progLabel: { color: C.muted, fontSize: 8, fontWeight: '700' },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 },
+  xpPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: C.goldDim, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.22)' },
+  xpTxt: { color: C.gold, fontSize: 8.5, fontWeight: '800' },
+  cta: { color: C.blue, fontSize: 9.5, fontWeight: '800' },
+  claimBtn: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, backgroundColor: C.gold },
+  claimTxt: { color: C.navyDark, fontSize: 9, fontWeight: '900' },
 });
 
-// ─── ★ Prise en main — guide 4 étapes pour les nouveaux arrivants ────────────
-// Affiché uniquement pour un profil totalement vierge (xp === 0 et aucun
-// badge) : disparaît de lui-même dès qu'un premier défi progresse, ou via le
-// bouton de fermeture. Chaque étape pointe 1:1 vers un défi du jour et
-// navigue directement vers l'action pour maximiser l'interaction réelle
-// avec l'app (catalogue, création, profil...).
+// ─── ★ Prise en main — guide 4 étapes, compact ────────────────────────────────
 export const FirstStepsGuide = memo(function FirstStepsGuide({
   visible,
   questsWithStatus,
@@ -1822,6 +1986,7 @@ export const FirstStepsGuide = memo(function FirstStepsGuide({
   onDismiss: () => void;
 }) {
   const glowAnim = useRef(new Animated.Value(0.5)).current;
+  const items = useMemo(() => questsWithStatus.slice(0, MAX_DAILY_CARDS), [questsWithStatus]);
 
   useEffect(() => {
     if (!visible) return;
@@ -1835,7 +2000,7 @@ export const FirstStepsGuide = memo(function FirstStepsGuide({
 
   if (!visible) return null;
 
-  const firstUndoneIdx = questsWithStatus.findIndex(q => q.progress === 0);
+  const firstUndoneIdx = items.findIndex(q => q.progress === 0);
 
   return (
     <View style={fsg.wrap}>
@@ -1844,14 +2009,13 @@ export const FirstStepsGuide = memo(function FirstStepsGuide({
         <View style={fsg.headRow}>
           <Text style={fsg.eyebrow}>BIENVENUE SUR UNIVERSE</Text>
           <TouchableOpacity onPress={onDismiss} hitSlop={10}>
-            <Ionicons name="close" size={16} color={C.muted} />
+            <Ionicons name="close" size={15} color={C.muted} />
           </TouchableOpacity>
         </View>
-        <Text style={fsg.title}>4 gestes pour démarrer votre voyage</Text>
-        <Text style={fsg.subtitle}>Terminez chaque étape pour débloquer votre premier XP.</Text>
+        <Text style={fsg.title}>4 gestes pour démarrer</Text>
 
-        <View style={{ gap: 8, marginTop: 10 }}>
-          {questsWithStatus.map((q, i) => {
+        <View style={{ gap: 6, marginTop: 8 }}>
+          {items.map((q, i) => {
             const isCurrent = i === firstUndoneIdx;
             const color = PILLAR_DEFS[q.pillar].color;
             return (
@@ -1864,11 +2028,10 @@ export const FirstStepsGuide = memo(function FirstStepsGuide({
                 <Animated.View style={[fsg.stepNum, { borderColor: `${color}40` }, isCurrent && { opacity: glowAnim }]}>
                   <Text style={[fsg.stepNumTxt, { color }]}>{i + 1}</Text>
                 </Animated.View>
-                <View style={{ flex: 1, gap: 1 }}>
-                  <Text style={fsg.stepTitle}>{q.title}</Text>
-                  <Text style={fsg.stepDesc} numberOfLines={1}>{q.desc}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={fsg.stepTitle} numberOfLines={1}>{q.title}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={13} color={C.muted} />
+                <Ionicons name="chevron-forward" size={12} color={C.muted} />
               </TouchableOpacity>
             );
           })}
@@ -1879,17 +2042,15 @@ export const FirstStepsGuide = memo(function FirstStepsGuide({
 });
 
 const fsg = StyleSheet.create({
-  wrap: { marginHorizontal: 20, marginBottom: 6, borderRadius: 18, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: C.borderHi },
-  inner: { padding: 16, gap: 4 },
+  wrap: { marginHorizontal: 20, marginBottom: 4, borderRadius: 16, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: C.borderHi },
+  inner: { padding: 12, gap: 2 },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  eyebrow: { color: C.blue, fontSize: 8.5, fontWeight: '900', letterSpacing: 1.8 },
-  title: { color: C.white, fontSize: 16, fontWeight: '900', letterSpacing: -0.3, marginTop: 4 },
-  subtitle: { color: C.muted, fontSize: 11, lineHeight: 15 },
-  step: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint },
-  stepNum: { width: 26, height: 26, borderRadius: 13, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', backgroundColor: C.navyMid },
-  stepNumTxt: { fontSize: 11, fontWeight: '900' },
-  stepTitle: { color: C.white, fontSize: 12.5, fontWeight: '700' },
-  stepDesc: { color: C.muted, fontSize: 10 },
+  eyebrow: { color: C.blue, fontSize: 8, fontWeight: '900', letterSpacing: 1.6 },
+  title: { color: C.white, fontSize: 14, fontWeight: '900', letterSpacing: -0.3, marginTop: 2 },
+  step: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, paddingHorizontal: 8, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint },
+  stepNum: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center', backgroundColor: C.navyMid },
+  stepNumTxt: { fontSize: 10, fontWeight: '900' },
+  stepTitle: { color: C.white, fontSize: 11.5, fontWeight: '700' },
 });
 
 export const PillarsDashboard = memo(function PillarsDashboard({ pillars }: { pillars: PillarProgress[] }) {

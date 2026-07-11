@@ -567,42 +567,7 @@ const tb=StyleSheet.create({
   avatar:   {width:48,height:48,borderRadius:24,borderWidth:2,borderColor:C.blueBorder},
 });
 
-// ─── NETWORK ROW (identique au fichier original) ──────────────────────────────
-const NetworkRow = memo(({pros,loading,onIndustry}:{pros:NetworkPro[];loading:boolean;onIndustry:()=>void})=>{
-  if(!loading&&!pros.length) return null;
-  return(
-    <View style={{marginBottom:16}}>
-      <View style={{flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:EDGE,marginBottom:11}}>
-        <Ionicons name="briefcase-outline" size={12} color={C.mid}/>
-        <Text style={{color:C.offWhite,fontSize:14,fontWeight:'800'}}>Industrie cinéma</Text>
-        <TouchableOpacity
-          onPress={onIndustry}
-          hitSlop={8}
-          style={{marginLeft:'auto' as any,flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:9,paddingVertical:4,borderRadius:9,borderWidth:StyleSheet.hairlineWidth,borderColor:C.blueBorder,backgroundColor:C.blueFaint}}
-        >
-          <Text style={{color:C.blue,fontSize:10,fontWeight:'700'}}>Tout voir</Text>
-          <Ionicons name="chevron-forward" size={10} color={C.blue}/>
-        </TouchableOpacity>
-      </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:EDGE,gap:9}}>
-        {loading
-          ? [0,1,2,3].map(i=><View key={i} style={{width:122,height:152,borderRadius:13,backgroundColor:C.navyMid}}/>)
-          : pros.map(p=>(
-            <TouchableOpacity key={p.id} style={nr.card} onPress={onIndustry} activeOpacity={0.88}>
-              <Image source={{uri:av(p.id,p.avatar)}} style={nr.img} resizeMode="cover"/>
-              <LinearGradient colors={['transparent','rgba(7,12,23,0.96)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.5}} end={{x:0,y:1}}/>
-              {p.verified&&<View style={nr.vBadge}><Ionicons name="checkmark" size={7} color={C.white}/></View>}
-              <View style={nr.info}>
-                <Text style={nr.name} numberOfLines={1}>{p.name}</Text>
-                <Text style={nr.role} numberOfLines={1}>{p.role}</Text>
-              </View>
-            </TouchableOpacity>
-          ))
-        }
-      </ScrollView>
-    </View>
-  );
-});
+
 const nr=StyleSheet.create({
   card:   {width:122,height:152,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
   img:    {width:'100%',height:'100%',position:'absolute'},
@@ -859,7 +824,6 @@ export default function SocialScreen() {
         </TouchableOpacity>
       )}
 
-      {tab==='Pour vous'&&<NetworkRow pros={pros} loading={prosLoading} onIndustry={()=>setShowIndustry(true)}/>}
       <TopBanner critique={top}/>
 
       <View style={{flexDirection:'row',alignItems:'center',gap:6,paddingHorizontal:EDGE,marginBottom:11}}>

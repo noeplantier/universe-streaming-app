@@ -37,6 +37,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import CustomNavBar from '@/components/CustomNavBar';
 import { ReelsUIProvider, useReelsUI } from '@/contexts/ReelsUIContext';
 import { PinAuthProvider, usePinAuth } from '@/contexts/PinAuthContext';
+import { PreferencesProvider } from './providers/PreferencesProvider';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -394,12 +395,15 @@ export default function RootLayout() {
   return (
     <PinAuthProvider>
       <ReelsUIProvider>
+      <PreferencesProvider>
         <SafeAreaProvider>
           <AppInner />
         </SafeAreaProvider>
+       </PreferencesProvider>
       </ReelsUIProvider>
     </PinAuthProvider>
   );
+  
 }
 
 const lay = StyleSheet.create({
