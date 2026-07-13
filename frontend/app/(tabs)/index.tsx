@@ -32,8 +32,9 @@ import FeedItem      from '@/components/reels/FeedItem';
 import TopHeader     from '@/components/reels/TopHeader';
 import InfoSheet     from '@/components/reels/Infosheet';
 import DropdownMenu, { type MenuKey } from '@/components/DropDownMenu';
-import { ReelsUIProvider, useReelsUI } from '@/contexts/ReelsUIContext';
+import { useReelsUI } from '@/contexts/ReelsUIContext';
 import { supabase }      from '@/lib/supabase';
+import { getDeviceId }   from '@/services/api';
 import type { FeedFilm } from '@/components/reels/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -93,6 +94,54 @@ const COLS =
 
 const PAGE_SIZE = 20;
 
+// ★ Affinity — pondère les genres likés par l'utilisateur pour le reranking client-side.
+// Ne bloque pas le fetch (fire-and-forget, résultat mis en cache dans le hook).
+function useUserAffinity(userId?: string): Record<string, number> {
+  const [affinity, setAffinity] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!userId) return;
+    let dead = false;
+    supabase.from('user_liked_reels').select('reel_id').eq('user_id', userId).limit(60)
+      .then(({ data: ld }) => {
+        if (dead || !ld?.length) return;
+        const ids = ld.map((r: any) => String(r.reel_id));
+        supabase.from('reels').select('genre').in('id', ids)
+          .then(({ data: rd }) => {
+            if (dead) return;
+            const s: Record<string, number> = {};
+            (rd ?? []).forEach((r: any) => { if (r.genre) s[r.genre] = (s[r.genre] ?? 0) + 2; });
+            if (Object.keys(s).length) setAffinity(s);
+          }, () => {});
+      }, () => {});
+    return () => { dead = true; };
+  }, [userId]);
+  return affinity;
+}
+
+// Client-side score pour reranker page 0 selon les goûts du user.
+// Boost genre aimé (max 16pts) + fraîcheur (max 4pts) + engagement (max 2pts).
+function scoreForFeed(r: SupabaseReel, aff: Record<string, number>): number {
+  const g = aff[r.genre ?? ''] ?? 0;
+  const ageD = (Date.now() - new Date(r.created_at).getTime()) / 86400000;
+  const recency = Math.max(0, 1 - ageD / 30);
+  const eng = Math.min(1, (r.likes_count * 3 + r.views_count) / 2000);
+  return g * 8 + recency * 4 + eng * 2;
+}
+
+// Direct XP award (sans hook complet) — utile pour récompenser les interactions
+// depuis des écrans qui ne consomment pas useGamification.
+function awardXPDirect(userId: string, amount: number, reason: string) {
+  supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason })
+    .then(() => {}, () => {
+      // Fallback : lecture puis update si le RPC n'existe pas encore
+      supabase.from('profiles').select('xp').eq('id', userId).maybeSingle()
+        .then(({ data }) => {
+          const cur = (data as any)?.xp ?? 0;
+          supabase.from('profiles').update({ xp: cur + amount }).eq('id', userId).then(() => {}, () => {});
+        }, () => {});
+    });
+}
+
 // ★ Filtrage réel par genre : genre = clé exacte de public.genres.value,
 //   'all' (ou vide) = aucun filtre → tous les reels approuvés.
 async function fetchApprovedPage(page: number, genre: MenuKey): Promise<SupabaseReel[]> {
@@ -118,7 +167,7 @@ async function fetchApprovedPage(page: number, genre: MenuKey): Promise<Supabase
 // ─────────────────────────────────────────────────────────────────────────────
 // Hook feed — re-fetch complet à chaque changement de feedKey (genre)
 // ─────────────────────────────────────────────────────────────────────────────
-function useReelsFeed(feedKey: MenuKey) {
+function useReelsFeed(feedKey: MenuKey, affinity: Record<string, number> = {}) {
   const [films,   setFilms]   = useState<FeedFilm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState<string | null>(null);
@@ -127,6 +176,8 @@ function useReelsFeed(feedKey: MenuKey) {
   const loadingMore = useRef(false);
   const feedKeyRef  = useRef(feedKey);
   feedKeyRef.current = feedKey;
+  const affinityRef = useRef(affinity);
+  affinityRef.current = affinity;
 
   useEffect(() => {
     let dead = false;
@@ -135,7 +186,13 @@ function useReelsFeed(feedKey: MenuKey) {
     fetchApprovedPage(0, feedKey)
       .then(rows => {
         if (!dead) {
-          setFilms(rows.map(mapReel));
+          // ★ Rerank page 0 si le user a des préférences genre (feed global seulement)
+          const aff = affinityRef.current;
+          const hasAff = feedKey === ALL_GENRES_KEY && Object.keys(aff).length > 0;
+          const ranked = hasAff
+            ? [...rows].sort((a, b) => scoreForFeed(b, aff) - scoreForFeed(a, aff))
+            : rows;
+          setFilms(ranked.map(mapReel));
           hasMoreRef.current = rows.length === PAGE_SIZE;
           setLoading(false);
         }
@@ -192,14 +249,16 @@ function useReelsFeed(feedKey: MenuKey) {
     return () => { supabase.removeChannel(ch); };
   }, []);
 
-  const toggleLike = useCallback((id: string) => {
+  const toggleLike = useCallback((id: string, userId?: string) => {
     setFilms(prev => prev.map(f => {
       if (f.id !== id) return f;
       const liked = !f.is_liked;
       supabase.from('reels')
         .update({ likes_count: f.likes_count + (liked ? 1 : -1) })
         .eq('id', id)
-        .then(() => {});
+        .then(() => {}, () => {});
+      // ★ +5 XP par like (uniquement en likant, pas en unlikant)
+      if (liked && userId) awardXPDirect(userId, 5, 'reel_like');
       return { ...f, is_liked: liked, likes_count: f.likes_count + (liked ? 1 : -1) };
     }));
   }, []);
@@ -208,10 +267,18 @@ function useReelsFeed(feedKey: MenuKey) {
     supabase.from('reels')
       .update({ views_count: current + 1 })
       .eq('id', id)
-      .then(() => {});
+      .then(() => {}, () => {});
   }, []);
 
-  return { films, loading, error, loadMore, toggleLike, incrementViews };
+  const updateSaved = useCallback((savedIds: Set<string>) => {
+    setFilms(prev => prev.map(f => ({ ...f, is_saved: savedIds.has(f.id) })));
+  }, []);
+
+  const updateLiked = useCallback((likedIds: Set<string>) => {
+    setFilms(prev => prev.map(f => ({ ...f, is_liked: likedIds.has(f.id) })));
+  }, []);
+
+  return { films, loading, error, loadMore, toggleLike, incrementViews, updateSaved, updateLiked };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,14 +298,49 @@ function ReelsScreenInner() {
   const [menuOpen,      setMenuOpen]      = useState(false);
   const [feedKey,       setFeedKey]       = useState<MenuKey>(ALL_GENRES_KEY);
   const [infoFilm,      setInfoFilm]      = useState<FeedFilm | null>(null);
+  const [userId,        setUserId]        = useState<string | undefined>(undefined);
+  const [userPrefs,     setUserPrefs]     = useState<{ autoplay: boolean; data_saver: boolean }>({ autoplay: true, data_saver: false });
+
+  // ★ Résout le device ID une seule fois — pas de getDeviceId dans chaque FeedItem
+  useEffect(()=>{ getDeviceId().then(id=>setUserId(id||undefined)); },[]);
+
+  // ★ Charge autoplay + data_saver dès que l'userId est disponible
+  useEffect(()=>{
+    if(!userId) return;
+    supabase.from('user_preferences').select('autoplay,data_saver').eq('user_id',userId).maybeSingle()
+      .then(({data})=>{ if(data) setUserPrefs({ autoplay: data.autoplay??true, data_saver: data.data_saver??false }); },()=>{});
+  },[userId]);
 
   const flatRef      = useRef<FlatList>(null);
   const scrollY      = useRef(new Animated.Value(0)).current;
   const activeIdxRef = useRef(0);
   const snapTimer    = useRef<ReturnType<typeof setTimeout>>();
 
-  const { films, loading, error, loadMore, toggleLike, incrementViews } =
-    useReelsFeed(feedKey);
+  // ★ Affinity — chargée après userId, reranke la page 0 sur le feed global
+  const affinity = useUserAffinity(userId);
+
+  const { films, loading, error, loadMore, toggleLike, incrementViews, updateSaved, updateLiked } =
+    useReelsFeed(feedKey, affinity);
+
+  // ── Charge is_saved / is_liked depuis Supabase quand userId + films sont prêts ──
+  useEffect(() => {
+    if (!userId || !films.length) return;
+    const ids = films.map(f => f.id);
+    // Saved : user_saved_reels.reel_id (uuid) — table dédiée aux reels,
+    //   distincte de user_favorites (integer work_id pour les œuvres classiques)
+    supabase.from('user_saved_reels').select('reel_id').eq('user_id', userId).in('reel_id', ids)
+      .then(({ data }) => {
+        const s = new Set((data ?? []).map((r: any) => String(r.reel_id)));
+        if (s.size) updateSaved(s);
+      }, () => {});
+    // Liked : user_liked_reels.reel_id
+    supabase.from('user_liked_reels').select('reel_id').eq('user_id', userId).in('reel_id', ids)
+      .then(({ data }) => {
+        const l = new Set((data ?? []).map((r: any) => String(r.reel_id)));
+        if (l.size) updateLiked(l);
+      }, () => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, films.length]);
 
   const filmsRef = useRef(films);
   filmsRef.current = films;
@@ -253,15 +355,21 @@ function ReelsScreenInner() {
   }, []);
 
   // ── Index actif ───────────────────────────────────────────────────────────
+  const userIdRef = useRef(userId);
+  userIdRef.current = userId;
+
   const commitIndex = useCallback((next: number) => {
     const clamped = Math.max(0, Math.min(next, filmsRef.current.length - 1));
     if (clamped === activeIdxRef.current) return;
     activeIdxRef.current = clamped;
     setActiveIndex(clamped);
-    // Changer de vidéo → tout ré-afficher
     setUIVisible(true);
     const f = filmsRef.current[clamped];
-    if (f) incrementViews(f.id, f.views_count);
+    if (f) {
+      incrementViews(f.id, f.views_count);
+      // ★ +2 XP par reel visionné (new video scrolled to)
+      if (userIdRef.current) awardXPDirect(userIdRef.current, 2, 'reel_view');
+    }
   }, [incrementViews, setUIVisible]);
 
   const commitRef = useRef(commitIndex);
@@ -320,6 +428,11 @@ function ReelsScreenInner() {
     setInfoFilm(film);
   }, []);
 
+  // ★ onLike : forward l'userId pour que toggleLike puisse award l'XP
+  const handleLike = useCallback((id: string) => {
+    toggleLike(id, userIdRef.current);
+  }, [toggleLike]);
+
   // ── renderItem — SANS onUIVisibilityChange (géré par le contexte) ─────────
   const renderItem = useCallback(
     ({ item, index }: { item: FeedFilm; index: number }) => (
@@ -331,11 +444,14 @@ function ReelsScreenInner() {
         itemW={W}
         itemH={ITEM_H}
         insetBot={insets.bottom}
-        onLike={toggleLike}
+        onLike={handleLike}
         onInfoPress={handleInfoPress}
+        userId={userId}
+        autoplay={userPrefs.autoplay}
+        dataSaver={userPrefs.data_saver}
       />
     ),
-    [activeIndex, screenFocused, W, ITEM_H, insets.bottom, toggleLike, handleInfoPress],
+    [activeIndex, screenFocused, W, ITEM_H, insets.bottom, handleLike, handleInfoPress, userId, userPrefs],
   );
 
   const getItemLayout = useCallback(
@@ -489,11 +605,7 @@ function ReelsScreenInner() {
 // Export — Provider wrappé ICI, pas besoin de modifier _layout.tsx
 // ─────────────────────────────────────────────────────────────────────────────
 export default function ReelsScreen() {
-  return (
-    <ReelsUIProvider>
-      <ReelsScreenInner />
-    </ReelsUIProvider>
-  );
+  return <ReelsScreenInner />;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -36,8 +36,9 @@
  *     add column if not exists claimed_at timestamptz null;
  *
  *   -- Check-ins quotidiens → source de vérité du streak / XP dynamique
+ *   -- ★ user_id référence profiles.id (device UUID, PAS auth.users(id))
  *   create table if not exists public.daily_checkins (
- *     user_id uuid not null references auth.users(id) on delete cascade,
+ *     user_id uuid not null references public.profiles(id) on delete cascade,
  *     checkin_date date not null,
  *     created_at timestamptz not null default now(),
  *     constraint daily_checkins_pkey primary key (user_id, checkin_date)
@@ -690,7 +691,8 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
     let dead = false;
 
     Promise.all([
-      supabase.from('profiles').select('xp,level,title,streak_days,contribution_score').eq('user_id', userId).maybeSingle(),
+      // profiles.id = device UUID (PK) — pas profiles.user_id
+      supabase.from('profiles').select('xp,level,title,streak_days,contribution_score').eq('id', userId).maybeSingle(),
       skipBadges ? Promise.resolve({ data: null }) : supabase.from('badges').select('id,label,description,icon,rarity,xp_reward,is_hidden').eq('is_hidden', false),
       skipBadges ? Promise.resolve({ data: null }) : supabase.from('user_badges').select('badge_id,earned_at').eq('user_id', userId),
     ])
@@ -713,7 +715,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
             xpToNext: lvl.xpToNext,
           }));
         } else {
-          supabase.from('profiles').upsert({ user_id: userId, xp: 0 }, { onConflict: 'user_id' }).then(() => {}, () => {});
+          supabase.from('profiles').upsert({ id: userId, xp: 0 }, { onConflict: 'id' }).then(() => {}, () => {});
         }
 
         if (!skipBadges) {
@@ -774,12 +776,18 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
   const earnedBadges = useMemo(() => badges.filter(b => b.earned), [badges]);
   const pendingBadges = useMemo(() => badges.filter(b => !b.earned), [badges]);
 
-  const awardXP = useCallback(async (amount: number, reason: string) => {
+  const awardXP = useCallback((amount: number, _reason: string) => {
     if (!isValidUUID(userId)) return;
-    await supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason }).then(() => {}, () => {});
     setProfile(prev => {
       const newXp = prev.xp + amount;
       const lvl = xpToLevel(newXp);
+      // Persist : RPC en priorité, sinon update direct profiles.xp
+      supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: _reason }).then(
+        () => {},
+        () => {
+          supabase.from('profiles').update({ xp: newXp }).eq('id', userId).then(() => {}, () => {});
+        },
+      );
       return { ...prev, xp: newXp, ...lvl, title: TITLES[lvl.level - 1] };
     });
   }, [userId]);
@@ -797,6 +805,173 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
 
   return { profile, badges, earnedBadges, pendingBadges, loading, checkinsCount, awardXP, awardBadge };
 }
+
+// ─── ★ SYSTÈME DE NOTIFICATION IN-APP (style Duolingo) ───────────────────────
+// Fonctionne sans expo-notifications — banners in-app uniquement.
+// Affiche des rappels streak, check-in, et célébrations XP.
+
+export interface GamiNotif {
+  id: string;
+  type: 'streak' | 'checkin' | 'xp' | 'quest' | 'level';
+  icon: keyof typeof Ionicons.glyphMap;
+  eyebrow: string;
+  title: string;
+  description?: string;
+  accentColor: string;
+  glowColor?: string;
+  xpAmount?: number;
+}
+
+const NOTIF_PRESETS = {
+  streakAtRisk: (streak: number): GamiNotif => ({
+    id: `streak_risk_${Date.now()}`,
+    type: 'streak',
+    icon: 'flame-outline',
+    eyebrow: `STREAK · ${streak} JOURS EN JEU`,
+    title: 'Votre streak risque de s\'interrompre',
+    description: 'Faites votre check-in du jour pour le conserver.',
+    accentColor: C.orange,
+    glowColor: 'rgba(249,115,22,0.14)',
+  }),
+  streakMilestone: (streak: number): GamiNotif => ({
+    id: `streak_mile_${streak}`,
+    type: 'streak',
+    icon: 'flame',
+    eyebrow: 'STREAK RECORD ✦',
+    title: `${streak} jours d'affilée`,
+    description: 'Votre constance cinéphile est remarquable.',
+    accentColor: C.gold,
+    glowColor: C.goldDim,
+  }),
+  xpGained: (xp: number, reason: string): GamiNotif => ({
+    id: `xp_${Date.now()}`,
+    type: 'xp',
+    icon: 'flash',
+    eyebrow: 'XP GAGNÉ',
+    title: `+${xp} XP`,
+    description: reason,
+    accentColor: C.blue,
+    glowColor: C.blueDim,
+    xpAmount: xp,
+  }),
+  questReady: (title: string): GamiNotif => ({
+    id: `quest_ready_${Date.now()}`,
+    type: 'quest',
+    icon: 'checkmark-circle-outline',
+    eyebrow: 'DÉFI COMPLÉTÉ ✦',
+    title,
+    description: 'Réclamez votre récompense dans vos défis.',
+    accentColor: C.green,
+    glowColor: C.greenDim,
+  }),
+  levelUp: (level: number, title: string): GamiNotif => ({
+    id: `level_${level}`,
+    type: 'level',
+    icon: 'star',
+    eyebrow: `NIVEAU ${level} ATTEINT`,
+    title,
+    description: 'Votre présence sur Universe grandit.',
+    accentColor: level >= 9 ? C.gold : level >= 7 ? C.purple : C.blue,
+  }),
+} as const;
+
+// Hook pour déclencher des notifications in-app depuis n'importe quel écran.
+// Usage: const { notify } = useGamiNotify(); notify('streakAtRisk', 5);
+export function useGamiNotify() {
+  const [current, setCurrent] = useState<GamiNotif | null>(null);
+  const queue = useRef<GamiNotif[]>([]);
+  const showing = useRef(false);
+
+  const flush = useCallback(() => {
+    if (showing.current || !queue.current.length) return;
+    showing.current = true;
+    setCurrent(queue.current.shift() ?? null);
+  }, []);
+
+  const notify = useCallback((notif: GamiNotif) => {
+    queue.current.push(notif);
+    flush();
+  }, [flush]);
+
+  const notifyPreset = useCallback(<K extends keyof typeof NOTIF_PRESETS>(
+    key: K,
+    ...args: Parameters<typeof NOTIF_PRESETS[K]>
+  ) => {
+    const preset = (NOTIF_PRESETS[key] as any)(...args) as GamiNotif;
+    notify(preset);
+  }, [notify]);
+
+  const dismiss = useCallback(() => {
+    showing.current = false;
+    setCurrent(null);
+    setTimeout(flush, 200);
+  }, [flush]);
+
+  return { current, notify, notifyPreset, dismiss };
+}
+export type GamiNotifyReturn = ReturnType<typeof useGamiNotify>;
+
+// Composant bannier — wraps SpringToast avec les notifs gami
+export const GamiNotifyBanner = memo(function GamiNotifyBanner({
+  notif, onDone,
+}: { notif: GamiNotif | null; onDone: () => void }) {
+  if (!notif) return null;
+  const xpNode = notif.xpAmount ? (
+    <View style={but.xpPill}>
+      <Ionicons name="flash" size={8} color={C.gold} />
+      <Text style={but.xpTxt}>+{notif.xpAmount} XP</Text>
+    </View>
+  ) : undefined;
+  return (
+    <SpringToast
+      visible
+      onDone={onDone}
+      accentColor={notif.accentColor}
+      glowColor={notif.glowColor}
+      icon={notif.icon}
+      eyebrow={notif.eyebrow}
+      eyebrowExtra={xpNode}
+      title={notif.title}
+      description={notif.description}
+    />
+  );
+});
+
+// Hook de rappel quotidien — vérifie si le check-in du jour est fait.
+// À monter dans le screen principal (tabs/_layout ou profile).
+// Déclenche automatiquement une bannière si le streak est à risque.
+export function useGamiStreakReminder(userId: string, notify: (n: GamiNotif) => void) {
+  const fired = useRef(false);
+  useEffect(() => {
+    if (!isValidUUID(userId) || fired.current) return;
+    fired.current = true;
+    const today = todayKey();
+    supabase.from('daily_checkins')
+      .select('checkin_date')
+      .eq('user_id', userId)
+      .order('checkin_date', { ascending: false })
+      .limit(7)
+      .then(({ data }) => {
+        const dates = (data ?? []).map((r: any) => r.checkin_date as string);
+        if (!dates.length) return;
+        const hasToday = dates.includes(today);
+        if (hasToday) {
+          // Streak fait — célèbre si milestone
+          const streak = computeStreakFromCheckins(dates);
+          if ([7, 14, 30, 60, 100].includes(streak)) {
+            notify(NOTIF_PRESETS.streakMilestone(streak));
+          }
+        } else {
+          // Pas de check-in aujourd'hui — rappel si le user a un streak à préserver
+          const streak = computeStreakFromCheckins(dates);
+          if (streak > 0) notify(NOTIF_PRESETS.streakAtRisk(streak));
+        }
+      }, () => {});
+  }, [userId, notify]);
+}
+
+// Export direct des presets pour usage externe
+export { NOTIF_PRESETS };
 
 export function useWeeklyChallenge(userId: string) {
   const [challenge, setChallenge] = useState<WeeklyChallenge>(FALLBACK_CHALLENGE);
@@ -1576,25 +1751,33 @@ export const XPBar = memo(function XPBar({
   const barW = prog.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
   const multiplier = useMemo(() => getXPMultiplier(profile.streak_days, 0), [profile.streak_days]);
   const nextTitle = profile.level < 10 ? TITLES[profile.level] : null;
+  // Couleur accentuée selon le niveau — Universe gold/blue galaxy
+  const accentCol = profile.level >= 9 ? C.gold : profile.level >= 7 ? C.purple : profile.level >= 5 ? C.blue : C.mid;
+  const fillCol   = profile.level >= 7 ? C.gold : profile.level >= 4 ? C.blue : 'rgba(255,255,255,0.45)';
 
   if (compact) {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <View style={xb.compactBadge}><Text style={xb.compactNum}>{profile.level}</Text></View>
+        <View style={[xb.compactBadge, { borderColor: accentCol }]}>
+          <Text style={[xb.compactNum, { color: accentCol }]}>{profile.level}</Text>
+        </View>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={xb.compactTitle} numberOfLines={1}>{profile.title}</Text>
-          <View style={xb.track}><Animated.View style={[xb.fill, { width: barW }]} /></View>
+          <View style={xb.track}><Animated.View style={[xb.fill, { width: barW, backgroundColor: fillCol }]} /></View>
         </View>
-        <Text style={xb.xpLabel}>{profile.xp} XP</Text>
+        <Text style={[xb.xpLabel, { color: accentCol }]}>{profile.xp} XP</Text>
       </View>
     );
   }
 
   return (
-    <View style={xb.wrap}>
+    <View style={[xb.wrap, { borderColor: `${accentCol}30` }]}>
       <BlurView intensity={Platform.OS === 'ios' ? 14 : 10} tint="dark" style={StyleSheet.absoluteFillObject} />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <View style={xb.circle}><Text style={xb.lvlBig}>{profile.level}</Text><Text style={xb.lvlLbl}>NIV</Text></View>
+        <View style={[xb.circle, { borderColor: accentCol, backgroundColor: `${accentCol}12` }]}>
+          <Text style={[xb.lvlBig, { color: accentCol }]}>{profile.level}</Text>
+          <Text style={[xb.lvlLbl, { color: accentCol }]}>NIV</Text>
+        </View>
         <View style={{ flex: 1, gap: 7 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text style={xb.title} numberOfLines={1}>{profile.title}</Text>
@@ -1602,12 +1785,11 @@ export const XPBar = memo(function XPBar({
             {profile.contribution_score > 0 && <View style={xb.contribPill}><Ionicons name="star-outline" size={8} color={C.gold} /><Text style={xb.contribTxt}>{profile.contribution_score}</Text></View>}
             {multiplier.value > 1 && <View style={[xb.contribPill,{backgroundColor:`${multiplier.color}18`,borderColor:`${multiplier.color}35`}]}><Ionicons name="flash" size={8} color={multiplier.color} /><Text style={[xb.contribTxt,{color:multiplier.color}]}>{multiplier.label}</Text></View>}
           </View>
-          <View style={xb.track}><Animated.View style={[xb.fill, { width: barW }]} /></View>
+          <View style={xb.track}><Animated.View style={[xb.fill, { width: barW, backgroundColor: fillCol }]} /></View>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
             <Text style={xb.xpSub}>{profile.xpInLevel} XP</Text>
             {profile.level < 10 ? <Text style={xb.xpSub}>{profile.xpToNext} → niv. {profile.level + 1}</Text> : <Text style={[xb.xpSub, { color: C.gold }]}>NIVEAU MAX ✦</Text>}
           </View>
-          {/* ★ Ligne enrichie : prochain titre + jours actifs (daily_checkins) */}
           {(nextTitle || typeof checkinsCount === 'number') && (
             <View style={xb.enrichRow}>
               {nextTitle && <Text style={xb.enrichTxt} numberOfLines={1}>Prochain : {nextTitle}</Text>}
@@ -1628,16 +1810,16 @@ XPBar.displayName = 'XPBar';
 
 const xb = StyleSheet.create({
   wrap: { borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, padding: 14 },
-  circle: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: C.border, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
-  lvlBig: { color: C.white, fontSize: 22, fontWeight: '900', letterSpacing: -0.8 },
-  lvlLbl: { color: C.muted, fontSize: 7, fontWeight: '800', letterSpacing: 2, marginTop: -3 },
+  circle: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: C.gold, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
+  lvlBig: { color: C.gold, fontSize: 22, fontWeight: '900', letterSpacing: -0.8 },
+  lvlLbl: { color: C.gold, fontSize: 7, fontWeight: '800', letterSpacing: 2, marginTop: -3 },
   title: { color: C.white, fontSize: 13, fontWeight: '700' },
-  track: { height: 3, borderRadius: 2, backgroundColor: C.faint, overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.45)' },
-  xpLabel: { color: C.muted, fontSize: 10, fontWeight: '700' },
+  track: { height: 4, borderRadius: 2, backgroundColor: C.faint, overflow: 'hidden' },
+  fill: { height: '100%', borderRadius: 2, backgroundColor: C.blue },
+  xpLabel: { color: C.gold, fontSize: 10, fontWeight: '700' },
   xpSub: { color: C.muted, fontSize: 9.5 },
-  compactBadge: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
-  compactNum: { color: C.white, fontSize: 11, fontWeight: '900' },
+  compactBadge: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: C.gold, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
+  compactNum: { color: C.gold, fontSize: 11, fontWeight: '900' },
   compactTitle: { color: C.white, fontSize: 11, fontWeight: '700' },
   streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: 'rgba(249,115,22,0.14)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(249,115,22,0.28)' },
   streakTxt: { fontSize: 9.5, fontWeight: '800' },
@@ -1925,7 +2107,7 @@ const DailyQuestCard = memo(function DailyQuestCard({
         </Text>
 
         <View style={dq.track}>
-          <View style={[dq.fill, { width: pctStr, backgroundColor: quest.claimed ? C.green : accent }]} />
+          <View style={[dq.fill, { width: pctStr, backgroundColor: quest.claimed ? C.green : accent }] as any} />
         </View>
         <Text style={dq.progLabel}>{quest.progress}/{quest.target}</Text>
 

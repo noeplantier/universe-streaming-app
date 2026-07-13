@@ -121,48 +121,51 @@ import React, {
   
   // ─── HOOKS ────────────────────────────────────────────────────────────────────
   interface GenreWithCount { name:string; count:number }
-  
+
+  // ★ Normalise les noms de genres venant de la DB (supprime _, \, casse propre)
+  function cleanLabel(raw: string): string {
+    return raw
+      .replace(/_/g, ' ')
+      .replace(/\\/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^(.)/, c => c.toUpperCase());
+  }
+
   function useReelGenres(): { genres:GenreWithCount[]; loading:boolean } {
     const [genres,  setGenres]  = useState<GenreWithCount[]>([]);
     const [loading, setLoading] = useState(true);
-    const [saved, setSaved ] = useState(true);
-  
+
     useEffect(() => {
       let dead = false;
-  
+
       const load = async () => {
         try {
-          // Fetch genres depuis reels (feed) + works (catalogue), merged
           const [reelsR, worksR] = await Promise.all([
             supabase.from('reels').select('genre').eq('status','approved').not('genre','is',null),
             supabase.from('works').select('genre').not('genre','is',null),
           ]);
           if (dead) return;
-  
-          // Compter les occurrences (reels = poids 2, works = poids 1)
+
           const counts: Record<string,number> = {};
           (reelsR.data ?? []).forEach((r:any) => {
-            const g = r.genre?.trim(); if (g) counts[g] = (counts[g]??0) + 2;
+            const g = cleanLabel(r.genre?.trim()||''); if (g) counts[g] = (counts[g]??0) + 2;
           });
           (worksR.data ?? []).forEach((r:any) => {
-            const g = r.genre?.trim(); if (g) counts[g] = (counts[g]??0) + 1;
+            const g = cleanLabel(r.genre?.trim()||''); if (g) counts[g] = (counts[g]??0) + 1;
           });
-  
+
           const sorted = Object.entries(counts)
             .map(([name, count]) => ({ name, count }))
             .sort((a,b) => b.count - a.count);
-  
+
           setGenres(sorted);
         } catch { /* ignore */ }
         finally { if (!dead) setLoading(false); }
       };
       load();
 
-      // setSaved function
-   function setSaved(value: boolean) {
-        setSaved(value);
-      }
-      
+
 
   
       // Realtime : nouveau reel approuvé
@@ -325,32 +328,6 @@ import React, {
   
     if (!visible) return null;
 
-
-    const onShare = async () => {
-      try {
-        const userId = session?.user?.id; // adapte selon ton state auth
-        const workId = work?.id;          // oeuvre du reel courant
-    
-        if (!userId || !workId) return;
-    
-        const { error } = await supabase
-          .from('user_favorites')
-          .upsert(
-            { user_id: userId, work_id: workId },
-            { onConflict: 'user_id,work_id' }
-          );
-    
-        if (error) throw error;
-    
-        // option UX
-        setSaved?.(true); // si tu as cet état local
-        // toast.success('Ajouté aux favoris');
-      } catch (e) {
-        console.error('[share->favorite] error:', e);
-        // toast.error('Impossible d’ajouter en favoris');
-      }
-    };
-  
     // Comptage des filtres actifs (pour badge sur sections)
     const hasFormat    = !!activeFormat;
     const hasAmbiance  = !!activeAmbiance;
@@ -366,10 +343,10 @@ import React, {
   
           {/* ── ACTIONS ─────────────────────────────────────────────────── */}
           <View style={sb.actions}>
-            <ActionBtn icon="heart-outline"        iconOn="heart"          active={liked} color={P.red}   onPress={wrap(onLike)}/>
-            <ActionBtn icon="volume-high-outline"   iconOn="volume-mute"    active={muted} color="rgba(255,255,255,0.90)" onPress={wrap(onMute)}/>
-          <ActionBtn icon="share-outline" iconOn="share" active={false} color={P.blue} onPress={wrap(onShare)}/>
-          <ActionBtn icon="list-outline"  iconOn="list"  active={false} color={P.muted} onPress={wrap(onInfo)}/>
+            <ActionBtn icon="heart-outline"      iconOn="heart"       active={liked} color={P.red}          onPress={wrap(onLike)}/>
+            <ActionBtn icon="volume-high-outline" iconOn="volume-mute" active={muted} color="rgba(255,255,255,0.90)" onPress={wrap(onMute)}/>
+            <ActionBtn icon="bookmark-outline"   iconOn="bookmark"    active={saved} color={P.gold}         onPress={wrap(onSave)}/>
+            {onInfo&&<ActionBtn icon="list-outline" iconOn="list" active={false} color={P.muted} onPress={wrap(onInfo)}/>}
           </View>
   
           <View style={sb.divider}/>
@@ -524,7 +501,4 @@ import React, {
   });
 
 
-function setSaved(arg0: boolean) {
-  throw new Error('Function not implemented.');
-}
 

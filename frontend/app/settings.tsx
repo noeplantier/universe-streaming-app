@@ -117,26 +117,25 @@ interface Profile {
 
 type VideoQuality = 'auto' | '4k' | '1080p' | '720p' | '480p';
 
-// ★ Strictement les 8 colonnes de public.user_preferences — rien de plus.
 interface Prefs {
-  autoplay:         boolean;
-  video_quality:    VideoQuality;
-  data_saver:       boolean;
-  notif_releases:   boolean;
-  notif_social:     boolean;
-  notif_festivals:  boolean;
-  private_profile:  boolean;
-  public_watchlist: boolean;
+  autoplay:              boolean;
+  video_quality:         VideoQuality;
+  data_saver:            boolean;
+  notif_releases:        boolean;
+  notif_social:          boolean;
+  private_profile:       boolean;
+  public_watchlist:      boolean;
+  show_level_on_profile: boolean;
 }
 const PREFS_DEFAULT: Prefs = {
-  autoplay:         true,
-  video_quality:    'auto',
-  data_saver:       false,
-  notif_releases:   true,
-  notif_social:     true,
-  notif_festivals:  false,
-  private_profile:  false,
-  public_watchlist: true,
+  autoplay:              true,
+  video_quality:         'auto',
+  data_saver:            false,
+  notif_releases:        true,
+  notif_social:          true,
+  private_profile:       false,
+  public_watchlist:      true,
+  show_level_on_profile: true,
 };
 
 const QUALITY_OPTIONS: { value: VideoQuality; label: string; hint: string; icon: keyof typeof Ionicons.glyphMap }[] = [
@@ -162,7 +161,7 @@ async function fetchProfile(uid: string): Promise<Profile|null> {
 async function fetchPrefs(uid: string): Promise<Prefs> {
   const { data } = await supabase
     .from('user_preferences')
-    .select('autoplay,video_quality,data_saver,notif_releases,notif_social,notif_festivals,private_profile,public_watchlist')
+    .select('autoplay,video_quality,data_saver,notif_releases,notif_social,private_profile,public_watchlist,show_level_on_profile')
     .eq('user_id', uid)
     .maybeSingle();
   return data ? { ...PREFS_DEFAULT, ...data } as Prefs : PREFS_DEFAULT;
@@ -643,12 +642,12 @@ export default function SettingsScreen() {
           />
         )}
 
-        {/* ── LECTURE ── */}
-        <SectionTitle label="Lecture" icon="play-circle-outline"/>
+        {/* ── VÉLOCES ── */}
+        <SectionTitle label="Véloces" icon="play-circle-outline"/>
         <Group>
           <ToggleRow
             icon="play-circle-outline" title="Lecture automatique"
-            subtitle="Lance la vidéo sans appuyer sur Play"
+            subtitle="Les reels se lancent seuls au défilement"
             value={prefs.autoplay} onChange={v=>setPref('autoplay',v)} saving={!!V.autoplay}
           />
           <Row
@@ -657,7 +656,7 @@ export default function SettingsScreen() {
           />
           <ToggleRow
             icon="cellular-outline" title="Économiseur de données"
-            subtitle="Réduit la qualité sur réseau mobile"
+            subtitle="Désactive le préchargement des vidéos voisines"
             value={prefs.data_saver} onChange={v=>setPref('data_saver',v)} saving={!!V.data_saver} last
           />
         </Group>
@@ -673,12 +672,7 @@ export default function SettingsScreen() {
           <ToggleRow
             icon="people-outline" title="Activité sociale"
             subtitle="Likes & commentaires sur vos critiques"
-            value={prefs.notif_social} onChange={v=>setPref('notif_social',v)} saving={!!V.notif_social}
-          />
-          <ToggleRow
-            icon="calendar-outline" title="Festivals"
-            subtitle="Cannes, Sundance et avant-premières"
-            value={prefs.notif_festivals} onChange={v=>setPref('notif_festivals',v)} saving={!!V.notif_festivals} last
+            value={prefs.notif_social} onChange={v=>setPref('notif_social',v)} saving={!!V.notif_social} last
           />
         </Group>
 
@@ -687,24 +681,22 @@ export default function SettingsScreen() {
         <Group>
           <ToggleRow
             icon="eye-off-outline" title="Profil privé"
-            subtitle="Seuls vos abonnés voient vos critiques"
+            subtitle="Seuls vos abonnés voient votre activité"
             value={prefs.private_profile} onChange={v=>setPref('private_profile',v)} saving={!!V.private_profile}
           />
           <ToggleRow
             icon="bookmark-outline" title="Watchlist publique"
-            subtitle="Visible par votre communauté Universe"
-            value={prefs.public_watchlist} onChange={v=>setPref('public_watchlist',v)} saving={!!V.public_watchlist} last
+            subtitle="Votre liste est visible par la communauté"
+            value={prefs.public_watchlist} onChange={v=>setPref('public_watchlist',v)} saving={!!V.public_watchlist}
+          />
+          <ToggleRow
+            icon="ribbon-outline" title="Niveau visible sur le profil"
+            subtitle="Affiche votre niveau XP et barre de progression"
+            value={prefs.show_level_on_profile} onChange={v=>setPref('show_level_on_profile',v)} saving={!!V.show_level_on_profile} last
           />
         </Group>
 
-        
-        {/* ── SESSION ── */}
-        <SectionTitle label="Session" icon="reload-outline"/>
-        <Group>
-          <Row icon="refresh-outline" title="Réinitialiser mes préférences" subtitle="Retour aux réglages par défaut" onPress={handleReset}/>
-          <Row icon="trash-outline"   title="Supprimer mon compte" subtitle="Action irréversible" onPress={handleDelete} danger last/>
-        </Group>
-
+   
         <View style={s.footer}>
           <View style={s.footerLine}/>
           <Text style={s.footerTxt}>UNIVERSE · CINÉMA INDÉPENDANT</Text>

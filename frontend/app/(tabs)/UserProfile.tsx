@@ -100,6 +100,7 @@ const ROLE_LABELS: Record<string,string> = {
 interface LocalWork { id:number;title:string;category:string;genre:string;year:number;likes:number;image:string|null;is_original:boolean;duration:number|null;director:string|null }
 interface UserReel { id:string;video_url:string;thumbnail_url:string|null;title:string|null;genre:string|null;duration:number|null;status:'pending'|'approved'|'rejected';likes_count:number;views_count:number;created_at:string }
 interface ReviewItem { id:string;content:string;rating:number;likes:number;film:{id:string;title:string;genre:string} }
+interface VeloceItem { id:string;title:string|null;thumbnail_url:string|null;video_url:string;likes_count:number;views_count:number;genre:string|null }
 interface ProfileData { display_name:string;username:string;bio:string;role:string;location:string;avatar_url:string;website:string;is_pro:boolean;is_industry_contact:boolean;specialties:string[];open_to:string[];notable_works:any[];equipment:string;social_instagram:string;social_vimeo:string;social_youtube:string;social_imdb:string;films_seen_count:number;following_count:number }
 interface Badge { id:string;label:string;icon:keyof typeof Ionicons.glyphMap;earned:boolean;pts:number;desc:string }
 interface GamiStats { watchCount:number;critiqueCount:number;favCount:number;isNight:boolean;streak:number }
@@ -135,6 +136,11 @@ const mapReel   = (r:any): UserReel => ({
   status:(['pending','approved','rejected'].includes(r?.status)?r.status:'pending') as any,
   likes_count:Number(r?.likes_count)||0,views_count:Number(r?.views_count)||0,
   created_at:r?.created_at??new Date().toISOString(),
+});
+const mapVeloce = (r:any): VeloceItem => ({
+  id:String(r?.id??''),title:r?.title??null,thumbnail_url:r?.thumbnail_url??null,
+  video_url:r?.video_url??'',likes_count:Number(r?.likes_count)||0,
+  views_count:Number(r?.views_count)||0,genre:r?.genre??null,
 });
 const mapReview = (r:any): ReviewItem => ({
   id:String(r?.id??''),content:String(r?.content??r?.contenu??''),
@@ -507,6 +513,39 @@ const CritiqueGridCard=memo(({r,rank,onPress}:{r:ReviewItem;rank:number;onPress:
 const cgc=StyleSheet.create({card:{width:GRID_COL,height:GRID_COL*1.1,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid}});
 const CritCard=memo(({r,rank,onPress}:{r:ReviewItem;rank:number;onPress:()=>void})=>{const stars=Math.round(r.rating??0);return(<TouchableOpacity style={{marginRight:10}} onPress={onPress} activeOpacity={0.88}><View style={{width:CRIT_W,height:CRIT_H,borderRadius:14,overflow:'hidden'}}><LinearGradient colors={[C.navyMid,C.navyLow]} style={StyleSheet.absoluteFillObject}/><View style={{position:'absolute',top:9,left:9,paddingHorizontal:7,paddingVertical:3,borderRadius:7,backgroundColor:C.navyDark}}><Text style={{color:C.mid,fontSize:9,fontWeight:'800'}}>#{rank}</Text></View>{r.likes>0&&<View style={{position:'absolute',top:9,right:9,flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:6,paddingVertical:2.5,borderRadius:7,backgroundColor:C.navyDark}}><Ionicons name="heart" size={8} color={C.mid}/><Text style={{color:C.mid,fontSize:8,fontWeight:'700'}}>{fmt(r.likes)}</Text></View>}<View style={{position:'absolute',bottom:0,left:0,right:0,padding:11,gap:3}}><Text style={{color:C.white,fontSize:12,fontWeight:'800',letterSpacing:-0.2}} numberOfLines={1}>{r.film?.title??'—'}</Text><View style={{flexDirection:'row',gap:2}}>{[1,2,3,4,5].map(s=><Ionicons key={s} name={s<=stars?'star':'star-outline'} size={9} color={s<=stars?C.offWhite:C.subtle}/>)}</View><Text style={{color:C.muted,fontSize:10,lineHeight:13}} numberOfLines={2}>{r.content||'—'}</Text></View><View style={{...StyleSheet.absoluteFillObject,borderRadius:14,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}} pointerEvents="none"/></View></TouchableOpacity>);});
 
+// ─── ★ VELOCE CARD (Reels favoris / enregistrés) ─────────────────────────────
+const VeloceCard=memo(function VeloceCard({item}:{item:VeloceItem}){
+  const router=useRouter();const[err,setErr]=useState(false);
+  return(
+    <TouchableOpacity style={{marginRight:10}} onPress={()=>router.push({pathname:'/reel/[id]',params:{id:item.id}} as any)} activeOpacity={0.88}>
+      <View style={vc.card}>
+        {item.thumbnail_url&&!err
+          ?<Image source={{uri:item.thumbnail_url}} style={vc.img} resizeMode="cover" onError={()=>setErr(true)}/>
+          :<View style={vc.ph}><LinearGradient colors={[C.navyMid,C.navyLow]} style={StyleSheet.absoluteFillObject}/><Ionicons name="play-circle-outline" size={22} color={C.subtle}/></View>
+        }
+        <LinearGradient colors={['transparent','rgba(7,12,23,0.94)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.4}} end={{x:0,y:1}}/>
+        <View style={vc.meta}>
+          {!!item.genre&&<Text style={vc.genre}>{item.genre.toUpperCase()}</Text>}
+          <Text style={vc.title} numberOfLines={2}>{item.title||'Sans titre'}</Text>
+          <View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:2}}>
+            <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="heart" size={8} color={C.muted}/><Text style={vc.stat}>{fmt(item.likes_count)}</Text></View>
+            <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="eye-outline" size={8} color={C.muted}/><Text style={vc.stat}>{fmt(item.views_count)}</Text></View>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+const vc=StyleSheet.create({
+  card:{width:REEL_W,height:REEL_H,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},
+  img:{width:REEL_W,height:REEL_H},
+  ph:{width:REEL_W,height:REEL_H,alignItems:'center',justifyContent:'center'},
+  genre:{color:C.muted,fontSize:7,fontWeight:'800',letterSpacing:0.8,marginBottom:1},
+  meta:{position:'absolute',bottom:0,left:0,right:0,padding:10,gap:2},
+  title:{color:C.white,fontSize:10.5,fontWeight:'800',lineHeight:13},
+  stat:{color:C.muted,fontSize:8,fontWeight:'600'},
+});
+
 const VideoThumbnails:any=Platform.select({native:()=>{try{return require('expo-video-thumbnails');}catch{return null;}},default:()=>null})?.()??null;
 function useThumb(url:string,thumb:string|null):string|null{const[uri,setUri]=useState<string|null>(thumb??null);useEffect(()=>{if(thumb||!url||!VideoThumbnails)return;let ok=true;VideoThumbnails.getThumbnailAsync(url,{time:1500,quality:0.65}).then(({uri:u}:{uri:string})=>{if(ok)setUri(u);}).catch(()=>{});return()=>{ok=false;};},[url,thumb]);return uri;}
 const STATUS_CFG:Record<string,{icon:keyof typeof Ionicons.glyphMap;label:string}>={pending:{icon:'time-outline',label:'En attente'},approved:{icon:'checkmark-circle-outline',label:'Validée'},rejected:{icon:'close-circle-outline',label:'Refusée'}};
@@ -599,6 +638,9 @@ export default function UserProfileScreen() {
   const [modal,        setModal]   = useState<ModalType|null>(null);
   const [streak,       setStreak]  = useState(0);
   const [gamiProfile,  setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
+  // ★ Véloces
+  const [likedReels,   setLikedReels] = useState<VeloceItem[]>([]);
+  const [savedReels,   setSavedReels] = useState<VeloceItem[]>([]);
 
   // ★ Vie privée du profil consulté — mêmes colonnes que settings.tsx
   const [isPrivate,       setIsPrivate]       = useState(false);
@@ -615,7 +657,7 @@ export default function UserProfileScreen() {
     try {
       const{data}=await supabase.from('profiles')
         .select('xp,level,title,streak_days,contribution_score')
-        .eq('user_id',targetId).maybeSingle();
+        .eq('id',targetId).maybeSingle(); // profiles.id = device UUID (PK)
       if(data){
         const d=data as any;
         const lvl=xpToLevel(d.xp??0);
@@ -670,13 +712,26 @@ export default function UserProfileScreen() {
       const favIds=[...new Set((favR.data??[]).map((r:any)=>Number(r.work_id)).filter(Boolean))];
       const seenIds=[...new Set(seenItems.map(r=>r.workId).filter(Boolean))];
       const allIds=[...new Set([...favIds,...seenIds])];
-      const[favD,seenD]=await Promise.all([
+      const[favD,seenD,likedIdsR,savedIdsR]=await Promise.all([
         favIds.length?supabase.from('works').select(WORK_COLS).in('id',favIds):Promise.resolve({data:[]}),
         seenIds.length?supabase.from('works').select(WORK_COLS).in('id',seenIds):Promise.resolve({data:[]}),
+        // ★ Véloces favoris (user_liked_reels) et enregistrés (user_saved_reels)
+        supabase.from('user_liked_reels').select('reel_id').eq('user_id',targetId).limit(20),
+        supabase.from('user_saved_reels').select('reel_id').eq('user_id',targetId).limit(20),
       ]);
       const favWks=((favD.data??[]) as any[]).map(mapWork);
       const seenWks=((seenD.data??[]) as any[]).map(mapWork);
       setFavW(favWks);setWatched(seenWks);
+      // ★ Fetch détails des Véloces aimés/enregistrés
+      const likedRIds=(likedIdsR.data??[]).map((r:any)=>String(r.reel_id)).filter(Boolean);
+      const savedRIds=(savedIdsR.data??[]).map((r:any)=>String(r.reel_id)).filter(Boolean);
+      const REEL_V_COLS='id,title,thumbnail_url,video_url,likes_count,views_count,genre';
+      const[lVD,sVD]=await Promise.all([
+        likedRIds.length?supabase.from('reels').select(REEL_V_COLS).in('id',likedRIds):Promise.resolve({data:[]}),
+        savedRIds.length?supabase.from('reels').select(REEL_V_COLS).in('id',savedRIds):Promise.resolve({data:[]}),
+      ]);
+      setLikedReels((lVD.data??[]).map(mapVeloce));
+      setSavedReels((sVD.data??[]).map(mapVeloce));
       const gW:Record<string,number>={};
       favWks.forEach(w=>{if(w.genre)gW[w.genre]=(gW[w.genre]??0)+3;if(w.category)gW[w.category]=(gW[w.category]??0)+1.5;});
       seenWks.forEach(w=>{if(w.genre)gW[w.genre]=(gW[w.genre]??0)+1;});
@@ -717,7 +772,7 @@ export default function UserProfileScreen() {
     setFollowing(next); // optimiste
     try{
       if(next){
-        await supabase.from('follows').upsert({ follower_id:myId, following_id:deviceId });
+        await supabase.from('follows').upsert({ follower_id:myId, following_id:deviceId },{ onConflict:'follower_id,following_id' });
       } else {
         await supabase.from('follows').delete().eq('follower_id',myId).eq('following_id',deviceId);
       }
@@ -782,6 +837,20 @@ export default function UserProfileScreen() {
     const roleLabel=ROLE_LABELS[profile.role]??'Cinéaste';
     return(
       <View style={{marginTop:16}}>
+        {/* ★ Véloces Favoris — likés par l'utilisateur (user_liked_reels) */}
+        <CinemaAccordion icon="heart-outline" title="Véloces Favoris" count={likedReels.length} defaultOpen={likedReels.length>0}>
+          {likedReels.length===0
+            ?<Empty icon="heart-outline" text="Aucun Véloce aimé" sub="Les Véloces likés apparaissent ici"/>
+            :<HRow pb={8} c={likedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
+          }
+        </CinemaAccordion>
+        {/* ★ Véloces Enregistrés — sauvegardés par l'utilisateur (user_saved_reels) */}
+        <CinemaAccordion icon="bookmark-outline" title="Véloces Enregistrés" count={savedReels.length} defaultOpen={savedReels.length>0}>
+          {savedReels.length===0
+            ?<Empty icon="bookmark-outline" text="Aucun Véloce enregistré" sub="Les Véloces sauvegardés apparaissent ici"/>
+            :<HRow pb={8} c={savedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
+          }
+        </CinemaAccordion>
         <CinemaAccordion icon="person-circle-outline" title="Identité" defaultOpen badge={roleLabel}>
           <View style={{flexDirection:'row',flexWrap:'wrap',gap:7}}>
             {[roleLabel,...profile.specialties].map((s,i)=>(

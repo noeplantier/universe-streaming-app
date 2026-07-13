@@ -23,6 +23,7 @@ import * as Haptics       from 'expo-haptics';
 import BottomCard     from './BottomCard';
 import { P }          from './types';
 import { useReelsUI } from '@/contexts/ReelsUIContext';
+import { supabase }   from '@/lib/supabase';
 import type { FeedFilm } from './types';
 
 // ── expo-video ────────────────────────────────────────────────────────────────
@@ -48,7 +49,7 @@ if(Platform.OS!=='web'){
 const _nullHook  =(_src:any,_setup:any)=>null;
 const _playerHook=_useVideoPlayer??_nullHook;
 
-const UI_AUTO_HIDE_MS = 4000; // 4 secondes sans interaction
+const UI_AUTO_HIDE_MS = 3000; // 3 secondes sans interaction
 const DBL_TAP_MS      = 280;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -64,6 +65,12 @@ export interface FeedItemProps {
   onPauseAutoHide?: () => void;
   /** Reprend auto-hide quand la vidéo reprend */
   onResumeAutoHide?: () => void;
+  /** Device ID de l'utilisateur connecté — pour l'upsert user_favorites */
+  userId?: string;
+  /** Pref lecture auto (user_preferences.autoplay) — défaut true */
+  autoplay?: boolean;
+  /** Pref économiseur de données (user_preferences.data_saver) */
+  dataSaver?: boolean;
 }
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
@@ -125,14 +132,15 @@ const PlayPauseFlash=memo(function PlayPauseFlash({anim,isPaused}:{anim:Animated
 });
 
 // ── FeedItem ──────────────────────────────────────────────────────────────────
-const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,itemH,insetBot,onLike,onInfoPress,muted:mutedProp,onResetTimer,onPauseAutoHide,onResumeAutoHide}:FeedItemProps){
+const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,itemH,insetBot,onLike,onInfoPress,muted:mutedProp,onResetTimer,onPauseAutoHide,onResumeAutoHide,userId,autoplay,dataSaver}:FeedItemProps){
   const isWeb=Platform.OS==='web';
   const src=film.video_url?.trim()||null;
 
   // ★ Une seule fonction pour tout cacher/montrer
-  const {setUIVisible}=useReelsUI();
+  const { setUIVisible, resetTimer: ctxResetTimer, pauseAutoHide: ctxPauseAutoHide, resumeAutoHide: ctxResumeAutoHide } = useReelsUI();
 
-  const nativeSrc=!isWeb&&isNear&&src?src:null;
+  // data_saver : ne précharge que l'item actif (pas les voisins)
+  const nativeSrc=!isWeb&&(isActive||(isNear&&!dataSaver))&&src?src:null;
   const player=_playerHook(nativeSrc,setupPlayer);
   const {isPlaying:nativePlaying}=_useEvent(player,'playingChange',{isPlaying:false});
   const {currentTime:nativeCT}=_useEvent(player,'timeUpdate',{currentTime:0,bufferedPosition:0,currentLiveTimestamp:null,currentOffsetFromLive:null});
@@ -143,47 +151,83 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
   const [_mutedLocal, setMuted]   =useState(false);
   const muted = mutedProp !== undefined ? mutedProp : _mutedLocal;
   const [saved,    setSaved]   =useState(film.is_saved??false);
+
+  // Sync liked/saved avec les props quand le parent les met à jour depuis Supabase
+  useEffect(()=>{ setLiked(film.is_liked??false); },[film.is_liked]);
+  useEffect(()=>{ setSaved(film.is_saved??false); },[film.is_saved]);
   const [buffering,setBuffering]=useState(true);
   const [hasErr,   setHasErr]  =useState(false);
   const [webPlaying,setWebPlaying]=useState(false);
   const [webCT,    setWebCT]   =useState(0);
   const [webDur,   setWebDur]  =useState(0);
 
+  // ★ Counts locaux — initialisés depuis les props, mis à jour en live quand isActive
+  const [liveLikes, setLiveLikes] = useState(film.likes_count??0);
+  const [liveViews, setLiveViews] = useState(film.views_count??0);
+  useEffect(()=>{ setLiveLikes(film.likes_count??0); },[film.likes_count]);
+  useEffect(()=>{ setLiveViews(film.views_count??0); },[film.views_count]);
+
+  // Fetch live counts depuis Supabase quand ce reel devient actif
+  useEffect(()=>{
+    if(!isActive) return;
+    supabase.from('reels').select('likes_count,views_count').eq('id',film.id).maybeSingle()
+      .then(({data})=>{ if(data){ setLiveLikes(data.likes_count??0); setLiveViews(data.views_count??0); } },()=>{});
+  },[isActive,film.id]);
+
   // showUI contrôle Sidebar + BottomCard localement
   // setUIVisible contrôle NavBar + TopHeader via le contexte
   // Les deux sont appelés ensemble dans hideAll/showAll
   const [showUI,   setShowUI]  =useState(true);
-  const [isPaused,_setIsPaused]=useState(false);
-  const isPausedRef=useRef(false);
+  // autoplay pref : démarre en pause si autoplay=false
+  const [isPaused,_setIsPaused]=useState(()=>autoplay===false);
+  const isPausedRef=useRef(autoplay===false);
   const setIsPaused=useCallback((v:boolean)=>{ isPausedRef.current=v; _setIsPaused(v); },[]);
+
+  // Applique la pref autoplay dès qu'elle arrive (chargement async des prefs)
+  const autoplayApplied=useRef(false);
+  useEffect(()=>{
+    if(autoplay!==undefined&&!autoplayApplied.current){
+      autoplayApplied.current=true;
+      if(autoplay===false&&!isPausedRef.current&&!isActive) setIsPaused(true);
+    }
+  },[autoplay,isActive,setIsPaused]);
 
   const endRef    =useRef(false);
   const seekRef   =useRef<((t:number)=>void)|null>(null);
   const hideTimer =useRef<ReturnType<typeof setTimeout>|null>(null);
   const ppFlashAnim=useRef(new Animated.Value(0)).current;
   const ppFlashTO =useRef<ReturnType<typeof setTimeout>|null>(null);
+  // ★ Animation fluide sidebar (évite le hard-cut booléen)
+  const sidebarAnim=useRef(new Animated.Value(1)).current;
 
   const currentTime=isWeb?webCT:nativeCT;
   const dur=isWeb?webDur:(player?.duration??0);
   const progress=dur>0?Math.min(currentTime/dur,1):0;
+  // Ref stable pour handleSeek → évite 30x/s recréation de callback via nativeCT
+  const currentTimeRef=useRef(currentTime);
+  currentTimeRef.current=currentTime;
 
   // ★ hideAll / showAll — appellent TOUJOURS les deux ensemble
   const hideAll=useCallback(()=>{
-    setShowUI(false);      // Sidebar + BottomCard
-    setUIVisible(false);   // NavBar + TopHeader
-  },[setUIVisible]);
+    setShowUI(false);
+    setUIVisible(false);
+    Animated.timing(sidebarAnim,{toValue:0,duration:220,useNativeDriver:true}).start();
+  },[setUIVisible,sidebarAnim]);
 
   const showAll=useCallback(()=>{
     setShowUI(true);
     setUIVisible(true);
-  },[setUIVisible]);
+    Animated.timing(sidebarAnim,{toValue:1,duration:180,useNativeDriver:true}).start();
+  },[setUIVisible,sidebarAnim]);
 
-  // ★ Timer 4 s — reset à chaque interaction utilisateur
+  // ★ Timer 3 s — reset à chaque interaction utilisateur
+  // Sync le timer du contexte (NavBar) ET le timer local (Sidebar + BottomCard)
   const resetHideTimer=useCallback(()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current);
     if(isPausedRef.current) return; // En pause → pas d'auto-hide
     hideTimer.current=setTimeout(hideAll,UI_AUTO_HIDE_MS);
-  },[hideAll]);
+    ctxResetTimer(); // ★ évite le desync NavBar / Sidebar
+  },[hideAll,ctxResetTimer]);
 
   const clearHideTimer=useCallback(()=>{
     if(hideTimer.current) clearTimeout(hideTimer.current);
@@ -252,9 +296,9 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
 
   const handleSeek=useCallback((sec:number)=>{
     if(isWeb) seekRef.current?.(sec);
-    else if(player) try{ player.seekBy(sec-nativeCT); }catch{}
+    else if(player) try{ player.seekBy(sec-currentTimeRef.current); }catch{}
     resetHideTimer(); // ★ seek = interaction
-  },[isWeb,player,nativeCT,resetHideTimer]);
+  },[isWeb,player,resetHideTimer]);
 
   // Flash icône pause/play
   const flashIcon=useCallback(()=>{
@@ -271,13 +315,13 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
     flashIcon();
     if(!isWeb) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{});
     if(!next){
-      onResumeAutoHide?.();  // reprise → auto-hide reprend dans le contexte
+      ctxResumeAutoHide(); // reprise → auto-hide reprend dans le contexte
       resetHideTimer();
     } else {
-      onPauseAutoHide?.();   // pause → overlay reste visible
+      ctxPauseAutoHide();  // pause → overlay reste visible dans le contexte
       clearHideTimer();
     }
-  },[setIsPaused,flashIcon,isWeb,resetHideTimer,clearHideTimer,onPauseAutoHide,onResumeAutoHide]);
+  },[setIsPaused,flashIcon,isWeb,resetHideTimer,clearHideTimer,ctxPauseAutoHide,ctxResumeAutoHide]);
 
   // Skip ±10s
   const leftBadge =useRef(new Animated.Value(0)).current;
@@ -344,9 +388,40 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
 
   const zW=itemW/3;
 
-  const handleSideLike=useCallback(()=>{ setLiked(v=>{ if(!v) onLike?.(film.id); return !v; }); resetHideTimer(); },[film.id,onLike,resetHideTimer]);
+  // Like / Unlike — table user_liked_reels (uuid), distincte de user_favorites (integer work_id pour les œuvres classiques)
+
+  const handleSideLike=useCallback(()=>{
+    const next=!liked;
+    setLiked(next);
+    // Optimistic count update
+    setLiveLikes(c=>Math.max(0,c+(next?1:-1)));
+    onLike?.(film.id);
+    resetHideTimer();
+    if(!userId) return;
+    if(next){
+      supabase.from('user_liked_reels').upsert({user_id:userId,reel_id:film.id},{onConflict:'user_id,reel_id'}).then(()=>{},()=>{ setLiked(false); setLiveLikes(c=>Math.max(0,c-1)); });
+    } else {
+      supabase.from('user_liked_reels').delete().eq('user_id',userId).eq('reel_id',film.id).then(()=>{},()=>{ setLiked(true); setLiveLikes(c=>c+1); });
+    }
+  },[liked,film.id,onLike,userId,resetHideTimer]);
+
+  // Mute
+
   const handleSideMute=useCallback(()=>{ setMuted(v=>!v); resetHideTimer(); },[resetHideTimer]);
-  const handleSideSave=useCallback(()=>{ setSaved(v=>!v); resetHideTimer(); },[resetHideTimer]);
+
+  // ★ Reels sauvegardés — table user_saved_reels (uuid), distincte de
+  //   user_favorites (integer work_id pour les œuvres classiques)
+  const handleSideSave=useCallback(()=>{
+    const next=!saved;
+    setSaved(next);
+    resetHideTimer();
+    if(!userId) return;
+    if(next){
+      supabase.from('user_saved_reels').upsert({user_id:userId,reel_id:film.id},{onConflict:'user_id,reel_id'}).then(()=>{},()=>setSaved(false));
+    } else {
+      supabase.from('user_saved_reels').delete().eq('user_id',userId).eq('reel_id',film.id).then(()=>{},()=>setSaved(true));
+    }
+  },[saved,userId,film.id,resetHideTimer]);
 
   return(
     <View style={[fi.root,{width:itemW,height:itemH}]}>
@@ -398,34 +473,38 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
         <Ionicons name="heart" size={90} color={P.red}/>
       </Animated.View>
 
-      {showUI&&(
-        <View style={fi.sidebar} pointerEvents="box-none">
-          <TouchableOpacity style={fi.sBtn} onPress={handleSideLike}>
-            <View style={[fi.sIcon,liked&&fi.sIconOn]}>
-              <Ionicons name={liked?'heart':'heart-outline'} size={26} color={liked?P.red:'#fff'}/>
+      {/* ★ Sidebar animée — fade fluide au lieu d'un hard-cut booléen */}
+      <Animated.View
+        style={[fi.sidebar,{opacity:sidebarAnim}]}
+        pointerEvents={showUI?'box-none':'none'}
+      >
+        <TouchableOpacity style={fi.sBtn} onPress={handleSideLike}>
+          <View style={[fi.sIcon,liked&&fi.sIconOn]}>
+            <Ionicons name={liked?'heart':'heart-outline'} size={26} color={liked?P.red:'#fff'}/>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={fi.sBtn} onPress={handleSideMute}>
+          <View style={[fi.sIcon,muted&&fi.sIconOn]}>
+            <Ionicons name={muted?'volume-mute':'volume-high'} size={23} color="#fff"/>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={fi.sBtn} onPress={handleSideSave}>
+          <View style={[fi.sIcon,saved&&fi.sIconOn]}>
+            <Ionicons name={saved?'bookmark':'bookmark-outline'} size={23} color="#fff"/>
+          </View>
+        </TouchableOpacity>
+        {onInfoPress&&(
+          <TouchableOpacity style={fi.sBtn} onPress={()=>{ onInfoPress(film); resetHideTimer(); }}>
+            <View style={fi.sIcon}>
+              <Ionicons name="list-outline" size={24} color="rgba(255,255,255,0.75)"/>
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={fi.sBtn} onPress={handleSideMute}>
-            <View style={[fi.sIcon,muted&&fi.sIconOn]}>
-              <Ionicons name={muted?'volume-mute':'volume-high'} size={23} color="#fff"/>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={fi.sBtn} onPress={handleSideSave}>
-            <View style={[fi.sIcon,saved&&fi.sIconOn]}>
-              <Ionicons name={saved?'bookmark':'bookmark-outline'} size={23} color="#fff"/>
-            </View>
-          </TouchableOpacity>
-          {onInfoPress&&(
-            <TouchableOpacity style={fi.sBtn} onPress={()=>{ onInfoPress(film); resetHideTimer(); }}>
-              <View style={fi.sIcon}>
-                <Ionicons name="list-outline" size={24} color="rgba(255,255,255,0.75)"/>
-              </View>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+        )}
+      </Animated.View>
 
-      <BottomCard film={film} progress={progress} duration={dur} currentTime={currentTime}
+      <BottomCard
+        film={{ ...film, likes_count: liveLikes, views_count: liveViews }}
+        progress={progress} duration={dur} currentTime={currentTime}
         isReady={!buffering&&!hasErr&&!!src} insetBot={insetBot}
         onSeek={handleSeek} visible={showUI}/>
     </View>

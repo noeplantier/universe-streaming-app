@@ -4,18 +4,32 @@
  * Flow : Vidéo → Miniature (galerie, toujours dispo) → Infos → Upload → Backoffice
  *
  * ★★ CHANGEMENTS (sur demande) ★★
- * 1. Galerie = UNIQUEMENT vidéos (natif ET web) — jamais d'image.
- * 2. Caméra = ouvre réellement la caméra et permet d'enregistrer une vidéo,
- *    y compris sur web mobile (capture="environment" déclenche l'appareil
- *    natif du téléphone au lieu de la galerie).
- * 3. Dropdown Genre réécrit : s'ouvre désormais dans un Modal (overlay),
- *    positionné sous le champ, hauteur fixe avec scroll interne — ne pousse
- *    plus jamais le reste du formulaire vers le bas.
- * 4. Champ "Année" remplacé par un vrai sélecteur de date (calendrier
- *    mensuel maison, même langage visuel que le reste du form).
- * 5. Le message "Vidéo envoyée au backoffice" n'est plus une notification
- *    flottante (Banner) : il s'affiche uniquement inline, juste au-dessus
- *    du bouton "Soumettre la vidéo".
+ * 1. ★ UPLOAD NETTEMENT PLUS RAPIDE :
+ *    a) Compression vidéo côté client avant envoi (react-native-compressor,
+ *       natif uniquement) — la durée d'upload est directement proportionnelle
+ *       à la taille du fichier, donc réduire un master téléphone (souvent
+ *       40-60 Mbps H.264) à un débit raisonnable divise le temps de
+ *       transfert d'autant. C'est le seul levier honnête pour un vrai gain
+ *       d'ordre de grandeur — le multiplicateur réel dépend du fichier
+ *       source (peut largement dépasser 10x sur une vidéo 4K non compressée,
+ *       moins sur un export déjà optimisé).
+ *    b) Miniature + vidéo envoyées EN PARALLÈLE (Promise.all) au lieu de
+ *       façon séquentielle — supprime le temps mort d'attente de la
+ *       miniature avant que la vidéo ne commence à partir.
+ * 2. ★ FIX sélection depuis la pellicule mobile :
+ *    a) Compatibilité `mediaTypes` multi-versions expo-image-picker (l'API a
+ *       changé entre les SDK — l'ancien enum `MediaTypeOptions.Videos` vs le
+ *       nouveau tableau `['videos']`). Utiliser la mauvaise forme fait
+ *       parfois apparaître une pellicule vide silencieusement.
+ *    b) Détection de l'accès limité iOS (`accessPrivileges: 'limited'`) : si
+ *       l'utilisateur n'a partagé que des photos (pas de vidéos) avec
+ *       l'app, la pellicule semble vide dans le picker — c'est la cause la
+ *       plus fréquente du bug remonté. On propose d'élargir l'accès via
+ *       `presentPermissionsPickerAsync()` (ou un message clair sinon).
+ * 3. ★ Autocomplétion du synopsis : un bouton "Suggérer" à côté du champ
+ *    génère un brouillon de synopsis à partir du titre + genre sélectionné
+ *    (+ réalisateur si renseigné), entièrement local (aucun appel réseau),
+ *    éditable ensuite comme n'importe quel texte.
  *
  * Miniature :
  *   • Sélection manuelle depuis la galerie (JAMAIS bloquante)
@@ -23,7 +37,7 @@
  *   • L'utilisateur peut changer à tout moment
  *
  * Upload :
- *   • XHR avec vraie progression (miniature → vidéo → INSERT DB)
+ *   • XHR avec vraie progression (miniature ∥ vidéo → INSERT DB)
  *   • Tous les champs reels matchent le schéma Supabase exactement
  *   • Triggers DB (tg_notif_reel_submitted, tg_reel_pending) → backoffice
  */
@@ -50,6 +64,13 @@ if (Platform.OS !== 'web') {
   try { VideoThumbnails = require('expo-video-thumbnails'); } catch {}
 }
 
+// ─── react-native-compressor : bonus non-bloquant — accélère l'upload ───────
+// Absent ou en échec → on envoie le fichier original, jamais bloquant.
+let VideoCompressor: any = null;
+if (Platform.OS !== 'web') {
+  try { VideoCompressor = require('react-native-compressor').Video; } catch {}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,6 +82,19 @@ const MAX_DUR_S    = 180;
 // requête — limite plateforme, pas configurable depuis le frontend. Mieux
 // vaut prévenir avant un upload voué à échouer que laisser un 400 muet.
 const MAX_FILE_MB  = 90;
+
+// ★ Compat multi-versions expo-image-picker — l'API `mediaTypes` a changé
+// entre SDK (ancien enum `MediaTypeOptions.Videos` vs nouveau tableau de
+// chaînes `['videos']`). Se tromper de forme peut faire apparaître une
+// pellicule vide sans aucune erreur visible — c'est la cause la plus
+// probable du bug "impossible de charger une vidéo depuis la pellicule".
+const LEGACY_MEDIA_TYPES = !!(ImagePicker as any).MediaTypeOptions;
+const VIDEO_MEDIA_TYPES: any = LEGACY_MEDIA_TYPES
+  ? (ImagePicker as any).MediaTypeOptions.Videos
+  : ['videos'];
+const IMAGE_MEDIA_TYPES: any = LEGACY_MEDIA_TYPES
+  ? (ImagePicker as any).MediaTypeOptions.Images
+  : ['images'];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PALETTE
@@ -103,6 +137,34 @@ const GENRES: { value: string; label: string; icon: keyof typeof Ionicons.glyphM
   { value:'road_movie',             label:'Road movie',                  icon:'car-outline'            },
   { value:'portrait_territoire',    label:'Portrait de territoire',      icon:'map-outline'            },
 ];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ SYNOPSIS — templates d'autocomplétion par genre (100% local, éditable)
+// ─────────────────────────────────────────────────────────────────────────────
+const SYNOPSIS_TEMPLATES: Record<string, (title: string, director: string) => string> = {
+  drame_intimiste: (t, d) => `${t}${d ? `, ${d.trim() === '' ? '' : `de ${d},`}` : ','} suit un personnage confronté à une rupture silencieuse — un deuil, un secret, une absence — et explore avec pudeur ce que le quotidien ne dit jamais tout haut.`,
+  documentaire_social: (t) => `${t} pose sa caméra au plus près d'une réalité qu'on préfère ne pas regarder, et donne la parole à celles et ceux que l'on n'écoute jamais assez.`,
+  court_experimental: (t) => `${t} déconstruit les codes du récit classique pour proposer une expérience sensorielle avant tout — image, son et rythme s'y répondent hors des sentiers battus.`,
+  film_auteur: (t) => `${t} porte un regard singulier et assumé sur le monde, où chaque plan est une prise de position autant qu'une image.`,
+  comedie_independante: (t) => `${t} détourne les petites absurdités du quotidien pour en tirer une comédie mordante, portée par des personnages aussi maladroits qu'attachants.`,
+  thriller_psychologique: (t) => `${t} installe une tension qui ne repose sur aucun artifice — juste un esprit qui vacille, une vérité qu'on devine trop tard.`,
+  film_noir_contemporain: (t) => `${t} plonge dans une nuit urbaine où les apparences mentent et où chaque personnage porte une part d'ombre qu'il finira par payer.`,
+  cinema_du_reel: (t) => `${t} capte le réel sans artifice, à hauteur d'humain, pour révéler ce que la vie ordinaire a de profondément cinématographique.`,
+  horreur_atmospherique: (t) => `${t} distille une peur lente, faite de silences et de non-dits, où la menace se ressent bien avant de se voir.`,
+  sf_lo_fi: (t) => `${t} imagine un futur proche et fauché, où la science-fiction se joue avec des moyens de bord — et n'en est que plus troublante.`,
+  romance_naturaliste: (t) => `${t} observe la naissance d'un lien avec une sincérité rare, loin des artifices du genre, au plus près des silences et des gestes qui comptent.`,
+  biopic_alternatif: (t) => `${t} retrace un parcours réel en refusant la chronologie sage du biopic classique, pour mieux en révéler les zones d'ombre.`,
+  animation_independante: (t) => `${t} donne vie à un univers dessiné à la main (ou presque), porté par une esthétique qui assume pleinement ses choix.`,
+  road_movie: (t) => `${t} embarque son personnage sur une route sans retour possible, où chaque kilomètre le rapproche un peu plus de lui-même.`,
+  portrait_territoire: (t) => `${t} dresse le portrait sensible d'un lieu et de ceux qui l'habitent, entre attachement et fatalité.`,
+};
+
+function suggestSynopsis(title: string, genreValue: string, director: string): string {
+  const safeTitle = title.trim() || 'Ce film';
+  const tpl = SYNOPSIS_TEMPLATES[genreValue];
+  if (tpl) return tpl(safeTitle, director);
+  return `${safeTitle} raconte une histoire singulière portée par un regard de cinéaste indépendant, entre intime et universel.`;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CALENDRIER — helpers (aucune dépendance externe)
@@ -188,6 +250,30 @@ async function resolveBlob(uri: string): Promise<Blob> {
   return r.blob();
 }
 
+// ★ Gère l'accès limité à la photothèque iOS (`accessPrivileges: 'limited'`)
+// — cause la plus fréquente d'une pellicule qui semble vide côté vidéos :
+// l'utilisateur n'a partagé que des photos, pas de vidéos, avec l'app.
+async function ensureFullLibraryAccess(): Promise<boolean> {
+  const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (perm.status !== 'granted') {
+    Alert.alert('Permission requise', "Active l'accès à ta galerie dans les réglages pour importer une vidéo.");
+    return false;
+  }
+  if ((perm as any).accessPrivileges === 'limited') {
+    if (typeof (ImagePicker as any).presentPermissionsPickerAsync === 'function') {
+      // ★ Laisse l'utilisateur ajouter des vidéos à sa sélection limitée
+      // sans quitter l'app.
+      await (ImagePicker as any).presentPermissionsPickerAsync();
+    } else {
+      Alert.alert(
+        'Accès limité à la galerie',
+        "Seules certaines photos sont partagées avec Universe. Si ta vidéo n'apparaît pas dans la liste, va dans Réglages > Universe > Photos et choisis « Toutes les photos ».",
+      );
+    }
+  }
+  return true;
+}
+
 async function uploadXHR(
   path: string, blob: Blob, mime: string,
   onProgress: (p: number) => void,
@@ -219,15 +305,19 @@ async function uploadXHR(
 // CHAMP TEXTE
 // ─────────────────────────────────────────────────────────────────────────────
 const Field = memo(function Field({
-  label, value, onChange, placeholder, multiline, maxLength, keyboardType='default',
+  label, value, onChange, placeholder, multiline, maxLength, keyboardType='default', rightAccessory,
 }: {
   label:string; value:string; onChange:(v:string)=>void;
   placeholder?:string; multiline?:boolean; maxLength?:number;
   keyboardType?:'default'|'numeric'|'email-address';
+  rightAccessory?: React.ReactNode;
 }) {
   return (
     <View style={fi.wrap}>
-      <Text style={fi.label}>{label}</Text>
+      <View style={fi.labelRow}>
+        <Text style={[fi.label, { marginBottom:0 }]}>{label}</Text>
+        {rightAccessory}
+      </View>
       <TextInput
         style={[fi.input, multiline && fi.multi]}
         value={value} onChangeText={onChange} placeholder={placeholder}
@@ -244,10 +334,20 @@ const Field = memo(function Field({
 });
 const fi = StyleSheet.create({
   wrap:  { marginBottom:12 },
+  labelRow: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:6 },
   label: { color:C.muted, fontSize:10, fontWeight:'700', letterSpacing:0.8, textTransform:'uppercase', marginBottom:6 },
   input: { backgroundColor:C.navy, borderRadius:12, paddingHorizontal:14, paddingVertical:12, color:C.white, fontSize:14, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border },
   multi: { height:90, textAlignVertical:'top', paddingTop:12 },
   count: { color:C.muted, fontSize:9, textAlign:'right', marginTop:2 },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ★ Bouton "Suggérer" — autocomplétion du synopsis
+// ─────────────────────────────────────────────────────────────────────────────
+const syn = StyleSheet.create({
+  btn:   { flexDirection:'row', alignItems:'center', gap:5, paddingHorizontal:9, paddingVertical:4, borderRadius:9, backgroundColor:'rgba(167,139,250,0.14)', borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(167,139,250,0.32)' },
+  btnOff:{ opacity:0.35 },
+  btnTxt:{ color:'#C4B5FD', fontSize:10.5, fontWeight:'700' },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -568,6 +668,25 @@ const VideoTab = memo(function VideoTab() {
   const setYear     = useCallback((v:string) => setForm(p=>({...p,year:v})),     []);
   const setSynopsis = useCallback((v:string) => setForm(p=>({...p,synopsis:v})), []);
 
+  // ── ★ Autocomplétion synopsis — 100% locale, à partir de titre + genre ────
+  const handleSuggestSynopsis = useCallback(() => {
+    if (!form.title.trim()) return;
+    const suggestion = suggestSynopsis(form.title, form.genre, form.director);
+    if (form.synopsis.trim().length > 0) {
+      Alert.alert(
+        'Remplacer le synopsis ?',
+        'Un synopsis est déjà rédigé. Le remplacer par la suggestion ?',
+        [
+          { text:'Annuler', style:'cancel' },
+          { text:'Remplacer', onPress: () => setSynopsis(suggestion) },
+        ],
+      );
+    } else {
+      setSynopsis(suggestion);
+    }
+    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(()=>{});
+  }, [form.title, form.genre, form.director, form.synopsis, setSynopsis]);
+
   // ── Reset ─────────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
     setVideo(null); setThumbUri(null); setThumbBlob(null); setForm(EMPTY);
@@ -623,13 +742,10 @@ const VideoTab = memo(function VideoTab() {
       input.click();
       return;
     }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission requise', 'Active l\'accès à la galerie dans les réglages.');
-      return;
-    }
+    const ok = await ensureFullLibraryAccess();
+    if (!ok) return;
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes:    ['images'] as any,
+      mediaTypes:    IMAGE_MEDIA_TYPES,
       allowsEditing: true,
       aspect:        [16, 9],
       quality:       0.90,
@@ -641,7 +757,7 @@ const VideoTab = memo(function VideoTab() {
   }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ★ SÉLECTION VIDÉO — GALERIE UNIQUEMENT, uniquement des vidéos
+  // ★ SÉLECTION VIDÉO — GALERIE (pellicule) UNIQUEMENT, uniquement des vidéos
   // ─────────────────────────────────────────────────────────────────────────
   const pickGallery = useCallback(async () => {
     // ★ FIX FileReader — même bypass que pickThumbnail/edit.tsx : ImagePicker
@@ -677,12 +793,12 @@ const VideoTab = memo(function VideoTab() {
       input.click();
       return;
     }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission requise', 'Active la galerie dans les réglages.'); return;
-    }
+    // ★ Fix pellicule vide : accès complet vérifié + forme de mediaTypes
+    // compatible avec la version installée d'expo-image-picker.
+    const ok = await ensureFullLibraryAccess();
+    if (!ok) return;
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes:       ['videos'] as any, // ★ uniquement vidéos, jamais d'image
+      mediaTypes:       VIDEO_MEDIA_TYPES, // ★ uniquement vidéos, jamais d'image
       videoMaxDuration: MAX_DUR_S,
       quality:          1,
       selectionLimit:   1,
@@ -746,7 +862,7 @@ const VideoTab = memo(function VideoTab() {
     }
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes:       ['videos'] as any,
+        mediaTypes:       VIDEO_MEDIA_TYPES,
         videoMaxDuration: MAX_DUR_S,
         videoQuality:     1,
         allowsEditing:    false,
@@ -775,7 +891,7 @@ const VideoTab = memo(function VideoTab() {
   }, [tryAutoThumb]);
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ★ UPLOAD COMPLET — miniature + vidéo + INSERT DB
+  // ★ UPLOAD COMPLET — compression + miniature ∥ vidéo (parallèle) + INSERT DB
   // Tous les champs correspondent au schéma public.reels exactement.
   // Les triggers tg_notif_reel_submitted + tg_reel_pending notifient le backoffice.
   // ─────────────────────────────────────────────────────────────────────────
@@ -805,31 +921,57 @@ const VideoTab = memo(function VideoTab() {
       const vidPath  = `posts/${userId}_reel_${ts}.${ext}`;
       const thPath   = `posts/${userId}_reel_${ts}_thumb.jpg`;
 
-      // ── A. Upload miniature (~8 % de la progression) ───────────────────
+      // ── A. Compression vidéo (natif uniquement) — ★ le vrai levier de
+      // vitesse : réduire la taille du fichier réduit d'autant le temps
+      // d'upload. Échec ou absence du module → fichier original, jamais
+      // bloquant.
+      setPhase('Optimisation de la vidéo…');
+      let vidUri = video.uri;
+      if (Platform.OS !== 'web' && VideoCompressor) {
+        try {
+          const compressedUri = await VideoCompressor.compress(
+            video.uri,
+            { compressionMethod: 'auto' },
+            (progress: number) => animProg(2 + Math.min(progress, 1) * 6), // 2 → 8 %
+          );
+          if (compressedUri) vidUri = compressedUri;
+        } catch {
+          // Compression indisponible/échouée → on continue avec l'original
+        }
+      }
+      animProg(8);
+
+      // ── B. Résolution des Blobs (miniature + vidéo) ─────────────────────
       // ★ Préfère le Blob déjà en main (web) — un fetch('blob:…') peut être
       // lu en interne via FileReader selon le runtime et échouer en silence.
-      setPhase('Miniature…');
-      const thBlob = thumbBlob ?? await resolveBlob(thumbUri);
-      await uploadXHR(thPath, thBlob, thBlob.type || 'image/jpeg', p => animProg(2 + p * 0.06));
+      setPhase('Préparation…');
+      const [thBlob, vidBlob] = await Promise.all([
+        thumbBlob ? Promise.resolve(thumbBlob) : resolveBlob(thumbUri),
+        video.webBlob ? Promise.resolve(video.webBlob) : resolveBlob(vidUri),
+      ]);
+      animProg(12);
 
-      const { data:thUrl } = supabase.storage.from(BUCKET).getPublicUrl(thPath);
-      if (!thUrl?.publicUrl) throw new Error('URL miniature introuvable — vérifie que le bucket est public.');
-      animProg(10);
+      // ── C. Upload miniature ∥ vidéo EN PARALLÈLE — ★ supprime le temps
+      // mort d'attente séquentielle : les deux transferts partagent la même
+      // fenêtre de temps au lieu de s'additionner.
+      setPhase('Envoi en cours…');
+      let thPct = 0, vidPct = 0;
+      const pushProgress = () => animProg(12 + thPct * 0.08 + vidPct * 0.80);
 
-      // ── B. Upload vidéo (10 → 90 %) ────────────────────────────────────
-      // ★ Même principe que la miniature — Blob déjà en main sur web, jamais
-      // de re-fetch('blob:…') qui peut déclencher l'erreur FileReader.
-      setPhase('Vidéo en cours…');
-      const vidBlob = video.webBlob ?? await resolveBlob(video.uri);
-      await uploadXHR(vidPath, vidBlob, video.mimeType || mimeFromExt(vidPath), p => animProg(10 + p * 0.80));
+      await Promise.all([
+        uploadXHR(thPath, thBlob, thBlob.type || 'image/jpeg', p => { thPct = p; pushProgress(); }),
+        uploadXHR(vidPath, vidBlob, video.mimeType || mimeFromExt(vidPath), p => { vidPct = p; pushProgress(); }),
+      ]);
 
-      animProg(92);
+      animProg(93);
       setPhase('Enregistrement…');
 
+      const { data:thUrl }  = supabase.storage.from(BUCKET).getPublicUrl(thPath);
       const { data:vidUrl } = supabase.storage.from(BUCKET).getPublicUrl(vidPath);
+      if (!thUrl?.publicUrl)  throw new Error('URL miniature introuvable — vérifie que le bucket est public.');
       if (!vidUrl?.publicUrl) throw new Error('URL vidéo introuvable — vérifie que le bucket est public.');
 
-      // ── C. INSERT reels (schéma exact) ─────────────────────────────────
+      // ── D. INSERT reels (schéma exact) ─────────────────────────────────
       // Les triggers tg_notif_reel_submitted et tg_reel_pending se déclenchent
       // automatiquement et notifient le backoffice universe-admin.
       const { error:insErr } = await supabase.from('reels').insert({
@@ -850,7 +992,7 @@ const VideoTab = memo(function VideoTab() {
       });
       if (insErr) throw new Error(insErr.message);
 
-      // ── D. Succès — ★ confirmation inline uniquement (plus de notification)
+      // ── E. Succès — ★ confirmation inline uniquement (plus de notification)
       animProg(100);
       setPhase('');
       triggerSuccessMsg();
@@ -957,8 +1099,21 @@ const VideoTab = memo(function VideoTab() {
               </View>
             </View>
 
-            <Field label="SYNOPSIS" value={form.synopsis} onChange={setSynopsis}
-              placeholder="Décris ta vidéo…" multiline maxLength={400}/>
+            <Field
+              label="SYNOPSIS" value={form.synopsis} onChange={setSynopsis}
+              placeholder="Décris ta vidéo…" multiline maxLength={400}
+              rightAccessory={
+                <TouchableOpacity
+                  onPress={handleSuggestSynopsis}
+                  disabled={!form.title.trim()}
+                  activeOpacity={0.80}
+                  style={[syn.btn, !form.title.trim() && syn.btnOff]}
+                >
+                  <Ionicons name="sparkles-outline" size={11} color="#C4B5FD"/>
+                  <Text style={syn.btnTxt}>Suggérer</Text>
+                </TouchableOpacity>
+              }
+            />
           </View>
 
           {/* ────── PROGRESSION ─────────────────────────────────────── */}

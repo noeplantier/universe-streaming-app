@@ -17,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 // Assurez-vous d'adapter ces imports dans votre fichier `lib/supabaseReels`
 import { fetchEpisodeById, updateEpisodeLikes } from '@/lib/supabaseReels';
 import GalaxyBackground from '@/components/shared/GalaxyBackground';
+import { supabase } from '@/lib/supabase';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -174,16 +175,43 @@ export default function ReelDetailScreen() {
   useEffect(() => { load(); }, [load]);
 
   // ── Actions ──
-  const handleLike = useCallback(() => {
+  const handleLike = useCallback(async () => {
+    if (!reel?.id) return;
+  
     const next = !liked;
+  
+    // Optimistic UI
     setLiked(next);
     setLocalLikes(prev => prev + (next ? 1 : -1));
-    if (reel) updateEpisodeLikes(reel.id, next ? 1 : -1).catch(console.warn);
+  
+    try {
+      if (next) {
+        const { error } = await supabase
+          .from('user_liked_reels')
+          .upsert({ reel_id: reel.id }, { onConflict: 'user_id,reel_id' });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('user_liked_reels')
+          .delete()
+          .eq('reel_id', reel.id);
+        if (error) throw error;
+      }
+  
+      // compteur global éventuel
+      updateEpisodeLikes(reel.id, next ? 1 : -1).catch(console.warn);
+    } catch (e) {
+      // rollback UI en cas d'erreur
+      setLiked(!next);
+      setLocalLikes(prev => prev + (next ? -1 : 1));
+      console.warn('handleLike DB error:', e);
+    }
+  
     Animated.sequence([
       Animated.spring(heartScale, { toValue: 1.45, useNativeDriver: true, tension: 300, friction: 7 }),
-      Animated.spring(heartScale, { toValue: 1,    useNativeDriver: true, tension: 200, friction: 8 }),
+      Animated.spring(heartScale, { toValue: 1, useNativeDriver: true, tension: 200, friction: 8 }),
     ]).start();
-  }, [liked, reel, heartScale]);
+  }, [liked, reel?.id, heartScale]);
 
   const handleSave = useCallback(() => {
     setSaved(v => !v);

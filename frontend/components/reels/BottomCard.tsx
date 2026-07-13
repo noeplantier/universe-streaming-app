@@ -92,12 +92,13 @@ const BottomCard = memo(function BottomCard({
   onSeekRef.current = onSeek;
 
   // ── Animated values ───────────────────────────────────────────────────────
-  const overlayOp  = useRef(new Animated.Value(visible ? 1 : 0)).current;
-  const controlsOp = useRef(new Animated.Value(0)).current;
-  const trackH     = useRef(new Animated.Value(3)).current;
-  const thumbScale = useRef(new Animated.Value(0)).current;
+  const overlayOp   = useRef(new Animated.Value(visible ? 1 : 0)).current;
+  const controlsOp  = useRef(new Animated.Value(0)).current;
+  const trackH      = useRef(new Animated.Value(4)).current;
+  const thumbScale  = useRef(new Animated.Value(0.45)).current;  // visible au repos
+  const thumbOpacity= useRef(new Animated.Value(0.55)).current;  // semi-visible au repos
   // fillAnim (0→1) pilote fill + thumb via interpolation string
-  const fillAnim   = useRef(new Animated.Value(progress)).current;
+  const fillAnim    = useRef(new Animated.Value(progress)).current;
 
   // Sync fillAnim depuis progress (quand pas en drag)
   useEffect(() => {
@@ -123,17 +124,19 @@ const BottomCard = memo(function BottomCard({
   // ── Expand / collapse ────────────────────────────────────────────────────
   const expand = useCallback(() => {
     Animated.parallel([
-      Animated.spring(trackH,     { toValue:7, useNativeDriver:false, tension:320, friction:14 }),
-      Animated.spring(thumbScale, { toValue:1, useNativeDriver:true,  tension:320, friction:14 }),
+      Animated.spring(trackH,       { toValue:8,    useNativeDriver:false, tension:320, friction:14 }),
+      Animated.spring(thumbScale,   { toValue:1,    useNativeDriver:true,  tension:320, friction:14 }),
+      Animated.timing(thumbOpacity, { toValue:1,    useNativeDriver:true,  duration:120 }),
     ]).start();
-  }, [trackH, thumbScale]);
+  }, [trackH, thumbScale, thumbOpacity]);
 
   const collapse = useCallback(() => {
     Animated.parallel([
-      Animated.spring(trackH,     { toValue:3, useNativeDriver:false, tension:320, friction:14 }),
-      Animated.spring(thumbScale, { toValue:0, useNativeDriver:true,  tension:320, friction:14 }),
+      Animated.spring(trackH,       { toValue:4,    useNativeDriver:false, tension:320, friction:14 }),
+      Animated.spring(thumbScale,   { toValue:0.45, useNativeDriver:true,  tension:320, friction:14 }),
+      Animated.timing(thumbOpacity, { toValue:0.55, useNativeDriver:true,  duration:200 }),
     ]).start();
-  }, [trackH, thumbScale]);
+  }, [trackH, thumbScale, thumbOpacity]);
 
   // ── Calcul précis : pageX absolu → pourcentage ────────────────────────────
   // ★ FIX CRITIQUE : on utilise pageX (coordonnée écran absolue)
@@ -290,13 +293,19 @@ const BottomCard = memo(function BottomCard({
             ]}
             {...pan.panHandlers}
           >
+            {/* Tooltip temps au-dessus du thumb — visible uniquement en drag */}
+            {dragging && (
+              <View style={[bc.tooltip, { left: fillWidth as any }]} pointerEvents="none">
+                <Text style={bc.tooltipTxt}>{fmtTime(dragSec)}</Text>
+              </View>
+            )}
             <Animated.View style={[bc.track, { height: trackH }]}>
               <View style={bc.trackBg} />
               <Animated.View style={[bc.trackFill, { width: fillWidth }]} />
               <Animated.View
                 style={[
                   bc.thumb,
-                  { left: fillWidth, transform: [{ scale: thumbScale }] },
+                  { left: fillWidth, transform: [{ scale: thumbScale }], opacity: thumbOpacity },
                 ]}
               />
             </Animated.View>
@@ -335,6 +344,18 @@ const bc = StyleSheet.create({
   timeRow:     { flexDirection:'row', justifyContent:'space-between', marginBottom:2 },
   timeCurrent: { color:'rgba(255,255,255,0.90)', fontSize:11, fontWeight:'700', fontVariant:['tabular-nums'] },
   timeDuration:{ color:'rgba(255,255,255,0.30)', fontSize:11, fontVariant:['tabular-nums'] },
+
+  // Tooltip temps — flotte au-dessus du thumb pendant le drag
+  tooltip: {
+    position:'absolute',
+    bottom: 22,
+    transform: [{ translateX: -20 }],
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 7,
+    minWidth: 40, alignItems: 'center',
+  },
+  tooltipTxt: { color:'#FFFFFF', fontSize:11, fontWeight:'700', fontVariant:['tabular-nums'] as any },
 
   // Zone tactile 44 px — ergonomique (Apple/Google guidelines)
   trackHit: { height:44, justifyContent:'center' },
