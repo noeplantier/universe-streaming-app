@@ -45,6 +45,7 @@ interface Work {
   likes:number; comments:number|null; image:string|null; is_original:boolean;
   adjective:string|null; duration:number|null; description:string|null;
   director:string|null; cast_list:string[]|null; created_at:string;
+  video_url:string|null;
 }
 interface Pro {
   id:string; name:string; role:string; avatar:string|null; bio:string|null;
@@ -78,13 +79,29 @@ async function fetchProfessionals(workTitle:string): Promise<Pro[]> {
   const { data:fb } = await supabase.from('professionals').select('id,name,role,avatar,bio,films,location,contact_email,website,verified,open_to').order('verified',{ascending:false}).order('created_at',{ascending:false}).limit(6);
   return (fb ?? []) as Pro[];
 }
-async function fetchRandomVideoUrl(): Promise<string> {
-  const FALLBACK = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-  try {
-    const { data } = await supabase.from('reels').select('video_url').not('video_url','is',null).order('created_at',{ascending:false}).limit(30);
-    if (!data?.length) return FALLBACK;
-    return data[Math.floor(Math.random()*data.length)].video_url ?? FALLBACK;
-  } catch { return FALLBACK; }
+// 14 films du domaine public (~25 min) mappés en round-robin sur les works
+// Mettre à jour via : ALTER TABLE public.works ADD COLUMN IF NOT EXISTS video_url text;
+// puis UPDATE public.works SET video_url = '...' WHERE id = ...;
+const WORKS_VIDEO_FALLBACKS = [
+  'https://archive.org/download/TheAdventurer/TheAdventurer_512kb.mp4',         // Chaplin – The Adventurer (1917)
+  'https://archive.org/download/TheRink_201602/TheRink_512kb.mp4',               // Chaplin – The Rink (1916)
+  'https://archive.org/download/EasyStreet1917/EasyStreet_512kb.mp4',            // Chaplin – Easy Street (1917)
+  'https://archive.org/download/CharlieChaplainsThePawnshop/ThePawnshop_512kb.mp4', // Chaplin – The Pawnshop (1916)
+  'https://archive.org/download/charlieChaplinsTheImmigrant/TheImmigrant_512kb.mp4', // Chaplin – The Immigrant (1917)
+  'https://archive.org/download/OneWeek/OneWeek_512kb.mp4',                      // Buster Keaton – One Week (1920)
+  'https://archive.org/download/convict13/convict13_512kb.mp4',                  // Buster Keaton – Convict 13 (1920)
+  'https://archive.org/download/NeighborsBusterKeaton/NeighborsBusterKeaton_512kb.mp4', // Keaton – Neighbors (1920)
+  'https://archive.org/download/TheBoatKeaton/TheBoatKeaton_512kb.mp4',          // Keaton – The Boat (1921)
+  'https://archive.org/download/CopsKeaton1922/CopsKeaton1922_512kb.mp4',        // Keaton – Cops (1922)
+  'https://archive.org/download/ThePalefaceBusterKeaton/ThePaleface_512kb.mp4',  // Keaton – The Paleface (1922)
+  'https://archive.org/download/ATrip_to_the_Moon_1902/Trip_to_the_Moon_512kb.mp4', // Méliès – Voyage dans la Lune (1902)
+  'https://archive.org/download/TheNavigatorKeaton/TheNavigatorKeaton_512kb.mp4',// Keaton – The Navigator (1924)
+  'https://archive.org/download/ShoulderArms1918/ShoulderArms_512kb.mp4',        // Chaplin – Shoulder Arms (1918)
+] as const;
+
+function getWorkVideoUrl(work: Work): string {
+  if (work.video_url) return work.video_url;
+  return WORKS_VIDEO_FALLBACKS[(work.id - 1) % WORKS_VIDEO_FALLBACKS.length];
 }
 async function fetchConnStatus(userId:string, proId:string): Promise<{status:ConnStatus;connId?:string}> {
   const { data } = await supabase.from('pro_connections').select('id,status').eq('requester_id',userId).eq('pro_id',proId).maybeSingle();
@@ -101,19 +118,61 @@ if (Platform.OS !== 'web') {
 
 const VideoModal = memo(function VideoModal({ visible, videoUrl, title, onClose }: { visible:boolean; videoUrl:string|null; title:string; onClose:()=>void }) {
   const isWeb = Platform.OS === 'web';
+  const [buffering, setBuffering] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const player = _useVideoPlayer(visible&&videoUrl?videoUrl:null, (p:any) => { if (!p) return; p.loop=false; p.muted=false; });
+
   useEffect(() => {
+    if (!visible) { setVideoError(false); setBuffering(false); return; }
+    setVideoError(false);
     if (!player || isWeb) return;
-    if (visible && videoUrl) { try { player.play(); } catch {} }
-    else                     { try { player.pause(); } catch {} }
+    if (visible && videoUrl) {
+      setBuffering(true);
+      try { player.play(); } catch {}
+      let cleanup: () => void = () => {};
+      try {
+        const sub = player.addListener('statusChange', ({ status }: any) => {
+          if (status === 'readyToPlay') setBuffering(false);
+          else if (status === 'error') { setBuffering(false); setVideoError(true); }
+        });
+        cleanup = () => { try { sub?.remove?.(); } catch {} };
+      } catch {
+        const t = setTimeout(() => setBuffering(false), 8000);
+        cleanup = () => clearTimeout(t);
+      }
+      return cleanup;
+    } else {
+      setBuffering(false);
+      try { player.pause(); } catch {}
+    }
   }, [visible, videoUrl, player, isWeb]);
+
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <View style={{ flex:1, backgroundColor:'#000' }}>
         <StatusBar style="light"/>
         {isWeb && !!videoUrl && React.createElement('video', { src:videoUrl, autoPlay:true, controls:true, playsInline:true, style:{ width:'100%', height:'100%', objectFit:'contain', background:'#000' } })}
-        {!isWeb && !!videoUrl && <_VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="contain" nativeControls/>}
-        {!videoUrl && <View style={{ flex:1, alignItems:'center', justifyContent:'center', gap:16 }}><ActivityIndicator color="#fff" size="large"/><Text style={{ color:'rgba(255,255,255,0.6)', fontSize:14 }}>Chargement…</Text></View>}
+        {!isWeb && !!videoUrl && !videoError && <_VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="contain" nativeControls/>}
+        {/* Overlay chargement */}
+        {(!videoUrl || buffering) && !videoError && (
+          <View style={[StyleSheet.absoluteFillObject, { alignItems:'center', justifyContent:'center', gap:16, backgroundColor:videoUrl?'rgba(0,0,0,0.65)':'#000' }]}>
+            <ActivityIndicator color="#fff" size="large"/>
+            <Text style={{ color:'rgba(255,255,255,0.6)', fontSize:14 }}>
+              {videoUrl ? 'Mise en mémoire tampon…' : 'Chargement…'}
+            </Text>
+          </View>
+        )}
+        {/* Overlay erreur vidéo */}
+        {videoError && (
+          <View style={[StyleSheet.absoluteFillObject, { alignItems:'center', justifyContent:'center', gap:20, backgroundColor:'#000' }]}>
+            <Ionicons name="alert-circle-outline" size={48} color="rgba(255,255,255,0.4)"/>
+            <Text style={{ color:'rgba(255,255,255,0.7)', fontSize:16, fontWeight:'700' }}>Vidéo indisponible</Text>
+            <Text style={{ color:'rgba(255,255,255,0.4)', fontSize:13, textAlign:'center', paddingHorizontal:32 }}>La source vidéo est inaccessible pour le moment.</Text>
+            <TouchableOpacity onPress={onClose} style={{ marginTop:8, paddingHorizontal:24, paddingVertical:12, borderRadius:22, backgroundColor:'rgba(255,255,255,0.12)', borderWidth:1, borderColor:'rgba(255,255,255,0.2)' }}>
+              <Text style={{ color:'#fff', fontSize:14, fontWeight:'600' }}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <TouchableOpacity style={{ position:'absolute', top:Platform.OS==='ios'?54:20, right:16, zIndex:10 }} onPress={onClose} hitSlop={12}>
           <BlurView intensity={40} tint="dark" style={{ width:42, height:42, borderRadius:21, overflow:'hidden', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.2)' }}>
             <Ionicons name="close" size={22} color="#fff"/>
@@ -223,7 +282,7 @@ const ProConnectionModal = memo(function ProConnectionModal({ pro, status, connI
       } else {
         await supabase.from('pro_connections').insert({ requester_id:userId, pro_id:pro.id, status:'pending', message:note.trim() });
       }
-      await supabase.from('notifications').insert({ user_id:pro.id, actor_id:userId, type:'connection_request', title:'Nouvelle demande de connexion', body:note.trim().slice(0,120), data:JSON.stringify({ requester_id:userId, pro_id:pro.id }) }).then(()=>{}).catch(()=>{});
+      await supabase.from('notifications').insert({ user_id:pro.id, actor_id:userId, type:'connection_request', title:'Nouvelle demande de connexion', body:note.trim().slice(0,120), data:JSON.stringify({ requester_id:userId, pro_id:pro.id }) }).then(()=>{}, ()=>{});
       setSending(false); setPhase('success');
       if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       Animated.spring(succSc, { toValue:1, tension:80, friction:8, useNativeDriver:true }).start();
@@ -433,10 +492,9 @@ export default function FilmDetailScreen() {
   // ── ★ handleWatch — écrit dans user_history ─────────────────────────────
   const handleWatch = useCallback(async () => {
     setVideoOpen(true);
-    if (!videoUrl) {
+    if (!videoUrl && work) {
       setVideoLoading(true);
-      const url = await fetchRandomVideoUrl();
-      setVideoUrl(url);
+      setVideoUrl(getWorkVideoUrl(work));
       setVideoLoading(false);
     }
     try {
@@ -448,7 +506,7 @@ export default function FilmDetailScreen() {
         if (error) console.warn('[film] history error:', error.message);
       }
     } catch (e) { console.warn('[film] history error', e); }
-  }, [videoUrl, userId, rawId]);
+  }, [videoUrl, work, userId, rawId]);
 
   // Like
   const handleLike = useCallback(() => {

@@ -161,7 +161,7 @@ async function fetchProfile(uid: string): Promise<Profile|null> {
 async function fetchPrefs(uid: string): Promise<Prefs> {
   const { data } = await supabase
     .from('user_preferences')
-    .select('autoplay,video_quality,data_saver,notif_releases,notif_social,private_profile,public_watchlist,show_level_on_profile')
+    .select('autoplay,video_quality,data_saver,notif_releases,notif_social,private_profile,public_watchlist')
     .eq('user_id', uid)
     .maybeSingle();
   return data ? { ...PREFS_DEFAULT, ...data } as Prefs : PREFS_DEFAULT;
@@ -174,7 +174,8 @@ async function upsertPref<K extends keyof Prefs>(uid: string, key: K, value: Pre
     .from('user_preferences')
     .upsert({ user_id: uid, [key]: value }, { onConflict: 'user_id' });
 
-  if (error) throw error;
+  // 42703 = "column does not exist" → colonne pas encore migrée, on ignore silencieusement
+  if (error && (error as any).code !== '42703') throw error;
 }
 
 async function uploadAvatar(uri: string, uid: string): Promise<string|null> {

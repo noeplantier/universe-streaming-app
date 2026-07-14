@@ -265,10 +265,12 @@ const RING_SIZE   = AVATAR_SIZE;
 
 const ProfileHeader = memo(function ProfileHeader({
   profile, gamiProfile, streak, isSelf, following, followBusy,
+  reelCount, followersCount,
   onBack, onShare, onToggleFollow,
 }:{
   profile:ProfileData; gamiProfile:GamiProfile;
   streak:number; isSelf:boolean; following:boolean; followBusy:boolean;
+  reelCount:number; followersCount:number;
   onBack:()=>void; onShare:()=>void; onToggleFollow:()=>void;
 }) {
   const [imgErr, setImgErr] = useState(false);
@@ -363,9 +365,9 @@ const ProfileHeader = memo(function ProfileHeader({
           </View>
 
           <View style={ph.statsRow}>
-            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.films_seen_count}</Text> Films</Text>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{reelCount}</Text> Créations</Text>
             <Text style={ph.statTxt}>·</Text>
-            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.following_count}</Text> Abonnements</Text>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{followersCount}</Text> Abonnés</Text>
             {links.length>0&&(
               <View style={ph.socialRow}>
                 {links.map(l=>(
@@ -636,11 +638,13 @@ export default function UserProfileScreen() {
   const [fetchError,   setFErr]    = useState(false);
   const [activeTab,    setTab]     = useState<GridTab>(0);
   const [modal,        setModal]   = useState<ModalType|null>(null);
-  const [streak,       setStreak]  = useState(0);
+  const [streak,         setStreak]       = useState(0);
+  const [followersCount, setFollowersCount] = useState(0);
   const [gamiProfile,  setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
   // ★ Véloces
   const [likedReels,   setLikedReels] = useState<VeloceItem[]>([]);
   const [savedReels,   setSavedReels] = useState<VeloceItem[]>([]);
+  const [veloceErr,    setVeloceErr]  = useState(false); // true = 401 sur user_liked/saved_reels
 
   // ★ Vie privée du profil consulté — mêmes colonnes que settings.tsx
   const [isPrivate,       setIsPrivate]       = useState(false);
@@ -656,13 +660,13 @@ export default function UserProfileScreen() {
   const loadGami = useCallback(async(targetId:string)=>{
     try {
       const{data}=await supabase.from('profiles')
-        .select('xp,level,title,streak_days,contribution_score')
+        .select('level,title,streak_days,contribution_score')
         .eq('id',targetId).maybeSingle(); // profiles.id = device UUID (PK)
       if(data){
         const d=data as any;
-        const lvl=xpToLevel(d.xp??0);
+        const lvl=xpToLevel(d.contribution_score??0); // xp col n'existe pas encore → contribution_score comme proxy
         setGamiProfile({
-          xp:d.xp??0,
+          xp:d.contribution_score??0,
           level:d.level??lvl.level,
           title:d.title??TITLES[lvl.level-1],
           streak_days:d.streak_days??0,
@@ -699,16 +703,18 @@ export default function UserProfileScreen() {
     if(!targetId)return;
     setLoading(true);setFErr(false);
     try{
-      const[profR,reelsR,critiques,favR,seenItems]=await Promise.all([
+      const[profR,reelsR,critiques,favR,seenItems,followersR]=await Promise.all([
         supabase.from('profiles').select('*').eq('id',targetId).maybeSingle(),
         supabase.from('reels').select('id,video_url,thumbnail_url,title,genre,duration,status,likes_count,views_count,created_at').eq('user_id',targetId).eq('status','approved').order('created_at',{ascending:false}),
         fetchCritiques(targetId),
         supabase.from('user_favorites').select('work_id').eq('user_id',targetId),
         fetchSeen(targetId),
+        supabase.from('follows').select('follower_id',{count:'exact',head:true}).eq('following_id',targetId),
       ]);
       if(profR.data)setProfile(mapProfile(profR.data));
       setReels((reelsR.data??[]).map(mapReel));
       setReviews(critiques);
+      setFollowersCount((followersR as any).count ?? 0);
       const favIds=[...new Set((favR.data??[]).map((r:any)=>Number(r.work_id)).filter(Boolean))];
       const seenIds=[...new Set(seenItems.map(r=>r.workId).filter(Boolean))];
       const allIds=[...new Set([...favIds,...seenIds])];
@@ -723,6 +729,9 @@ export default function UserProfileScreen() {
       const seenWks=((seenD.data??[]) as any[]).map(mapWork);
       setFavW(favWks);setWatched(seenWks);
       // ★ Fetch détails des Véloces aimés/enregistrés
+      // 401 = RLS non configuré → voir supabase/fix_rls_liked_saved_reels.sql
+      const hasVeloceErr = !!(likedIdsR.error || savedIdsR.error);
+      setVeloceErr(hasVeloceErr);
       const likedRIds=(likedIdsR.data??[]).map((r:any)=>String(r.reel_id)).filter(Boolean);
       const savedRIds=(savedIdsR.data??[]).map((r:any)=>String(r.reel_id)).filter(Boolean);
       const REEL_V_COLS='id,title,thumbnail_url,video_url,likes_count,views_count,genre';
@@ -837,20 +846,24 @@ export default function UserProfileScreen() {
     const roleLabel=ROLE_LABELS[profile.role]??'Cinéaste';
     return(
       <View style={{marginTop:16}}>
-        {/* ★ Véloces Favoris — likés par l'utilisateur (user_liked_reels) */}
-        <CinemaAccordion icon="heart-outline" title="Véloces Favoris" count={likedReels.length} defaultOpen={likedReels.length>0}>
-          {likedReels.length===0
+        {/* ★ Véloces Favoris */}
+        <SecHead icon="heart-outline" label="Véloces Favoris" count={veloceErr?undefined:likedReels.length}/>
+        {veloceErr
+          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
+          :likedReels.length===0
             ?<Empty icon="heart-outline" text="Aucun Véloce aimé" sub="Les Véloces likés apparaissent ici"/>
             :<HRow pb={8} c={likedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
-          }
-        </CinemaAccordion>
-        {/* ★ Véloces Enregistrés — sauvegardés par l'utilisateur (user_saved_reels) */}
-        <CinemaAccordion icon="bookmark-outline" title="Véloces Enregistrés" count={savedReels.length} defaultOpen={savedReels.length>0}>
-          {savedReels.length===0
+        }
+        <Div/>
+        {/* ★ Véloces Enregistrés */}
+        <SecHead icon="bookmark-outline" label="Véloces Enregistrés" count={veloceErr?undefined:savedReels.length}/>
+        {veloceErr
+          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
+          :savedReels.length===0
             ?<Empty icon="bookmark-outline" text="Aucun Véloce enregistré" sub="Les Véloces sauvegardés apparaissent ici"/>
             :<HRow pb={8} c={savedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
-          }
-        </CinemaAccordion>
+        }
+        <Div/>
         <CinemaAccordion icon="person-circle-outline" title="Identité" defaultOpen badge={roleLabel}>
           <View style={{flexDirection:'row',flexWrap:'wrap',gap:7}}>
             {[roleLabel,...profile.specialties].map((s,i)=>(
@@ -874,7 +887,7 @@ export default function UserProfileScreen() {
         <View style={{height:110}}/>
       </View>
     );
-  },[loading,profile,genreStats,maxGenre,reviews,ratingDist,maxRating,avgRating]);
+  },[loading,profile,genreStats,maxGenre,reviews,ratingDist,maxRating,avgRating,likedReels,savedReels,veloceErr]);
 
   // ─── Tab Créations ──────────────────────────────────────────────────────────
   const renderCreations = useCallback(()=>{
@@ -911,6 +924,8 @@ export default function UserProfileScreen() {
             isSelf={isSelf}
             following={following}
             followBusy={followBusy}
+            reelCount={reels.length}
+            followersCount={followersCount}
             onBack={()=>router.back()}
             onShare={shareProfile}
             onToggleFollow={toggleFollow}

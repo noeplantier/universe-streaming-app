@@ -1,45 +1,37 @@
 -- =============================================================================
 -- FIX 401 UNAUTHORIZED on user_liked_reels / user_saved_reels
 -- =============================================================================
--- Cause : ces tables n'ont pas de GRANT SELECT accordé au rôle `anon`.
+-- Cause : RLS activé sans politique SELECT pour le rôle `anon`.
 -- L'app Universe utilise PIN auth (ZERO supabase.auth.*) — auth.uid() est
--- toujours null, donc les politiques RLS basées sur auth.uid() bloquent les
--- lectures. Les écritures (INSERT/UPSERT/DELETE) peuvent fonctionner si leurs
--- politiques sont définies différemment.
+-- toujours null, donc les politiques basées sur auth.uid() bloquent tout.
 --
--- SOLUTION : accorder SELECT au rôle anon + ajouter une politique permissive.
 -- À exécuter dans : Supabase Dashboard → SQL Editor → New Query
 -- =============================================================================
 
--- 1. Accorder SELECT au rôle anon (et authenticated par cohérence)
-GRANT SELECT ON public.user_liked_reels TO anon, authenticated;
-GRANT SELECT ON public.user_saved_reels TO anon, authenticated;
+-- OPTION 1 (recommandée) : Désactiver RLS entièrement sur ces tables
+-- Ces données sont de toute façon lisibles publiquement (compteurs de likes).
+ALTER TABLE public.user_liked_reels DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_saved_reels DISABLE ROW LEVEL SECURITY;
 
--- 2. Politiques RLS permissives pour SELECT (l'app n'a pas de session auth réelle)
---    Si RLS est déjà désactivé sur ces tables : ignorer les CREATE POLICY.
-DO $$
-BEGIN
-  -- user_liked_reels
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'user_liked_reels'
-      AND policyname = 'universe_anon_select_liked_reels'
-  ) THEN
-    EXECUTE 'CREATE POLICY universe_anon_select_liked_reels
-      ON public.user_liked_reels FOR SELECT TO anon, authenticated USING (true)';
-  END IF;
+-- Accorder toutes les opérations nécessaires (INSERT/UPDATE/DELETE pour like/save)
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_liked_reels TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.user_saved_reels TO anon, authenticated;
 
-  -- user_saved_reels
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-    WHERE tablename = 'user_saved_reels'
-      AND policyname = 'universe_anon_select_saved_reels'
-  ) THEN
-    EXECUTE 'CREATE POLICY universe_anon_select_saved_reels
-      ON public.user_saved_reels FOR SELECT TO anon, authenticated USING (true)';
-  END IF;
-END $$;
+-- =============================================================================
+-- OPTION 2 (si vous préférez garder RLS activé) :
+-- Créer des politiques permissives SELECT + re-activer RLS
+-- =============================================================================
+-- ALTER TABLE public.user_liked_reels ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE public.user_saved_reels ENABLE ROW LEVEL SECURITY;
+--
+-- DROP POLICY IF EXISTS universe_anon_select_liked_reels ON public.user_liked_reels;
+-- CREATE POLICY universe_anon_select_liked_reels
+--   ON public.user_liked_reels FOR SELECT TO anon, authenticated USING (true);
+--
+-- DROP POLICY IF EXISTS universe_anon_select_saved_reels ON public.user_saved_reels;
+-- CREATE POLICY universe_anon_select_saved_reels
+--   ON public.user_saved_reels FOR SELECT TO anon, authenticated USING (true);
 
--- 3. Vérification : les deux tables doivent retourner des lignes sans erreur
+-- Vérification : doit retourner des lignes sans erreur
 -- SELECT count(*) FROM public.user_liked_reels;
 -- SELECT count(*) FROM public.user_saved_reels;

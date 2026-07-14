@@ -73,11 +73,10 @@ const BottomCard = memo(function BottomCard({
 }: BottomCardProps) {
 
   // ── Track ref + dimensions absolues ──────────────────────────────────────
-  // trackRef : référence au View de la zone tactile pour measure()
   const trackRef    = useRef<View>(null);
-  // Stockés au moment du grant → restent stables pendant tout le drag
-  const trackPageX  = useRef(0);   // position X absolue sur l'écran
-  const trackWidth  = useRef(1);   // largeur de la zone tactile
+  // ★ FIX SEEK : pré-mesurés au layout (pas dans le grant async)
+  const trackPageX  = useRef(0);   // position X absolue sur l'écran (mise à jour onLayout)
+  const trackWidth  = useRef(300); // largeur de la zone tactile (mise à jour onLayout)
 
   // ── Drag state ────────────────────────────────────────────────────────────
   const draggingRef  = useRef(false);
@@ -138,10 +137,18 @@ const BottomCard = memo(function BottomCard({
     ]).start();
   }, [trackH, thumbScale, thumbOpacity]);
 
+  // ── Pré-mesure au layout ─────────────────────────────────────────────────
+  // ★ FIX SEEK : measure() est async — on l'appelle au layout (avant tout touch)
+  //   Au moment du grant on a donc déjà la position exacte sans délai.
+  const remeasure = useCallback(() => {
+    if (!trackRef.current) return;
+    trackRef.current.measure((_x, _y, w, _h, pageX) => {
+      trackPageX.current = pageX;
+      trackWidth.current = Math.max(w, 1);
+    });
+  }, []);
+
   // ── Calcul précis : pageX absolu → pourcentage ────────────────────────────
-  // ★ FIX CRITIQUE : on utilise pageX (coordonnée écran absolue)
-  //   soustrait de trackPageX (position absolue de la track)
-  //   → résultat correct même si la track est dans un composant imbriqué
   const pctFromPageX = useCallback((pageX: number) => {
     const raw = (pageX - trackPageX.current) / Math.max(trackWidth.current, 1);
     return Math.max(0, Math.min(1, raw));
@@ -156,17 +163,8 @@ const BottomCard = memo(function BottomCard({
       onMoveShouldSetPanResponderCapture:  () => true,
 
       onPanResponderGrant: (e) => {
-        // ★ measure() au grant → capture la position absolue de la track
-        //   on utilise une closure sur trackRef qui est stable
-        if (trackRef.current) {
-          trackRef.current.measure((_x, _y, w, _h, pageX, _pageY) => {
-            trackPageX.current = pageX;
-            trackWidth.current = w;
-          });
-        }
-        // Utilise pageX immédiatement (measure est async mais pageX du grant
-        // correspond à la zone tactile — locationX serait le décalage interne)
-        // On recalcule après le measure dans onPanResponderMove
+        // ★ trackPageX/trackWidth déjà à jour grâce à remeasure() appelé sur onLayout
+        //   → pct correct dès le premier frame du touch, pas de décalage async
         const pct = pctFromPageX(e.nativeEvent.pageX);
         const sec = pct * durRef.current;
         draggingRef.current = true;
@@ -179,12 +177,11 @@ const BottomCard = memo(function BottomCard({
       },
 
       onPanResponderMove: (e) => {
-        // ★ pageX absolu → calcul toujours exact même après scroll
         const pct = pctFromPageX(e.nativeEvent.pageX);
         const sec = pct * durRef.current;
         dragSecRef.current = sec;
         _setDragSec(sec);
-        fillAnim.setValue(pct); // 60 fps, 0 re-render React
+        fillAnim.setValue(pct);
         onSeekRef.current(sec);
       },
 
@@ -283,19 +280,28 @@ const BottomCard = memo(function BottomCard({
             <Text style={bc.timeDuration}>{fmtTime(duration)}</Text>
           </View>
 
-          {/* ★ ref={trackRef} pour measure() — zone tactile 44 px */}
+          {/* ★ ref={trackRef} + onLayout={remeasure} → position pré-mesurée avant tout touch */}
           <View
             ref={trackRef}
             collapsable={false}
+            onLayout={remeasure}
             style={[
               bc.trackHit,
               Platform.OS === 'web' ? ({ cursor:'pointer' } as any) : undefined,
             ]}
             {...pan.panHandlers}
           >
-            {/* Tooltip temps au-dessus du thumb — visible uniquement en drag */}
+            {/* Tooltip temps au-dessus du thumb — pixel-based pour centrage exact */}
             {dragging && (
-              <View style={[bc.tooltip, { left: fillWidth as any }]} pointerEvents="none">
+              <View
+                style={[bc.tooltip, {
+                  left: Math.max(0, Math.min(
+                    (dragSec / Math.max(durRef.current, 0.001)) * trackWidth.current - 20,
+                    trackWidth.current - 40,
+                  )),
+                }]}
+                pointerEvents="none"
+              >
                 <Text style={bc.tooltipTxt}>{fmtTime(dragSec)}</Text>
               </View>
             )}

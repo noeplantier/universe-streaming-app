@@ -692,7 +692,7 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
 
     Promise.all([
       // profiles.id = device UUID (PK) — pas profiles.user_id
-      supabase.from('profiles').select('xp,level,title,streak_days,contribution_score').eq('id', userId).maybeSingle(),
+      supabase.from('profiles').select('level,title,streak_days,contribution_score').eq('id', userId).maybeSingle(),
       skipBadges ? Promise.resolve({ data: null }) : supabase.from('badges').select('id,label,description,icon,rarity,xp_reward,is_hidden').eq('is_hidden', false),
       skipBadges ? Promise.resolve({ data: null }) : supabase.from('user_badges').select('badge_id,earned_at').eq('user_id', userId),
     ])
@@ -700,7 +700,8 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
         if (dead) return;
 
         if (profR.data) {
-          const { xp = 0, level, title, streak_days = 0, contribution_score = 0 } = profR.data as any;
+          const { level, title, streak_days = 0, contribution_score = 0 } = profR.data as any;
+          const xp = contribution_score ?? 0; // xp col pas encore migrée → contribution_score proxy
           const lvl = xpToLevel(xp);
           const effLevel = level ?? lvl.level;
           setProfile(prev => ({
@@ -745,31 +746,25 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
     };
   }, [userId, skipBadges]);
 
-  // ★ Streak & XP dynamiques via public.daily_checkins — source de vérité
-  // unique : on pose le check-in du jour (idempotent, upsert sur la clé
-  // composite user_id+checkin_date) puis on recalcule le streak réel à
-  // partir de l'historique, sans jamais dépendre d'une colonne figée.
+  // ★ Streak dynamique via public.user_history — calcul à partir des jours
+  // distincts de visionnage, sans dépendre de daily_checkins.
   useEffect(() => {
     if (!isValidUUID(userId)) return;
     let dead = false;
-    (async () => {
-      const today = todayKey();
-      await supabase.from('daily_checkins')
-        .upsert({ user_id: userId, checkin_date: today }, { onConflict: 'user_id,checkin_date' })
-        .then(() => {}, () => {});
-
-      const { data } = await supabase.from('daily_checkins')
-        .select('checkin_date')
-        .eq('user_id', userId)
-        .order('checkin_date', { ascending: false })
-        .limit(120);
-      if (dead) return;
-
-      const dates = (data ?? []).map((r: any) => r.checkin_date as string);
-      const realStreak = computeStreakFromCheckins(dates);
-      setCheckinsCount(dates.length);
-      setProfile(prev => (prev.streak_days === realStreak ? prev : { ...prev, streak_days: realStreak }));
-    })();
+    supabase.from('user_history')
+      .select('watched_at')
+      .eq('user_id', userId)
+      .order('watched_at', { ascending: false })
+      .limit(120)
+      .then(({ data }) => {
+        if (dead) return;
+        const dates = [...new Set((data ?? []).map((r: any) =>
+          new Date(r.watched_at).toISOString().split('T')[0]
+        ))] as string[];
+        const realStreak = computeStreakFromCheckins(dates);
+        setCheckinsCount(dates.length);
+        setProfile(prev => (prev.streak_days === realStreak ? prev : { ...prev, streak_days: realStreak }));
+      }, () => {});
     return () => { dead = true; };
   }, [userId]);
 
@@ -937,8 +932,7 @@ export const GamiNotifyBanner = memo(function GamiNotifyBanner({
   );
 });
 
-// Hook de rappel quotidien — vérifie si le check-in du jour est fait.
-// À monter dans le screen principal (tabs/_layout ou profile).
+// Hook de rappel quotidien — vérifie l'activité du jour via user_history.
 // Déclenche automatiquement une bannière si le streak est à risque.
 export function useGamiStreakReminder(userId: string, notify: (n: GamiNotif) => void) {
   const fired = useRef(false);
@@ -946,23 +940,23 @@ export function useGamiStreakReminder(userId: string, notify: (n: GamiNotif) => 
     if (!isValidUUID(userId) || fired.current) return;
     fired.current = true;
     const today = todayKey();
-    supabase.from('daily_checkins')
-      .select('checkin_date')
+    supabase.from('user_history')
+      .select('watched_at')
       .eq('user_id', userId)
-      .order('checkin_date', { ascending: false })
-      .limit(7)
+      .order('watched_at', { ascending: false })
+      .limit(30)
       .then(({ data }) => {
-        const dates = (data ?? []).map((r: any) => r.checkin_date as string);
+        const dates = [...new Set((data ?? []).map((r: any) =>
+          new Date(r.watched_at).toISOString().split('T')[0]
+        ))] as string[];
         if (!dates.length) return;
         const hasToday = dates.includes(today);
         if (hasToday) {
-          // Streak fait — célèbre si milestone
           const streak = computeStreakFromCheckins(dates);
           if ([7, 14, 30, 60, 100].includes(streak)) {
             notify(NOTIF_PRESETS.streakMilestone(streak));
           }
         } else {
-          // Pas de check-in aujourd'hui — rappel si le user a un streak à préserver
           const streak = computeStreakFromCheckins(dates);
           if (streak > 0) notify(NOTIF_PRESETS.streakAtRisk(streak));
         }
