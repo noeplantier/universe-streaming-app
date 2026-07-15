@@ -81,7 +81,7 @@ async function fetchProfessionals(workTitle:string): Promise<Pro[]> {
 }
 // 14 films du domaine public (~25 min) — fallback si video_url absent dans public.works
 const WORKS_VIDEO_FALLBACKS = [
-  'https://archive.org/download/TheAdventurer/TheAdventurer_512kb.mp4',
+  'https://archive.org/download/CharlieChaplainsTheCure1917/TheCure_512kb.mp4',
   'https://archive.org/download/TheRink_201602/TheRink_512kb.mp4',
   'https://archive.org/download/EasyStreet1917/EasyStreet_512kb.mp4',
   'https://archive.org/download/CharlieChaplainsThePawnshop/ThePawnshop_512kb.mp4',

@@ -20,6 +20,7 @@ import { useRouter }      from 'expo-router';
 
 import { type MenuKey }   from '../DropDownMenu';
 import { supabase }        from '@/lib/supabase';
+import { getDeviceId }    from '@/services/api';
 
 // ── Haptics web-safe ──────────────────────────────────────────────────────
 let _Haptics: any = null;
@@ -73,12 +74,30 @@ const FriendsPile = memo(function FriendsPile({ onPress }: { onPress: () => void
   const [liveProfiles, setLiveProfiles] = useState<{ id: string; avatar_url: string | null; display_name: string | null }[]>([]);
 
   useEffect(() => {
-    supabase
-      .from('profiles')
-      .select('id,avatar_url,display_name')
-      .order('contribution_score', { ascending: false })
-      .limit(3)
-      .then(({ data }) => { if (data?.length) setLiveProfiles(data as any); }, () => {});
+    let dead = false;
+    getDeviceId().then(deviceId => {
+      if (!deviceId || dead) return;
+      supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', deviceId)
+        .limit(3)
+        .then(({ data: followData }) => {
+          if (dead) return;
+          const ids = (followData ?? []).map((r: any) => r.following_id).filter(Boolean);
+          if (!ids.length) {
+            // Fallback : top contributeurs si l'utilisateur ne suit personne encore
+            supabase.from('profiles').select('id,avatar_url,display_name')
+              .neq('id', deviceId).order('contribution_score', { ascending: false }).limit(3)
+              .then(({ data }) => { if (!dead && data?.length) setLiveProfiles(data as any); }, () => {});
+            return;
+          }
+          supabase.from('profiles').select('id,avatar_url,display_name')
+            .in('id', ids).limit(3)
+            .then(({ data }) => { if (!dead && data?.length) setLiveProfiles(data as any); }, () => {});
+        }, () => {});
+    }, () => {});
+    return () => { dead = true; };
   }, []);
 
   const slots = useMemo(() => {

@@ -293,6 +293,8 @@ function NavBarWrapper() {
 
   const isReels = useMemo(() => {
     return (
+      pathname === '/' ||
+      pathname === '/(tabs)' ||
       pathname === '/reels' ||
       pathname === '/(tabs)/reels' ||
       pathname.endsWith('/reels')
