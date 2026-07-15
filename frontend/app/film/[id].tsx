@@ -79,29 +79,40 @@ async function fetchProfessionals(workTitle:string): Promise<Pro[]> {
   const { data:fb } = await supabase.from('professionals').select('id,name,role,avatar,bio,films,location,contact_email,website,verified,open_to').order('verified',{ascending:false}).order('created_at',{ascending:false}).limit(6);
   return (fb ?? []) as Pro[];
 }
-// 14 films du domaine public (~25 min) mappés en round-robin sur les works
-// Mettre à jour via : ALTER TABLE public.works ADD COLUMN IF NOT EXISTS video_url text;
-// puis UPDATE public.works SET video_url = '...' WHERE id = ...;
+// 14 films du domaine public (~25 min) — fallback si video_url absent dans public.works
 const WORKS_VIDEO_FALLBACKS = [
-  'https://archive.org/download/TheAdventurer/TheAdventurer_512kb.mp4',         // Chaplin – The Adventurer (1917)
-  'https://archive.org/download/TheRink_201602/TheRink_512kb.mp4',               // Chaplin – The Rink (1916)
-  'https://archive.org/download/EasyStreet1917/EasyStreet_512kb.mp4',            // Chaplin – Easy Street (1917)
-  'https://archive.org/download/CharlieChaplainsThePawnshop/ThePawnshop_512kb.mp4', // Chaplin – The Pawnshop (1916)
-  'https://archive.org/download/charlieChaplinsTheImmigrant/TheImmigrant_512kb.mp4', // Chaplin – The Immigrant (1917)
-  'https://archive.org/download/OneWeek/OneWeek_512kb.mp4',                      // Buster Keaton – One Week (1920)
-  'https://archive.org/download/convict13/convict13_512kb.mp4',                  // Buster Keaton – Convict 13 (1920)
-  'https://archive.org/download/NeighborsBusterKeaton/NeighborsBusterKeaton_512kb.mp4', // Keaton – Neighbors (1920)
-  'https://archive.org/download/TheBoatKeaton/TheBoatKeaton_512kb.mp4',          // Keaton – The Boat (1921)
-  'https://archive.org/download/CopsKeaton1922/CopsKeaton1922_512kb.mp4',        // Keaton – Cops (1922)
-  'https://archive.org/download/ThePalefaceBusterKeaton/ThePaleface_512kb.mp4',  // Keaton – The Paleface (1922)
-  'https://archive.org/download/ATrip_to_the_Moon_1902/Trip_to_the_Moon_512kb.mp4', // Méliès – Voyage dans la Lune (1902)
-  'https://archive.org/download/TheNavigatorKeaton/TheNavigatorKeaton_512kb.mp4',// Keaton – The Navigator (1924)
-  'https://archive.org/download/ShoulderArms1918/ShoulderArms_512kb.mp4',        // Chaplin – Shoulder Arms (1918)
+  'https://archive.org/download/TheAdventurer/TheAdventurer_512kb.mp4',
+  'https://archive.org/download/TheRink_201602/TheRink_512kb.mp4',
+  'https://archive.org/download/EasyStreet1917/EasyStreet_512kb.mp4',
+  'https://archive.org/download/CharlieChaplainsThePawnshop/ThePawnshop_512kb.mp4',
+  'https://archive.org/download/charlieChaplinsTheImmigrant/TheImmigrant_512kb.mp4',
+  'https://archive.org/download/OneWeek/OneWeek_512kb.mp4',
+  'https://archive.org/download/convict13/convict13_512kb.mp4',
+  'https://archive.org/download/NeighborsBusterKeaton/NeighborsBusterKeaton_512kb.mp4',
+  'https://archive.org/download/TheBoatKeaton/TheBoatKeaton_512kb.mp4',
+  'https://archive.org/download/CopsKeaton1922/CopsKeaton1922_512kb.mp4',
+  'https://archive.org/download/ThePalefaceBusterKeaton/ThePaleface_512kb.mp4',
+  'https://archive.org/download/ATrip_to_the_Moon_1902/Trip_to_the_Moon_512kb.mp4',
+  'https://archive.org/download/TheNavigatorKeaton/TheNavigatorKeaton_512kb.mp4',
+  'https://archive.org/download/ShoulderArms1918/ShoulderArms_512kb.mp4',
 ] as const;
 
-function getWorkVideoUrl(work: Work): string {
-  if (work.video_url) return work.video_url;
+// Résout un video_url stocké en base :
+//   - URL complète (http/https) → retournée telle quelle
+//   - Chemin relatif Supabase Storage → converti en URL publique (bucket works-videos)
+//   - null / vide → fallback archive.org round-robin sur l'id du work
+function resolveVideoUrl(raw: string | null | undefined, work: Work): string {
+  if (!raw) return WORKS_VIDEO_FALLBACKS[(work.id - 1) % WORKS_VIDEO_FALLBACKS.length];
+  if (raw.startsWith('http')) return raw;
+  try {
+    const { data } = supabase.storage.from('works-videos').getPublicUrl(raw);
+    if (data?.publicUrl) return data.publicUrl;
+  } catch {}
   return WORKS_VIDEO_FALLBACKS[(work.id - 1) % WORKS_VIDEO_FALLBACKS.length];
+}
+
+function getWorkVideoUrl(work: Work): string {
+  return resolveVideoUrl(work.video_url, work);
 }
 async function fetchConnStatus(userId:string, proId:string): Promise<{status:ConnStatus;connId?:string}> {
   const { data } = await supabase.from('pro_connections').select('id,status').eq('requester_id',userId).eq('pro_id',proId).maybeSingle();
@@ -137,7 +148,8 @@ const VideoModal = memo(function VideoModal({ visible, videoUrl, title, onClose 
         });
         cleanup = () => { try { sub?.remove?.(); } catch {} };
       } catch {
-        const t = setTimeout(() => setBuffering(false), 8000);
+        // Fallback timer : 30 s pour les vidéos de 25 min
+        const t = setTimeout(() => setBuffering(false), 30000);
         cleanup = () => clearTimeout(t);
       }
       return cleanup;

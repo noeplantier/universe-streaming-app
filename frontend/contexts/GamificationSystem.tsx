@@ -1736,57 +1736,87 @@ const hud = StyleSheet.create({
 export const XPBar = memo(function XPBar({
   profile, compact = false, checkinsCount,
 }: { profile: GamiProfile; compact?: boolean; checkinsCount?: number }) {
-  const prog = useRef(new Animated.Value(0)).current;
+  const prog      = useRef(new Animated.Value(0)).current;
+  const glowPulse = useRef(new Animated.Value(0.35)).current;
 
   useEffect(() => {
-    Animated.timing(prog, { toValue: profile.pct, duration: 1100, useNativeDriver: false }).start();
+    Animated.timing(prog, { toValue: profile.pct, duration: 1200, useNativeDriver: false }).start();
   }, [profile.pct]);
 
-  const barW = prog.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
-  const multiplier = useMemo(() => getXPMultiplier(profile.streak_days, 0), [profile.streak_days]);
-  const nextTitle = profile.level < 10 ? TITLES[profile.level] : null;
-  // Couleur accentuée selon le niveau — Universe gold/blue galaxy
-  const accentCol = profile.level >= 9 ? C.gold : profile.level >= 7 ? C.purple : profile.level >= 5 ? C.blue : C.mid;
-  const fillCol   = profile.level >= 7 ? C.gold : profile.level >= 4 ? C.blue : 'rgba(255,255,255,0.45)';
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(glowPulse, { toValue: 1, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(glowPulse, { toValue: 0.35, duration: 1800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  const barW        = prog.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+  const multiplier  = useMemo(() => getXPMultiplier(profile.streak_days, 0), [profile.streak_days]);
+  const nextTitle   = profile.level < 10 ? TITLES[profile.level] : null;
+  const accentCol   = profile.level >= 9 ? C.gold : profile.level >= 7 ? C.purple : profile.level >= 5 ? C.blue : C.gold;
 
   if (compact) {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <View style={[xb.compactBadge, { borderColor: accentCol }]}>
-          <Text style={[xb.compactNum, { color: accentCol }]}>{profile.level}</Text>
+        <View style={xb.compactBadge}>
+          <Text style={xb.compactNum}>{profile.level}</Text>
         </View>
         <View style={{ flex: 1, gap: 4 }}>
           <Text style={xb.compactTitle} numberOfLines={1}>{profile.title}</Text>
-          <View style={xb.track}><Animated.View style={[xb.fill, { width: barW, backgroundColor: fillCol }]} /></View>
+          <View style={xb.track}><Animated.View style={[xb.fill, { width: barW }]} /></View>
         </View>
-        <Text style={[xb.xpLabel, { color: accentCol }]}>{profile.xp} XP</Text>
+        <Text style={xb.xpLabel}>{profile.xp} XP</Text>
       </View>
     );
   }
 
   return (
     <View style={[xb.wrap, { borderColor: `${accentCol}30` }]}>
-      <BlurView intensity={Platform.OS === 'ios' ? 14 : 10} tint="dark" style={StyleSheet.absoluteFillObject} />
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-        <View style={[xb.circle, { borderColor: accentCol, backgroundColor: `${accentCol}12` }]}>
-          <Text style={[xb.lvlBig, { color: accentCol }]}>{profile.level}</Text>
-          <Text style={[xb.lvlLbl, { color: accentCol }]}>NIV</Text>
+      <BlurView intensity={Platform.OS === 'ios' ? 18 : 12} tint="dark" style={StyleSheet.absoluteFillObject} />
+      <LinearGradient
+        colors={['rgba(245,200,66,0.07)','rgba(7,12,23,0.0)']}
+        style={StyleSheet.absoluteFillObject}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+        {/* ── Cercle niveau avec aura pulsante ── */}
+        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+          <Animated.View style={[xb.glowRing, { opacity: glowPulse, borderColor: `${accentCol}70` }]} pointerEvents="none"/>
+          <View style={[
+            xb.circle,
+            { borderColor: accentCol, backgroundColor: `${accentCol}12` },
+            Platform.OS !== 'web' && { shadowColor: accentCol, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.65, shadowRadius: 14, elevation: 10 },
+          ]}>
+            <Text style={[xb.lvlBig, { color: accentCol }]}>{profile.level}</Text>
+            <Text style={[xb.lvlLbl, { color: accentCol }]}>NIV</Text>
+          </View>
         </View>
-        <View style={{ flex: 1, gap: 7 }}>
+        <View style={{ flex: 1, gap: 8 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <Text style={xb.title} numberOfLines={1}>{profile.title}</Text>
             {profile.streak_days >= 3 && <View style={xb.streakBadge}><Ionicons name="flame" size={9} color={C.orange} /><Text style={[xb.streakTxt, { color: C.orange }]}>{profile.streak_days}j</Text></View>}
             {profile.contribution_score > 0 && <View style={xb.contribPill}><Ionicons name="star-outline" size={8} color={C.gold} /><Text style={xb.contribTxt}>{profile.contribution_score}</Text></View>}
             {multiplier.value > 1 && <View style={[xb.contribPill,{backgroundColor:`${multiplier.color}18`,borderColor:`${multiplier.color}35`}]}><Ionicons name="flash" size={8} color={multiplier.color} /><Text style={[xb.contribTxt,{color:multiplier.color}]}>{multiplier.label}</Text></View>}
           </View>
-          <View style={xb.track}><Animated.View style={[xb.fill, { width: barW, backgroundColor: fillCol }]} /></View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={xb.xpSub}>{profile.xpInLevel} XP</Text>
-            {profile.level < 10 ? <Text style={xb.xpSub}>{profile.xpToNext} → niv. {profile.level + 1}</Text> : <Text style={[xb.xpSub, { color: C.gold }]}>NIVEAU MAX ✦</Text>}
+          {/* ── Barre XP dorée épaisse ── */}
+          <View style={xb.track}>
+            <Animated.View style={[xb.fill, { width: barW }]} />
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="flash" size={9} color={C.gold}/>
+              <Text style={[xb.xpSub, { color: C.gold, fontWeight: '700' }]}>{profile.xp.toLocaleString()} XP</Text>
+            </View>
+            {profile.level < 10
+              ? <Text style={xb.xpSub}>encore {profile.xpToNext} → niv. {profile.level + 1}</Text>
+              : <Text style={[xb.xpSub, { color: C.gold }]}>NIVEAU MAX ✦</Text>
+            }
           </View>
           {(nextTitle || typeof checkinsCount === 'number') && (
             <View style={xb.enrichRow}>
-              {nextTitle && <Text style={xb.enrichTxt} numberOfLines={1}>Prochain : {nextTitle}</Text>}
+              {nextTitle && <Text style={xb.enrichTxt} numberOfLines={1}>Prochain titre : {nextTitle}</Text>}
               {typeof checkinsCount === 'number' && (
                 <View style={xb.enrichPill}>
                   <Ionicons name="calendar-outline" size={8} color={C.mid} />
@@ -1803,23 +1833,24 @@ export const XPBar = memo(function XPBar({
 XPBar.displayName = 'XPBar';
 
 const xb = StyleSheet.create({
-  wrap: { borderRadius: 14, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, padding: 14 },
-  circle: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: C.gold, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
-  lvlBig: { color: C.gold, fontSize: 22, fontWeight: '900', letterSpacing: -0.8 },
-  lvlLbl: { color: C.gold, fontSize: 7, fontWeight: '800', letterSpacing: 2, marginTop: -3 },
-  title: { color: C.white, fontSize: 13, fontWeight: '700' },
-  track: { height: 4, borderRadius: 2, backgroundColor: C.faint, overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: 2, backgroundColor: C.blue },
-  xpLabel: { color: C.gold, fontSize: 10, fontWeight: '700' },
+  wrap: { borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(245,200,66,0.22)', padding: 16 },
+  glowRing: { position: 'absolute', width: 90, height: 90, borderRadius: 45, borderWidth: 1.5, borderColor: 'rgba(245,200,66,0.55)', backgroundColor: 'transparent' },
+  circle: { width: 78, height: 78, borderRadius: 39, borderWidth: 2, borderColor: C.gold, backgroundColor: 'rgba(245,200,66,0.10)', alignItems: 'center', justifyContent: 'center' },
+  lvlBig: { color: C.gold, fontSize: 24, fontWeight: '900', letterSpacing: -0.8 },
+  lvlLbl: { color: C.gold, fontSize: 7, fontWeight: '800', letterSpacing: 2, marginTop: -4 },
+  title: { color: C.white, fontSize: 13, fontWeight: '800' },
+  track: { height: 6, borderRadius: 3, backgroundColor: 'rgba(245,200,66,0.10)', overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.18)' },
+  fill: { height: '100%', borderRadius: 3, backgroundColor: C.gold },
+  xpLabel: { color: C.gold, fontSize: 11, fontWeight: '800' },
   xpSub: { color: C.muted, fontSize: 9.5 },
-  compactBadge: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: C.gold, backgroundColor: C.navyMid, alignItems: 'center', justifyContent: 'center' },
-  compactNum: { color: C.gold, fontSize: 11, fontWeight: '900' },
+  compactBadge: { width: 30, height: 30, borderRadius: 15, borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'rgba(245,200,66,0.10)', alignItems: 'center', justifyContent: 'center' },
+  compactNum: { color: C.gold, fontSize: 12, fontWeight: '900' },
   compactTitle: { color: C.white, fontSize: 11, fontWeight: '700' },
   streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: 'rgba(249,115,22,0.14)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(249,115,22,0.28)' },
   streakTxt: { fontSize: 9.5, fontWeight: '800' },
   contribPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, backgroundColor: C.goldDim, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.25)' },
   contribTxt: { color: C.gold, fontSize: 8, fontWeight: '700' },
-  enrichRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  enrichRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 },
   enrichTxt: { color: C.muted, fontSize: 9, fontWeight: '600', flexShrink: 1 },
   enrichPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 7, backgroundColor: C.faint, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
   enrichPillTxt: { color: C.mid, fontSize: 8, fontWeight: '700' },
@@ -2075,48 +2106,71 @@ const DailyQuestCard = memo(function DailyQuestCard({
   return (
     <Animated.View style={[{ transform: [{ scale: trulyReady ? pulseAnim : 1 }] }, dq.cardWrap]}>
       <TouchableOpacity
-        activeOpacity={0.85}
+        activeOpacity={0.88}
         disabled={quest.claimed || quest.verifying}
         onPress={trulyReady ? onClaim : onPress}
-        style={[
+        style={dq.cardOuter}
+      >
+        {/* ── Fond dégradé galaxy ── */}
+        <LinearGradient
+          colors={
+            quest.claimed
+              ? ['rgba(46,204,138,0.10)', 'rgba(7,12,23,0.0)']
+              : trulyReady
+                ? [`${accent}18`, 'rgba(7,12,23,0.0)']
+                : ['rgba(245,200,66,0.05)', 'rgba(7,12,23,0.0)']
+          }
+          style={[StyleSheet.absoluteFillObject, { borderRadius: 16 }]}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        />
+        <View style={[
           dq.card,
           quest.claimed && dq.cardDone,
-          trulyReady && { borderColor: `${accent}55`, backgroundColor: `${accent}0F` },
-          highlighted && !trulyReady && { borderColor: `${accent}35` },
-        ]}
-      >
-        {highlighted && !quest.claimed && (
-          <View style={[dq.nextPill, { backgroundColor: `${accent}20`, borderColor: `${accent}45` }]}>
-            <Text style={[dq.nextTxt, { color: accent }]}>SUIVANT</Text>
-          </View>
-        )}
-
-        <View style={[dq.iconWrap, { borderColor: `${accent}35`, backgroundColor: `${accent}14` }]}>
-          <Ionicons name={quest.claimed ? 'checkmark-circle' : quest.icon} size={17} color={quest.claimed ? C.green : accent} />
-        </View>
-
-        <Text style={dq.cardTitle} numberOfLines={1}>{quest.title}</Text>
-        <Text style={dq.cardDesc} numberOfLines={2}>
-          {quest.claimed ? 'Réclamé aujourd\'hui.' : quest.verifying ? 'Vérification en cours…' : trulyReady ? 'Terminé — réclamez votre XP !' : quest.hint}
-        </Text>
-
-        <View style={dq.track}>
-          <View style={[dq.fill, { width: pctStr, backgroundColor: quest.claimed ? C.green : accent }] as any} />
-        </View>
-        <Text style={dq.progLabel}>{quest.progress}/{quest.target}</Text>
-
-        <View style={dq.footer}>
-          <View style={dq.xpPill}>
-            <Ionicons name="flash" size={8} color={C.gold} />
-            <Text style={dq.xpTxt}>+{quest.xp} XP</Text>
-          </View>
-          {quest.verifying ? (
-            <Text style={dq.cta}>…</Text>
-          ) : trulyReady ? (
-            <View style={dq.claimBtn}><Text style={dq.claimTxt}>Réclamer</Text></View>
-          ) : (
-            <Text style={dq.cta}>{quest.claimed ? 'Terminé' : quest.cta}</Text>
+          trulyReady && { borderColor: `${accent}55` },
+          highlighted && !trulyReady && { borderColor: `${accent}40` },
+        ]}>
+          {highlighted && !quest.claimed && (
+            <View style={[dq.nextPill, { backgroundColor: `${accent}25`, borderColor: `${accent}55` }]}>
+              <Text style={[dq.nextTxt, { color: accent }]}>SUIVANT</Text>
+            </View>
           )}
+
+          {/* ── Icône 32x32 ── */}
+          <View style={[dq.iconWrap, { borderColor: `${accent}40`, backgroundColor: `${accent}18` }]}>
+            <Ionicons name={quest.claimed ? 'checkmark-circle' : quest.icon} size={18} color={quest.claimed ? C.green : accent} />
+          </View>
+
+          <Text style={dq.cardTitle} numberOfLines={1}>{quest.title}</Text>
+          <Text style={dq.cardDesc} numberOfLines={2}>
+            {quest.claimed ? 'Réclamé aujourd\'hui.' : quest.verifying ? 'Vérification en cours…' : trulyReady ? 'Terminé — réclamez votre XP !' : quest.hint}
+          </Text>
+
+          {/* ── Barre 5px ── */}
+          <View style={dq.track}>
+            <View style={[dq.fill, { width: pctStr, backgroundColor: quest.claimed ? C.green : accent }] as any} />
+          </View>
+          <Text style={dq.progLabel}>{quest.progress}/{quest.target}</Text>
+
+          <View style={dq.footer}>
+            <View style={dq.xpPill}>
+              <Ionicons name="flash" size={9} color={C.gold} />
+              <Text style={dq.xpTxt}>+{quest.xp} XP</Text>
+            </View>
+            {quest.verifying ? (
+              <Text style={dq.cta}>…</Text>
+            ) : trulyReady ? (
+              <LinearGradient
+                colors={[C.gold, '#E6B830']}
+                style={dq.claimBtn}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              >
+                <Ionicons name="flash" size={10} color={C.navyDark}/>
+                <Text style={dq.claimTxt}>Réclamer</Text>
+              </LinearGradient>
+            ) : (
+              <Text style={dq.cta}>{quest.claimed ? 'Terminé' : quest.cta}</Text>
+            )}
+          </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -2129,24 +2183,25 @@ const dq = StyleSheet.create({
   title: { color: C.white, fontSize: 14, fontWeight: '800', flex: 1 },
   badge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 7, backgroundColor: C.navyMid, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
   badgeTxt: { color: C.muted, fontSize: 9, fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 20 },
-  cardWrap: { width: (SW - 20 * 2 - 8) / 2 },
-  card: { padding: 11, borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, backgroundColor: C.faint, gap: 5, minHeight: 128 },
-  cardDone: { borderColor: 'rgba(46,204,138,0.22)', backgroundColor: 'rgba(46,204,138,0.05)' },
-  nextPill: { position: 'absolute', top: 8, right: 8, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 20 },
+  cardWrap: { width: (SW - 20 * 2 - 10) / 2 },
+  cardOuter: { borderRadius: 16, overflow: 'hidden' },
+  card: { padding: 13, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(245,200,66,0.15)', backgroundColor: 'transparent', gap: 6, minHeight: 140 },
+  cardDone: { borderColor: 'rgba(46,204,138,0.30)' },
+  nextPill: { position: 'absolute', top: 9, right: 9, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
   nextTxt: { fontSize: 6.5, fontWeight: '900', letterSpacing: 1 },
-  iconWrap: { width: 28, height: 28, borderRadius: 9, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
-  cardTitle: { color: C.white, fontSize: 11.5, fontWeight: '800' },
-  cardDesc: { color: C.muted, fontSize: 8.5, lineHeight: 11.5, minHeight: 23 },
-  track: { height: 3, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', overflow: 'hidden', marginTop: 1 },
+  iconWrap: { width: 32, height: 32, borderRadius: 10, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
+  cardTitle: { color: C.white, fontSize: 12, fontWeight: '800' },
+  cardDesc: { color: C.muted, fontSize: 9, lineHeight: 12, minHeight: 24 },
+  track: { height: 5, borderRadius: 999, backgroundColor: 'rgba(245,200,66,0.10)', overflow: 'hidden', marginTop: 2, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.15)' },
   fill: { height: '100%', borderRadius: 999 },
   progLabel: { color: C.muted, fontSize: 8, fontWeight: '700' },
-  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 1 },
-  xpPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: C.goldDim, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.22)' },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  xpPill: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 999, backgroundColor: C.goldDim, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(245,200,66,0.25)' },
   xpTxt: { color: C.gold, fontSize: 8.5, fontWeight: '800' },
   cta: { color: C.blue, fontSize: 9.5, fontWeight: '800' },
-  claimBtn: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7, backgroundColor: C.gold },
-  claimTxt: { color: C.navyDark, fontSize: 9, fontWeight: '900' },
+  claimBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9 },
+  claimTxt: { color: C.navyDark, fontSize: 9.5, fontWeight: '900' },
 });
 
 // ─── ★ Prise en main — guide 4 étapes, compact ────────────────────────────────

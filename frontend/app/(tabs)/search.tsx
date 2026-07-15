@@ -53,6 +53,7 @@ import { GlowAccentCard }    from '@/components/shared/GlowAccentCard';
 import {
   resolveImg, useGamification, useDailyQuests, XPFloat,
   XPBar as GamiXPBar, LevelUpCelebration, DailyQuestsPanel,
+  CINEMA_MANIFESTO,
   type Work, type GamiProfile, type GamiBadge,
 } from '@/contexts/GamificationSystem';
 
@@ -165,37 +166,39 @@ const GalaxyModal=memo(({
   const[burst,setBurst]=useState({v:false,n:0});
   const[levelUp,setLevelUp]=useState<{level:number;title:string}|null>(null);
   const[activeBadge,setActiveBadge]=useState<string|null>(null);
-  const[tipsOpen,setTipsOpen]=useState(false);
+  // Manifesto rotatif
+  const[manifestoIdx,setManifestoIdx]=useState(()=>Math.floor(Math.random()*CINEMA_MANIFESTO.length));
+  const manifestoFade=useRef(new Animated.Value(1)).current;
 
   const showBurst=useCallback((n:number)=>{setBurst({v:true,n});setTimeout(()=>setBurst({v:false,n:0}),1300);},[]);
 
-  // ★ Défis du jour — EXCLUSIVEMENT via GamificationSystem. Le Claim est
-  // vérifié côté serveur dans le hook lui-même ; ici on ne fait que relayer
-  // l'XP gagné vers awardXP() et déclencher l'effet visuel local.
   const daily = useDailyQuests(userId, (xp, questId) => {
     awardXP(xp, `daily_${questId}`);
     showBurst(xp);
   });
 
-  // Singleton-based guard: only fire for genuine in-session level gains.
-  // Module-level map survives remounts and tab switches — immune to hydration.
   useEffect(()=>{
     if(!userId||profile.level===0)return;
     const last=_lastCelebratedLevel.get(userId);
-    if(last===undefined){
-      // First time we see this user — set baseline, no celebration
-      _lastCelebratedLevel.set(userId,profile.level);
-      return;
-    }
-    if(profile.level>last){
-      setLevelUp({level:profile.level,title:profile.title});
-      _lastCelebratedLevel.set(userId,profile.level);
-    }
+    if(last===undefined){_lastCelebratedLevel.set(userId,profile.level);return;}
+    if(profile.level>last){setLevelUp({level:profile.level,title:profile.title});_lastCelebratedLevel.set(userId,profile.level);}
   },[userId,profile.level,profile.title]);
 
   useEffect(()=>{
     if(visible){Animated.spring(slideY,{toValue:0,useNativeDriver:true,tension:62,friction:11}).start();}
     else{Animated.timing(slideY,{toValue:SH,duration:280,useNativeDriver:true}).start();}
+  },[visible]);
+
+  // Rotation manifesto toutes les 5s
+  useEffect(()=>{
+    if(!visible)return;
+    const t=setInterval(()=>{
+      Animated.timing(manifestoFade,{toValue:0,duration:350,useNativeDriver:true}).start(()=>{
+        setManifestoIdx(i=>(i+1)%CINEMA_MANIFESTO.length);
+        Animated.timing(manifestoFade,{toValue:1,duration:400,useNativeDriver:true}).start();
+      });
+    },5000);
+    return()=>clearInterval(t);
   },[visible]);
 
   const go=useCallback((route:string)=>{onClose();setTimeout(()=>router.push(route as any),320);},[onClose,router]);
@@ -206,52 +209,82 @@ const GalaxyModal=memo(({
   const claimedToday=daily.completedToday;
   const activeBadgeData=useMemo(()=>badges.find(b=>b.id===activeBadge),[badges,activeBadge]);
 
+  const GoldDivider=()=>(
+    <View style={{flexDirection:'row',alignItems:'center',gap:10,marginVertical:20}}>
+      <View style={{flex:1,height:StyleSheet.hairlineWidth,backgroundColor:'rgba(245,200,66,0.22)'}}/>
+      <Ionicons name="star" size={8} color="rgba(245,200,66,0.45)"/>
+      <View style={{flex:1,height:StyleSheet.hairlineWidth,backgroundColor:'rgba(245,200,66,0.22)'}}/>
+    </View>
+  );
+
   if(!visible)return null;
   return(
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <View style={{flex:1,backgroundColor:'rgba(4,8,15,0.92)'}}>
+      <View style={{flex:1,backgroundColor:'rgba(4,8,15,0.94)'}}>
         <GalaxyBackground/>
         <Animated.View style={{flex:1,transform:[{translateY:slideY}]}}>
-          {/* Header */}
-          <View style={{paddingTop:insets.top+12,paddingHorizontal:E,paddingBottom:14,flexDirection:'row',alignItems:'center'}}>
-            <View style={{flex:1}}>
-              <Text style={{color:C.white,fontSize:22,fontWeight:'900',letterSpacing:-0.5}}>Galaxie XP</Text>
-              <Text style={{color:C.muted,fontSize:12,marginTop:1}}>{profile.xp.toLocaleString()} XP · {profile.title}</Text>
-            </View>
-            <TouchableOpacity onPress={onClose} style={{width:38,height:38,borderRadius:19,backgroundColor:C.faint,alignItems:'center',justifyContent:'center',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}>
-              <Ionicons name="close" size={18} color={C.white}/>
-            </TouchableOpacity>
-          </View>
-          <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.border,marginBottom:4}}/>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:E,paddingBottom:52}}>
+          {/* ── Header avec badge niveau or + manifesto rotatif ── */}
+          <LinearGradient
+            colors={['rgba(245,200,66,0.10)','rgba(4,8,15,0.0)']}
+            style={{paddingTop:insets.top+14,paddingHorizontal:E,paddingBottom:18}}
+            start={{x:0,y:0}} end={{x:1,y:1}}
+          >
+            <View style={{flexDirection:'row',alignItems:'flex-start',gap:14}}>
+              {/* Badge niveau */}
+              <View style={{width:54,height:54,borderRadius:16,backgroundColor:'rgba(245,200,66,0.12)',borderWidth:1.5,borderColor:'rgba(245,200,66,0.50)',alignItems:'center',justifyContent:'center',flexShrink:0,
+                ...(Platform.OS!=='web'?{shadowColor:C.gold,shadowOffset:{width:0,height:0},shadowOpacity:0.55,shadowRadius:12,elevation:8}:{})}}>
+                <Text style={{color:C.gold,fontSize:20,fontWeight:'900'}}>{profile.level}</Text>
+                <Text style={{color:'rgba(245,200,66,0.70)',fontSize:6.5,fontWeight:'800',letterSpacing:1.5,marginTop:-3}}>NIV</Text>
+              </View>
+              <View style={{flex:1}}>
+                <Text style={{color:C.white,fontSize:22,fontWeight:'900',letterSpacing:-0.5}}>Galaxie XP</Text>
+                <Text style={{color:C.gold,fontSize:11,fontWeight:'700',marginTop:1}}>{profile.title} · {profile.xp.toLocaleString()} XP</Text>
+                {/* Manifesto rotatif */}
+                <Animated.Text style={{color:'rgba(255,255,255,0.40)',fontSize:10,fontStyle:'italic',marginTop:5,lineHeight:14,opacity:manifestoFade}} numberOfLines={2}>
+                  "{CINEMA_MANIFESTO[manifestoIdx]}"
+                </Animated.Text>
+              </View>
+              <TouchableOpacity onPress={onClose} style={{width:36,height:36,borderRadius:18,backgroundColor:C.faint,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'rgba(245,200,66,0.20)',marginTop:2}}>
+                <Ionicons name="close" size={17} color={C.white}/>
+              </TouchableOpacity>
+            </View>
+          </LinearGradient>
+
+          <View style={{height:1,backgroundColor:'rgba(245,200,66,0.18)',marginBottom:4}}/>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{padding:E,paddingBottom:60}}>
             {/* XP bar */}
             <GamiXPBar profile={profile}/>
 
-            {/* Streak card — tappable, goes to home to keep streak alive */}
+            {/* Streak card */}
             {profile.streak_days>0&&(
               <TouchableOpacity activeOpacity={0.82} onPress={()=>go('/(tabs)')}
-                style={{flexDirection:'row',alignItems:'center',gap:12,marginTop:12,padding:13,borderRadius:14,borderWidth:1,borderColor:'rgba(255,140,66,0.28)',backgroundColor:'rgba(255,140,66,0.07)'}}>
-                <View style={{width:40,height:40,borderRadius:12,backgroundColor:'rgba(255,140,66,0.15)',borderWidth:1,borderColor:'rgba(255,140,66,0.38)',alignItems:'center',justifyContent:'center'}}>
-                  <Ionicons name="flame" size={19} color={C.orange}/>
+                style={{flexDirection:'row',alignItems:'center',gap:12,marginTop:14,padding:14,borderRadius:16,borderWidth:1,borderColor:'rgba(255,140,66,0.30)',backgroundColor:'rgba(255,140,66,0.07)'}}>
+                <View style={{width:42,height:42,borderRadius:12,backgroundColor:'rgba(255,140,66,0.15)',borderWidth:1,borderColor:'rgba(255,140,66,0.40)',alignItems:'center',justifyContent:'center'}}>
+                  <Ionicons name="flame" size={20} color={C.orange}/>
                 </View>
                 <View style={{flex:1}}>
                   <Text style={{color:C.white,fontSize:13,fontWeight:'800'}}>Streak · {profile.streak_days} jour{profile.streak_days>1?'s':''}</Text>
-                  <Text style={{color:C.muted,fontSize:10,marginTop:1}}>Multiplicateur actif — connexion quotidienne</Text>
+                  <Text style={{color:C.muted,fontSize:10,marginTop:2}}>Multiplicateur actif — connexion quotidienne</Text>
                 </View>
                 <View style={{paddingHorizontal:10,paddingVertical:6,borderRadius:10,backgroundColor:'rgba(255,140,66,0.15)',borderWidth:1,borderColor:'rgba(255,140,66,0.38)',alignItems:'center'}}>
-                  <Text style={{color:C.orange,fontSize:14,fontWeight:'900'}}>×{mult.toFixed(1)}</Text>
+                  <Text style={{color:C.orange,fontSize:15,fontWeight:'900'}}>×{mult.toFixed(1)}</Text>
                 </View>
               </TouchableOpacity>
             )}
 
-            {/* Badges earned — horizontal scrollable, tap for description */}
+            <GoldDivider/>
+
+            {/* Badges */}
             {badges.length>0&&(
               <>
-                <View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:20,marginBottom:10}}>
+                <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:12}}>
                   <Ionicons name="ribbon-outline" size={13} color={C.gold}/>
                   <Text style={{color:C.white,fontSize:15,fontWeight:'800',flex:1}}>Badges débloqués</Text>
-                  <Text style={{color:C.muted,fontSize:11}}>{badges.length}</Text>
+                  <View style={{paddingHorizontal:8,paddingVertical:3,borderRadius:8,backgroundColor:C.goldFaint,borderWidth:1,borderColor:C.goldBd}}>
+                    <Text style={{color:C.gold,fontSize:10,fontWeight:'800'}}>{badges.length}</Text>
+                  </View>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap:8,paddingRight:4}}>
                   {badges.map(b=>{
@@ -259,7 +292,8 @@ const GalaxyModal=memo(({
                     const active=activeBadge===b.id;
                     return(
                       <TouchableOpacity key={b.id} onPress={()=>{hL();setActiveBadge(active?null:b.id);}} activeOpacity={0.78} style={{width:72,alignItems:'center',gap:5}}>
-                        <View style={{width:52,height:52,borderRadius:16,backgroundColor:`${col}18`,borderWidth:active?1.5:1,borderColor:active?col:`${col}40`,alignItems:'center',justifyContent:'center'}}>
+                        <View style={{width:54,height:54,borderRadius:16,backgroundColor:`${col}18`,borderWidth:active?2:1,borderColor:active?col:`${col}40`,alignItems:'center',justifyContent:'center',
+                          ...(active&&Platform.OS!=='web'?{shadowColor:col,shadowOffset:{width:0,height:0},shadowOpacity:0.6,shadowRadius:8,elevation:6}:{})}}>
                           <Ionicons name={b.icon} size={22} color={col}/>
                         </View>
                         <Text style={{color:active?col:C.muted,fontSize:9,fontWeight:'700',textAlign:'center',lineHeight:12}} numberOfLines={2}>{b.label}</Text>
@@ -268,28 +302,26 @@ const GalaxyModal=memo(({
                   })}
                 </ScrollView>
                 {activeBadgeData&&(
-                  <View style={{marginTop:8,padding:11,borderRadius:12,backgroundColor:C.faint,borderWidth:1,borderColor:C.border,flexDirection:'row',alignItems:'flex-start',gap:8}}>
-                    <Ionicons name="information-circle-outline" size={13} color={C.muted} style={{marginTop:1}}/>
-                    <Text style={{color:C.muted,fontSize:11,flex:1,lineHeight:16}}>{activeBadgeData.description}</Text>
+                  <View style={{marginTop:10,padding:12,borderRadius:14,backgroundColor:'rgba(245,200,66,0.07)',borderWidth:1,borderColor:'rgba(245,200,66,0.20)',flexDirection:'row',alignItems:'flex-start',gap:8}}>
+                    <Ionicons name="information-circle-outline" size={13} color={C.gold} style={{marginTop:1}}/>
+                    <Text style={{color:'rgba(255,255,255,0.62)',fontSize:11,flex:1,lineHeight:16}}>{activeBadgeData.description}</Text>
                   </View>
                 )}
               </>
             )}
 
+            <GoldDivider/>
+
             {/* Claimed today summary */}
             {claimedToday>0&&(
-              <View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:16,marginBottom:4}}>
-                <Ionicons name="checkmark-circle" size={12} color={C.gold}/>
+              <View style={{flexDirection:'row',alignItems:'center',gap:6,marginBottom:10}}>
+                <Ionicons name="checkmark-circle" size={13} color={C.gold}/>
                 <Text style={{color:C.muted,fontSize:11}}>{claimedToday} défi{claimedToday>1?'s':''} réclamé{claimedToday>1?'s':''} aujourd'hui</Text>
               </View>
             )}
 
-            {/* ★ Défis du jour — panel canonique GamificationSystem, 4 cartes,
-                jamais plus (verrou dur intégré au composant lui-même).
-                marginHorizontal négatif pour annuler le padding:E du
-                ScrollView parent — DailyQuestsPanel gère déjà son propre
-                paddingHorizontal:20 en interne. */}
-            <View style={{marginHorizontal:-E,marginTop:18}}>
+            {/* Défis du jour */}
+            <View style={{marginHorizontal:-E}}>
               <DailyQuestsPanel
                 questsWithStatus={daily.questsWithStatus}
                 completedToday={daily.completedToday}
@@ -298,32 +330,31 @@ const GalaxyModal=memo(({
               />
             </View>
 
-            {/* XP Tips accordion */}
-            <TouchableOpacity onPress={()=>setTipsOpen(x=>!x)} activeOpacity={0.78}
-              style={{flexDirection:'row',alignItems:'center',gap:8,marginTop:18,paddingVertical:12,paddingHorizontal:13,borderRadius:14,backgroundColor:C.faint,borderWidth:1,borderColor:C.border}}>
+            <GoldDivider/>
+
+            {/* XP Tips — toujours visibles, plus d'accordéon */}
+            <View style={{flexDirection:'row',alignItems:'center',gap:8,marginBottom:12}}>
               <Ionicons name="bulb-outline" size={14} color={C.gold}/>
-              <Text style={{color:C.gold,fontSize:13,fontWeight:'700',flex:1}}>Comment gagner plus de XP ?</Text>
-              <Ionicons name={tipsOpen?'chevron-up-outline':'chevron-down-outline'} size={13} color={C.muted}/>
-            </TouchableOpacity>
-            {tipsOpen&&(
-              <View style={{marginTop:6,gap:6}}>
-                {XP_TIPS.map((t,i)=>(
-                  <View key={i} style={{flexDirection:'row',alignItems:'center',gap:10,padding:11,borderRadius:12,backgroundColor:C.faint,borderWidth:1,borderColor:C.border}}>
-                    <View style={{width:32,height:32,borderRadius:9,backgroundColor:`${t.color}18`,borderWidth:1,borderColor:`${t.color}30`,alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                      <Ionicons name={t.icon as any} size={14} color={t.color}/>
-                    </View>
-                    <View style={{flex:1}}>
-                      <Text style={{color:C.white,fontSize:11,fontWeight:'700'}}>{t.title}</Text>
-                      <Text style={{color:C.muted,fontSize:10,marginTop:1}}>{t.desc}</Text>
-                    </View>
-                    <View style={{flexDirection:'row',alignItems:'center',gap:2,flexShrink:0}}>
-                      <Ionicons name="flash" size={9} color={C.gold}/>
-                      <Text style={{color:C.gold,fontSize:11,fontWeight:'800'}}>+{t.xp}</Text>
-                    </View>
+              <Text style={{color:C.gold,fontSize:14,fontWeight:'800',flex:1}}>Gagner plus de XP</Text>
+            </View>
+            <View style={{gap:8}}>
+              {XP_TIPS.map((t,i)=>(
+                <LinearGradient key={i} colors={[`${t.color}0F`,'rgba(13,32,64,0.0)']} start={{x:0,y:0}} end={{x:1,y:1}}
+                  style={{flexDirection:'row',alignItems:'center',gap:12,padding:13,borderRadius:14,borderWidth:1,borderColor:`${t.color}22`}}>
+                  <View style={{width:36,height:36,borderRadius:11,backgroundColor:`${t.color}18`,borderWidth:1,borderColor:`${t.color}38`,alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <Ionicons name={t.icon as any} size={15} color={t.color}/>
                   </View>
-                ))}
-              </View>
-            )}
+                  <View style={{flex:1}}>
+                    <Text style={{color:C.white,fontSize:12,fontWeight:'700'}}>{t.title}</Text>
+                    <Text style={{color:C.muted,fontSize:10,marginTop:2}}>{t.desc}</Text>
+                  </View>
+                  <View style={{flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:8,paddingVertical:4,borderRadius:9,backgroundColor:C.goldFaint,borderWidth:1,borderColor:C.goldBd,flexShrink:0}}>
+                    <Ionicons name="flash" size={9} color={C.gold}/>
+                    <Text style={{color:C.gold,fontSize:12,fontWeight:'900'}}>+{t.xp}</Text>
+                  </View>
+                </LinearGradient>
+              ))}
+            </View>
           </ScrollView>
           <XPFloat amount={burst.n} visible={burst.v} onDone={()=>{}}/>
         </Animated.View>
@@ -335,8 +366,8 @@ const GalaxyModal=memo(({
 
 // ─── GAMIFICATION BADGE — bouton d'entrée (identique à l'original) ──────────
 const GamificationBadge=memo(({profile,earnedCount,onPress}:{profile:GamiProfile;earnedCount:number;onPress:()=>void;})=>{
-  const[si,setSi]=useState(0);const fade=useRef(new Animated.Value(1)).current;const btnSc=useRef(new Animated.Value(1)).current;const glowOp=useRef(new Animated.Value(0.26)).current;
-  useEffect(()=>{const l=Animated.loop(Animated.sequence([Animated.timing(glowOp,{toValue:0.95,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(glowOp,{toValue:0.26,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));l.start();return()=>l.stop();},[]);
+  const[si,setSi]=useState(0);const fade=useRef(new Animated.Value(1)).current;const btnSc=useRef(new Animated.Value(1)).current;const glowOp=useRef(new Animated.Value(0.18)).current;
+  useEffect(()=>{const l=Animated.loop(Animated.sequence([Animated.timing(glowOp,{toValue:1.0,duration:1600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),Animated.timing(glowOp,{toValue:0.18,duration:1600,easing:Easing.inOut(Easing.ease),useNativeDriver:true})]));l.start();return()=>l.stop();},[]);
   useEffect(()=>{const t=setInterval(()=>{Animated.timing(fade,{toValue:0,duration:200,useNativeDriver:true}).start(()=>{setSi(i=>(i+1)%SECTIONS.length);Animated.timing(fade,{toValue:1,duration:260,useNativeDriver:true}).start();});},3600);return()=>clearInterval(t);},[]);
   const press=()=>{hL();Animated.sequence([Animated.timing(btnSc,{toValue:0.94,duration:80,useNativeDriver:true}),Animated.spring(btnSc,{toValue:1,tension:300,friction:8,useNativeDriver:true})]).start(onPress);};
   const sec=SECTIONS[si];const phrase=FOMO[Math.floor((profile.xp+si*37)%FOMO.length)];

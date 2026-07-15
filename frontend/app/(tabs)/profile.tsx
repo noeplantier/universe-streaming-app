@@ -698,6 +698,10 @@ export default function ProfileScreen() {
     }catch(e){console.error('[profile] lecture show_level_on_profile:',e);}
   },[]);
 
+  
+
+  // Load all profile data: profile, reels, critiques, favorites, seen items, followers count, liked/saved reels, recommendations
+
   const loadAll = useCallback(async(userId:string)=>{
     if(!userId)return;
     setLoading(true);setFErr(false);
