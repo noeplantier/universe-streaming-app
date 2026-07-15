@@ -105,10 +105,16 @@ function resolveVideoUrl(raw: string | null | undefined, work: Work): string {
   if (!raw) return WORKS_VIDEO_FALLBACKS[(work.id - 1) % WORKS_VIDEO_FALLBACKS.length];
   if (raw.startsWith('http')) return raw;
   try {
-    const { data } = supabase.storage.from('works-videos').getPublicUrl(raw);
+    // Les uploads utilisateurs vont dans community-images (même bucket que les reels)
+    const { data } = supabase.storage.from('community-images').getPublicUrl(raw);
     if (data?.publicUrl) return data.publicUrl;
   } catch {}
   return WORKS_VIDEO_FALLBACKS[(work.id - 1) % WORKS_VIDEO_FALLBACKS.length];
+}
+
+function grantXP(userId: string, amount: number, reason: string) {
+  if (!userId) return;
+  supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason }).then(() => {}, () => {});
 }
 
 function getWorkVideoUrl(work: Work): string {
@@ -418,6 +424,7 @@ export default function FilmDetailScreen() {
   const [videoOpen,     setVideoOpen]     = useState(false);
   const [videoUrl,      setVideoUrl]      = useState<string|null>(null);
   const [videoLoading,  setVideoLoading]  = useState(false);
+  const [creatorReelVideoUrl, setCreatorReelVideoUrl] = useState<string|null>(null);
 
   const heartSc = useRef(new Animated.Value(1)).current;
   const reveal  = useRef(new Animated.Value(0)).current;
@@ -454,14 +461,32 @@ export default function FilmDetailScreen() {
         if ((favData as any)?.data) setSaved(true);
         setLoading(false);
 
-        // Phase 2 : similar + pros en parallèle
-        const [simItems, proItems] = await Promise.all([
+        // Phase 2 : similar + pros + reel creator video en parallèle
+        const reelQuery = workData.video_url
+          ? Promise.resolve(null)
+          : supabase.from('reels')
+              .select('video_url')
+              .eq('user_id', uid)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+              .then(({ data }) => data?.video_url ?? null, () => null);
+
+        const [simItems, proItems, rawReelVid] = await Promise.all([
           fetchSimilarWorks(workData),
           fetchProfessionals(workData.title),
+          reelQuery,
         ]);
         if (dead) return;
         setSimilar(simItems);
         setPros(proItems);
+
+        if (rawReelVid) {
+          const reelUrl = rawReelVid.startsWith('http')
+            ? rawReelVid
+            : supabase.storage.from('community-images').getPublicUrl(rawReelVid).data?.publicUrl ?? '';
+          if (reelUrl && !dead) setCreatorReelVideoUrl(reelUrl);
+        }
 
         // Statuts connexion
         if (uid && proItems.length) {
@@ -481,7 +506,7 @@ export default function FilmDetailScreen() {
   }, [rawId, userId]);
 
   // Reset sur changement d'id
-  useEffect(() => { setLiked(false); setExpanded(false); setSaved(false); setVideoUrl(null); }, [rawId]);
+  useEffect(() => { setLiked(false); setExpanded(false); setSaved(false); setVideoUrl(null); setCreatorReelVideoUrl(null); }, [rawId]);
 
   // ── ★ handleSave — écrit dans user_favorites ────────────────────────────
   const handleSave = useCallback(async () => {
@@ -495,6 +520,7 @@ export default function FilmDetailScreen() {
         const { error } = await supabase.from('user_favorites')
           .upsert({ user_id:uid, work_id:Number(rawId) }, { onConflict:'user_id,work_id' });
         if (error) console.warn('[film] save error:', error.message);
+        grantXP(uid, 15, 'save_work');
       } else {
         await supabase.from('user_favorites').delete().eq('user_id', uid).eq('work_id', Number(rawId));
       }
@@ -506,7 +532,7 @@ export default function FilmDetailScreen() {
     setVideoOpen(true);
     if (!videoUrl && work) {
       setVideoLoading(true);
-      setVideoUrl(getWorkVideoUrl(work));
+      setVideoUrl(creatorReelVideoUrl || getWorkVideoUrl(work));
       setVideoLoading(false);
     }
     try {
@@ -516,9 +542,10 @@ export default function FilmDetailScreen() {
           .upsert({ user_id:uid, work_id:Number(rawId), watched_at:new Date().toISOString() },
                   { onConflict:'user_id,work_id' });
         if (error) console.warn('[film] history error:', error.message);
+        grantXP(uid, 25, 'watch_work');
       }
     } catch (e) { console.warn('[film] history error', e); }
-  }, [videoUrl, work, userId, rawId]);
+  }, [videoUrl, creatorReelVideoUrl, work, userId, rawId]);
 
   // Like
   const handleLike = useCallback(() => {
@@ -531,7 +558,8 @@ export default function FilmDetailScreen() {
       Animated.spring(heartSc, { toValue:1, useNativeDriver:true, tension:200, friction:8 }),
     ]).start();
     supabase.from('works').update({ likes:localLikes+(next?1:-1) }).eq('id', rawId).then(() => {});
-  }, [liked, heartSc, localLikes, rawId]);
+    if (next) grantXP(userId, 10, 'like_work');
+  }, [liked, heartSc, localLikes, rawId, userId]);
 
   const handleShare = useCallback(() => {
     if (!work) return;

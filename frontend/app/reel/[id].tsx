@@ -32,6 +32,11 @@ if (Platform.OS !== 'web') {
 
 const { height: H } = Dimensions.get('window');
 
+function grantXP(userId: string | null, amount: number, reason: string) {
+  if (!userId) return;
+  supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason }).then(() => {}, () => {});
+}
+
 // ─── Design tokens ─────────────────────────────────────────────────────────
 const C = {
   bg:         '#020810',
@@ -256,6 +261,29 @@ const SectionTitle = memo(function SectionTitle({ children }: { children: string
   );
 });
 
+// ─── StatPill (identique film/[id].tsx) ────────────────────────────────────
+const StatPill = memo(function StatPill({ icon, value, label, color }: { icon: string; value: string; label?: string; color?: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 }}>
+      <Ionicons name={icon as any} size={16} color={color ?? C.textSec} />
+      <View>
+        <Text style={{ color: color ?? C.text, fontSize: 13, fontWeight: '700' }}>{value}</Text>
+        {label && <Text style={{ color: C.textTert, fontSize: 10, fontWeight: '600', marginTop: 1 }}>{label}</Text>}
+      </View>
+    </View>
+  );
+});
+
+// ─── InfoRow (identique film/[id].tsx) ─────────────────────────────────────
+const InfoRow = memo(function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 0.5, borderBottomColor: C.border }}>
+      <Text style={{ color: C.textSec, fontSize: 12, fontWeight: '600' }}>{label}</Text>
+      <Text style={{ color: C.text, fontSize: 12, fontWeight: '700', maxWidth: '60%' }} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+});
+
 // ─── SimilarReelCard ───────────────────────────────────────────────────────
 const SimilarReelCard = memo(function SimilarReelCard({
   item, onPress,
@@ -377,6 +405,7 @@ export default function ReelDetailScreen() {
       if (next) {
         await supabase.from('user_liked_reels')
           .upsert({ user_id: uid, reel_id: reel.id }, { onConflict: 'user_id,reel_id' });
+        grantXP(uid, 10, 'like_reel');
       } else {
         await supabase.from('user_liked_reels').delete().eq('user_id', uid).eq('reel_id', reel.id);
       }
@@ -403,6 +432,7 @@ export default function ReelDetailScreen() {
       if (next) {
         await supabase.from('user_saved_reels')
           .upsert({ user_id: uid, reel_id: reel.id }, { onConflict: 'user_id,reel_id' });
+        grantXP(uid, 15, 'save_reel');
       } else {
         await supabase.from('user_saved_reels').delete().eq('user_id', uid).eq('reel_id', reel.id);
       }
@@ -416,7 +446,8 @@ export default function ReelDetailScreen() {
     const url = reel ? resolveReelVideoUrl(reel.video_url) : '';
     setVideoUrl(url || null);
     setVideoOpen(true);
-  }, [reel]);
+    grantXP(userId, 25, 'watch_reel');
+  }, [reel, userId]);
 
   // ── handleShare ──────────────────────────────────────────────────────────
   const handleShare = useCallback(async () => {
@@ -503,44 +534,39 @@ export default function ReelDetailScreen() {
         {/* CORPS */}
         <Animated.View style={[s.body, bodyAnim]}>
 
+          {/* Badge catégorie — identique film/[id].tsx */}
+          {reel.genre && (
+            <View style={s.catBadge}>
+              <View style={s.catDot} />
+              <Text style={s.catTxt}>{'REEL · COURT-MÉTRAGE'}</Text>
+            </View>
+          )}
+
           <View style={s.titleBlock}>
+            {reel.genre && <Text style={s.genreLabel}>{reel.genre.toUpperCase()}</Text>}
             <Text style={s.reelTitle} numberOfLines={3}>{reel.title || 'Sans titre'}</Text>
-            {reel.director && (
-              <Text style={s.dirInline}>
-                <Text style={{ color: C.textTert }}>Réalisé par </Text>{reel.director}
+            {(reel.director || reel.year) && (
+              <Text style={s.adj}>
+                {reel.director ? `De ${reel.director}` : ''}
+                {reel.director && reel.year ? ' · ' : ''}
+                {reel.year ?? ''}
               </Text>
             )}
           </View>
 
-          {/* STATS */}
+          {/* STATS — identique film/[id].tsx */}
           <View style={s.statsRow}>
-            <TouchableOpacity onPress={handleLike} activeOpacity={0.80}>
-              <View style={[s.statPill, liked && { borderColor: 'rgba(255,59,92,0.35)', backgroundColor: 'rgba(255,59,92,0.10)' }]}>
+            <TouchableOpacity onPress={handleLike} activeOpacity={0.82}>
+              <View style={[s.likePill, liked && { borderColor: 'rgba(255,59,92,0.38)', backgroundColor: 'rgba(255,59,92,0.10)' }]}>
                 <Animated.View style={{ transform: [{ scale: heartSc }] }}>
-                  <Ionicons name={liked ? 'heart' : 'heart-outline'} size={17} color={liked ? C.red : C.textSec} />
+                  <Ionicons name={liked ? 'heart' : 'heart-outline'} size={16} color={liked ? C.red : C.textSec} />
                 </Animated.View>
-                <View>
-                  <Text style={[s.statVal, liked && { color: C.red }]}>{fmtLikes(localLikes)}</Text>
-                  <Text style={s.statLbl}>J'aime</Text>
-                </View>
+                <Text style={[s.likePillVal, liked && { color: C.red }]}>{fmtLikes(localLikes)}</Text>
               </View>
             </TouchableOpacity>
-            <View style={s.statPill}>
-              <Ionicons name="play-circle-outline" size={17} color={C.textSec} />
-              <View><Text style={s.statVal}>{fmtLikes(reel.views_count ?? 0)}</Text><Text style={s.statLbl}>Vues</Text></View>
-            </View>
-            {reel.duration != null && (
-              <View style={s.statPill}>
-                <Ionicons name="time-outline" size={17} color={C.textSec} />
-                <View><Text style={s.statVal}>{reel.duration} min</Text><Text style={s.statLbl}>Durée</Text></View>
-              </View>
-            )}
-            {reel.year != null && (
-              <View style={s.statPill}>
-                <Ionicons name="calendar-outline" size={17} color={C.textSec} />
-                <View><Text style={s.statVal}>{reel.year}</Text><Text style={s.statLbl}>Année</Text></View>
-              </View>
-            )}
+            <StatPill icon="play-circle-outline" value={fmtLikes(reel.views_count ?? 0)} label="Vues" />
+            {reel.duration != null && <StatPill icon="time-outline" value={`${reel.duration} min`} label="Durée" />}
+            {reel.year != null && <StatPill icon="calendar-outline" value={reel.year} label="Année" />}
           </View>
 
           {/* PLAY */}
@@ -618,6 +644,19 @@ export default function ReelDetailScreen() {
             </View>
           )}
 
+          {/* INFORMATIONS — identique film/[id].tsx */}
+          <View style={s.section}>
+            <SectionTitle>Informations</SectionTitle>
+            <View style={{ backgroundColor: C.surf, borderRadius: 16, borderWidth: 1, borderColor: C.border, overflow: 'hidden' }}>
+              {reel.genre    && <InfoRow label="Genre"       value={reel.genre} />}
+              {reel.year     && <InfoRow label="Année"       value={reel.year} />}
+              {reel.duration != null && <InfoRow label="Durée"  value={`${reel.duration} min`} />}
+              {reel.director && <InfoRow label="Réalisateur" value={reel.director} />}
+              <InfoRow label="Statut" value={reel.status === 'approved' ? 'Approuvé' : reel.status === 'pending' ? 'En attente' : 'Refusé'} />
+              <InfoRow label="Vues"   value={fmtLikes(reel.views_count ?? 0)} />
+            </View>
+          </View>
+
         </Animated.View>
       </ScrollView>
     </View>
@@ -630,23 +669,29 @@ const s = StyleSheet.create({
   center:     { justifyContent: 'center', alignItems: 'center' },
   scroll:     { paddingBottom: 110 },
 
-  heroWrap:   { height: H * 0.44, position: 'relative' },
+  heroWrap:   { height: H * 0.46, position: 'relative' },
   heroImg:    { width: '100%', height: '100%' },
   backBtn:    { position: 'absolute', top: Platform.OS === 'ios' ? 56 : 22, left: 16 },
   blurCircle: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   topRight:   { position: 'absolute', top: Platform.OS === 'ios' ? 56 : 22, right: 16, gap: 10, alignItems: 'flex-end' },
 
-  body:       { paddingHorizontal: 20, paddingTop: 24 },
-  titleBlock: { marginBottom: 24 },
+  body:       { paddingHorizontal: 20, paddingTop: 22 },
+  catBadge:   { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8, borderWidth: 0.5, borderColor: 'rgba(90,150,230,0.3)', backgroundColor: 'rgba(0,0,0,0.35)', alignSelf: 'flex-start', marginBottom: 14 },
+  catDot:     { width: 5, height: 5, borderRadius: 3, backgroundColor: C.blue },
+  catTxt:     { color: C.blue, fontSize: 9, fontWeight: '800', letterSpacing: 0.6 },
+  titleBlock: { marginBottom: 20 },
+  genreLabel: { color: C.blue, fontSize: 10, fontWeight: '800', letterSpacing: 1.5, marginBottom: 7 },
   reelTitle:  { color: C.white, fontSize: 27, fontWeight: '800', letterSpacing: -0.6, lineHeight: 33, marginBottom: 7 },
-  dirInline:  { color: C.textSec, fontSize: 13, fontWeight: '600' },
+  adj:        { color: C.textSec, fontSize: 14, fontStyle: 'italic' },
 
-  statsRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 },
+  statsRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  likePill:   { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  likePillVal: { color: C.text, fontSize: 13, fontWeight: '700' },
   statPill:   { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
   statVal:    { color: C.text, fontSize: 13, fontWeight: '700' },
   statLbl:    { color: C.textTert, fontSize: 10, fontWeight: '600', marginTop: 1 },
 
-  playBtn:      { borderRadius: 16, overflow: 'hidden', marginBottom: 22, borderWidth: 1, borderColor: C.borderBlue },
+  playBtn:      { borderRadius: 16, overflow: 'hidden', marginBottom: 26, borderWidth: 1, borderColor: C.borderBlue },
   playGrad:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16, paddingHorizontal: 20 },
   playIconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' },
   playTxt:      { color: C.white, fontSize: 16, fontWeight: '800', letterSpacing: -0.2 },

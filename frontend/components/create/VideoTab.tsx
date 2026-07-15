@@ -931,7 +931,13 @@ const VideoTab = memo(function VideoTab() {
         try {
           const compressedUri = await VideoCompressor.compress(
             video.uri,
-            { compressionMethod: 'auto' },
+            {
+              compressionMethod: 'manual',
+              maxSize: 1920,
+              bitrate: 6_000_000,
+              quality: 0.9,
+              minimumFileSizeForCompress: 10 * 1024 * 1024,
+            },
             (progress: number) => animProg(2 + Math.min(progress, 1) * 6), // 2 → 8 %
           );
           if (compressedUri) vidUri = compressedUri;
