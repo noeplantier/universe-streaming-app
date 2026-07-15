@@ -462,15 +462,14 @@ export default function FilmDetailScreen() {
         setLoading(false);
 
         // Phase 2 : similar + pros + reel creator video en parallèle
-        const reelQuery = workData.video_url
-          ? Promise.resolve(null)
-          : supabase.from('reels')
-              .select('video_url')
-              .eq('user_id', uid)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle()
-              .then(({ data }) => data?.video_url ?? null, () => null);
+        // Cherche toujours le reel de l'utilisateur courant pour ce work
+        const reelQuery = supabase.from('reels')
+          .select('video_url')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+          .then(({ data }) => data?.video_url ?? null, () => null);
 
         const [simItems, proItems, rawReelVid] = await Promise.all([
           fetchSimilarWorks(workData),
@@ -532,7 +531,12 @@ export default function FilmDetailScreen() {
     setVideoOpen(true);
     if (!videoUrl && work) {
       setVideoLoading(true);
-      setVideoUrl(creatorReelVideoUrl || getWorkVideoUrl(work));
+      const workVid = getWorkVideoUrl(work);
+      // Remplace le fallback archive.org par le vrai reel de l'utilisateur
+      const finalVid = (workVid.includes('archive.org') && creatorReelVideoUrl)
+        ? creatorReelVideoUrl
+        : (creatorReelVideoUrl || workVid);
+      setVideoUrl(finalVid);
       setVideoLoading(false);
     }
     try {

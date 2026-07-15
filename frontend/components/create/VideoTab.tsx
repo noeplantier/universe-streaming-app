@@ -204,13 +204,14 @@ interface VideoAsset {
   webBlob?:  Blob | null;
 }
 interface Form {
-  title:    string;
-  genre:    string;
-  director: string;
-  year:     string; // ISO "YYYY-MM-DD" — sélectionné via calendrier
-  synopsis: string;
+  title:        string;
+  genre:        string;
+  director:     string;
+  year:         string; // ISO "YYYY-MM-DD" — sélectionné via calendrier
+  synopsis:     string;
+  participants: string; // noms séparés par des virgules
 }
-const EMPTY: Form = { title:'', genre:'', director:'', year:'', synopsis:'' };
+const EMPTY: Form = { title:'', genre:'', director:'', year:'', synopsis:'', participants:'' };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS — module-level
@@ -662,11 +663,12 @@ const VideoTab = memo(function VideoTab() {
   }, [progAnim]);
 
   // ── Form setters ──────────────────────────────────────────────────────────
-  const setTitle    = useCallback((v:string) => setForm(p=>({...p,title:v})),    []);
-  const setGenre    = useCallback((v:string) => setForm(p=>({...p,genre:v})),    []);
-  const setDirector = useCallback((v:string) => setForm(p=>({...p,director:v})), []);
-  const setYear     = useCallback((v:string) => setForm(p=>({...p,year:v})),     []);
-  const setSynopsis = useCallback((v:string) => setForm(p=>({...p,synopsis:v})), []);
+  const setTitle        = useCallback((v:string) => setForm(p=>({...p,title:v})),        []);
+  const setGenre        = useCallback((v:string) => setForm(p=>({...p,genre:v})),        []);
+  const setDirector     = useCallback((v:string) => setForm(p=>({...p,director:v})),     []);
+  const setYear         = useCallback((v:string) => setForm(p=>({...p,year:v})),         []);
+  const setSynopsis     = useCallback((v:string) => setForm(p=>({...p,synopsis:v})),     []);
+  const setParticipants = useCallback((v:string) => setForm(p=>({...p,participants:v})), []);
 
   // ── ★ Autocomplétion synopsis — 100% locale, à partir de titre + genre ────
   const handleSuggestSynopsis = useCallback(() => {
@@ -984,11 +986,12 @@ const VideoTab = memo(function VideoTab() {
         user_id:       userId,
         video_url:     vidUrl.publicUrl,
         thumbnail_url: thUrl.publicUrl,
-        title:         form.title.trim()    || null,
-        genre:         form.genre           || null,
-        director:      form.director.trim() || null,
-        year:          form.year.trim()     || null, // ISO "YYYY-MM-DD" — colonne texte
-        synopsis:      form.synopsis.trim() || null,
+        title:         form.title.trim()        || null,
+        genre:         form.genre               || null,
+        director:      form.director.trim()     || null,
+        year:          form.year.trim()         || null,
+        synopsis:      form.synopsis.trim()     || null,
+        participants:  form.participants.trim() || null,
         duration:      video.duration ? Math.round(video.duration / 1000) : null,
         likes_count:   0,
         views_count:   0,
@@ -1104,6 +1107,10 @@ const VideoTab = memo(function VideoTab() {
                 <DateField value={form.year} onChange={setYear}/>
               </View>
             </View>
+
+            <Field
+              label="PARTICIPANTS" value={form.participants} onChange={setParticipants}
+              placeholder="Alice, Bob, Charlie…" maxLength={200}/>
 
             <Field
               label="SYNOPSIS" value={form.synopsis} onChange={setSynopsis}
