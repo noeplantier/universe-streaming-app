@@ -66,19 +66,22 @@ const fmtLikes = (n:number) => n>=1_000_000?`${(n/1_000_000).toFixed(1)} M`:n>=1
 const fmtDur   = (m:number) => m>=60?`${Math.floor(m/60)}h${m%60>0?` ${m%60}min`:''}`:`${m} min`;
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
+const WORK_COLS = 'id,title,category,genre,year,likes,comments,image,is_original,adjective,duration,description,director,cast_list,created_at,video_url';
 async function fetchWork(id:string|number): Promise<Work|null> {
-  const { data } = await supabase.from('works').select('*').eq('id', id).maybeSingle();
+  const { data } = await supabase.from('works').select(WORK_COLS).eq('id', id).maybeSingle();
   return data as Work|null;
 }
 async function fetchSimilarWorks(work:Work): Promise<Work[]> {
-  const { data } = await supabase.from('works').select('id,title,image,likes,genre,category,is_original,duration').neq('id',work.id).eq('genre',work.genre).order('likes',{ascending:false}).limit(12);
+  const { data } = await supabase.from('works').select('id,title,image,likes,genre,category,is_original,duration').neq('id',work.id).eq('genre',work.genre).order('likes',{ascending:false}).limit(6);
   return (data ?? []) as Work[];
 }
-async function fetchCreatorReels(title:string): Promise<CreatorReel[]> {
+// Search by genre (not title) — genre-based match is reliable and indexed
+async function fetchCreatorReels(genre:string): Promise<CreatorReel[]> {
+  if (!genre) return [];
   const { data } = await supabase.from('reels')
     .select('id,user_id,title,video_url,thumbnail_url,duration,likes_count,views_count,status,created_at')
-    .ilike('title', `%${title}%`)
-    .in('status', ['approved', 'pending'])
+    .eq('genre', genre)
+    .eq('status', 'approved')
     .order('likes_count', { ascending: false, nullsFirst: false })
     .limit(6);
   return (data ?? []) as CreatorReel[];
@@ -324,7 +327,7 @@ export default function FilmDetailScreen() {
         // Phase 2 : similaires + reels créateurs en parallèle (pros supprimés)
         const [simItems, creatorItems] = await Promise.all([
           fetchSimilarWorks(workData),
-          fetchCreatorReels(workData.title),
+          fetchCreatorReels(workData.genre ?? ''),
         ]);
         if (dead) return;
         setSimilar(simItems);

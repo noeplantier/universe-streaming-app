@@ -571,13 +571,18 @@ export default function EditProfileScreen() {
     try {
       const url = await uploadAvatar(uri, userId);
       if (!url) {
-        Alert.alert('Erreur upload',"Exécutez universe_setup.sql dans Supabase SQL Editor d'abord.");
+        Alert.alert('Erreur upload', "L'upload vers le storage a échoué. Vérifiez la connexion ou les permissions Supabase.");
         return;
       }
       setAvUrl(url);
-      await supabase.from('profiles').update({avatar_url:url,updated_at:new Date().toISOString()}).eq('id',userId);
+      // upsert guarantees the row is created if it doesn't exist yet
+      const { error: dbErr } = await supabase.from('profiles')
+        .upsert({ id: userId, avatar_url: url, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+      if (dbErr) console.warn('[edit] avatar db:', dbErr.message);
+      // Mark profile as dirty so NavBar and profile.tsx re-fetch the avatar
+      try { SecureStore?.setItemAsync('profile_dirty', '1'); } catch {}
       if (Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
-    } catch { Alert.alert('Erreur',"Impossible d'uploader la photo."); }
+    } catch(e:any) { Alert.alert('Erreur', e?.message ?? "Impossible d'uploader la photo."); }
     finally { setAVL(false); }
   }, [userId]);
 

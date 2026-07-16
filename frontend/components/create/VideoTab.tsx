@@ -736,10 +736,15 @@ const VideoTab = memo(function VideoTab() {
       if (typeof document === 'undefined') return;
       const input = document.createElement('input');
       input.type = 'file'; input.accept = 'image/*';
+      // Appended to DOM before click — required on iOS Safari mobile (programmatic
+      // click on a detached input element is blocked by the browser security policy)
+      input.style.cssText = 'position:fixed;top:-100px;left:-100px;width:0;height:0;opacity:0;';
+      document.body.appendChild(input);
       input.onchange = (e: any) => {
+        if (document.body.contains(input)) document.body.removeChild(input);
         const file = e.target.files?.[0]; if (!file) return;
         setThumbUri(URL.createObjectURL(file));
-        setThumbBlob(file); // ★ Blob réel gardé — jamais de re-fetch('blob:…') au submit
+        setThumbBlob(file);
       };
       input.click();
       return;
@@ -771,8 +776,12 @@ const VideoTab = memo(function VideoTab() {
       if (typeof document === 'undefined') return;
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'video/*'; // ★ uniquement vidéos, jamais d'image
+      // Explicit MIME types improve mobile browser compatibility over bare 'video/*'
+      input.accept = 'video/mp4,video/quicktime,video/x-msvideo,video/webm,video/*';
+      input.style.cssText = 'position:fixed;top:-100px;left:-100px;width:0;height:0;opacity:0;';
+      document.body.appendChild(input);
       input.onchange = (e: any) => {
+        if (document.body.contains(input)) document.body.removeChild(input);
         const file = e.target.files?.[0]; if (!file) return;
         const uri = URL.createObjectURL(file);
         const fileName = file.name || 'video.mp4';
@@ -781,12 +790,8 @@ const VideoTab = memo(function VideoTab() {
           fileName,
           fileSize: file.size,
           duration: null,
-          // ★ file.type est souvent vide pour .mov dans les navigateurs (pas de
-          // mapping MIME natif) — sans fallback par extension, le Content-Type
-          // envoyé au storage ne correspond plus au fichier réel et le bucket
-          // rejette l'upload avec un 400.
           mimeType: file.type || mimeFromExt(fileName),
-          webBlob: file, // ★ Blob réel gardé — jamais de re-fetch('blob:…') au submit
+          webBlob: file,
         };
         setVideo(asset); setError(null);
         tryAutoThumb(uri, null);
@@ -833,12 +838,12 @@ const VideoTab = memo(function VideoTab() {
       if (typeof document === 'undefined') return;
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = 'video/*';
-      // ★ capture='environment' est l'attribut standard qui force les
-      // navigateurs mobiles à ouvrir directement l'appareil photo/caméra du
-      // téléphone (enregistrement) plutôt que le sélecteur de galerie.
+      input.accept = 'video/mp4,video/quicktime,video/x-msvideo,video/webm,video/*';
       (input as any).capture = 'environment';
+      input.style.cssText = 'position:fixed;top:-100px;left:-100px;width:0;height:0;opacity:0;';
+      document.body.appendChild(input);
       input.onchange = (e: any) => {
+        if (document.body.contains(input)) document.body.removeChild(input);
         const file = e.target.files?.[0]; if (!file) return;
         const uri = URL.createObjectURL(file);
         const fileName = file.name || `record_${Date.now()}.mp4`;
