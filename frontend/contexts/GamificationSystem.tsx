@@ -1,54 +1,3 @@
-/**
- * contexts/GamificationSystem.tsx — UNIVERSE · Gamification v6.2
- *
- * ★★ CHANGEMENTS DE CETTE PASSE ★★
- * 1. VERROU DUR RÉTABLI : `DailyQuestsPanel` ne rend jamais plus de 4
- *    cartes (`questsWithStatus.slice(0, MAX_DAILY_CARDS)`), même si un
- *    tableau plus long lui est passé par erreur. `DAILY_QUEST_DEFINITIONS`
- *    reste figé à 4 entrées. C'est la garantie structurelle demandée.
- * 2. Cartes compactées (moins de padding, hauteur réduite) + guide de
- *    bienvenue resserré → le panel des 4 défis + le guide tiennent sur un
- *    écran sans scroll supplémentaire.
- * 3. ★ CLAIM VÉRIFIÉ CÔTÉ SERVEUR : `claimDailyQuest` ne se contente plus
- *    de faire confiance à la progression locale. Avant de créditer le
- *    moindre XP, il interroge Supabase pour confirmer que l'action est
- *    RÉELLEMENT allée au bout :
- *      - daily_watch    → count(user_history) aujourd'hui >= target
- *      - daily_explore  → œuvres distinctes vues aujourd'hui >= target
- *      - daily_critique → critiques créées aujourd'hui avec un contenu
- *                         d'au moins 20 caractères (pas un brouillon vide)
- *      - daily_create   → reels publiés aujourd'hui (pending/approved)
- *    Si la vérification échoue, le Claim est refusé et rien n'est crédité,
- *    même si `incrementDailyQuest` avait été appelé en amont.
- * 4. ★ STREAK/XP DYNAMIQUES via `public.daily_checkins` : `useGamification`
- *    enregistre un check-in du jour (idempotent) et calcule le streak réel
- *    à partir de l'historique de check-ins — plus jamais une valeur figée
- *    en base qui pourrait désynchroniser la barre XP.
- * 5. ★ Card de niveau enrichie (`XPBar`) : ajoute le titre du niveau
- *    suivant, le multiplicateur XP actif et le nombre de jours actifs
- *    (checkins), en plus du streak et du score de contribution déjà
- *    présents — sans changer sa signature (props optionnelles).
- *
- * ★★ MIGRATIONS SQL REQUISES ★★
- *   -- Suivi du Claim (déjà demandé précédemment, non destructif)
- *   alter table public.user_quests
- *     add column if not exists claimed boolean not null default false,
- *     add column if not exists claimed_at timestamptz null;
- *
- *   -- Check-ins quotidiens → source de vérité du streak / XP dynamique
- *   -- ★ user_id référence profiles.id (device UUID, PAS auth.users(id))
- *   create table if not exists public.daily_checkins (
- *     user_id uuid not null references public.profiles(id) on delete cascade,
- *     checkin_date date not null,
- *     created_at timestamptz not null default now(),
- *     constraint daily_checkins_pkey primary key (user_id, checkin_date)
- *   );
- *   create index if not exists idx_daily_checkins_user
- *     on public.daily_checkins using btree (user_id, checkin_date desc);
- *
- * Zéro dépendance à supabase.auth.* — userId = getDeviceId() côté écran.
- */
-
 import React, {
   memo,
   ReactNode,
@@ -58,6 +7,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+
 import {
   Animated,
   Dimensions,
@@ -344,6 +295,7 @@ export interface GamiState {
   checkinsCount: number;
   awardXP: (amount: number, reason: string) => void;
   awardBadge: (badgeId: string) => void;
+  refresh: () => void;
 }
 
 export interface ProfilePowerField {
@@ -690,18 +642,18 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
 
     let dead = false;
 
+    // Fetch profile + XP from quest_progress (source de vérité XP)
     Promise.all([
-      // profiles.id = device UUID (PK) — pas profiles.user_id
       supabase.from('profiles').select('level,title,streak_days,contribution_score').eq('id', userId).maybeSingle(),
-      skipBadges ? Promise.resolve({ data: null }) : supabase.from('badges').select('id,label,description,icon,rarity,xp_reward,is_hidden').eq('is_hidden', false),
-      skipBadges ? Promise.resolve({ data: null }) : supabase.from('user_badges').select('badge_id,earned_at').eq('user_id', userId),
+      supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle(),
     ])
-      .then(([profR, badgesR, earnedR]) => {
+      .then(([profR, qpR]) => {
         if (dead) return;
 
+        const dbXP = (qpR.data as any)?.xp ?? null;
         if (profR.data) {
           const { level, title, streak_days = 0, contribution_score = 0 } = profR.data as any;
-          const xp = contribution_score ?? 0; // xp col pas encore migrée → contribution_score proxy
+          const xp = dbXP ?? contribution_score ?? 0;
           const lvl = xpToLevel(xp);
           const effLevel = level ?? lvl.level;
           setProfile(prev => ({
@@ -709,31 +661,19 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
             xp,
             level: effLevel,
             title: title ?? TITLES[effLevel - 1],
-            streak_days, // ★ écrasé juste après par le streak réel (daily_checkins)
+            streak_days,
             contribution_score: contribution_score ?? 0,
             pct: lvl.pct,
             xpInLevel: lvl.xpInLevel,
             xpToNext: lvl.xpToNext,
           }));
         } else {
-          supabase.from('profiles').upsert({ id: userId, xp: 0 }, { onConflict: 'id' }).then(() => {}, () => {});
+          supabase.from('profiles').upsert({ id: userId }, { onConflict: 'id' }).then(() => {}, () => {});
         }
 
         if (!skipBadges) {
-          const earnedMap = new Map<string, string>((earnedR.data ?? []).map((r: any) => [r.badge_id, r.earned_at]));
-          const dbBadges = (badgesR.data ?? []).map((b: any) => ({
-            ...b,
-            earned: earnedMap.has(b.id),
-            earned_at: earnedMap.get(b.id) ?? undefined,
-          })) as GamiBadge[];
-          const merged = dbBadges.length > 0
-            ? dbBadges
-            : BADGES_CATALOG.map(b => ({
-                ...b,
-                earned: earnedMap.has(b.id),
-                earned_at: earnedMap.get(b.id),
-              })) as GamiBadge[];
-          setBadges(merged);
+          // badges / user_badges supprimées — catalogue local uniquement
+          setBadges(BADGES_CATALOG.map(b => ({ ...b, earned: false, earned_at: undefined })) as GamiBadge[]);
         }
 
         setLoading(false);
@@ -748,41 +688,86 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
 
   // ★ Streak dynamique via public.user_history — calcul à partir des jours
   // distincts de visionnage, sans dépendre de daily_checkins.
-  useEffect(() => {
-    if (!isValidUUID(userId)) return;
-    let dead = false;
-    supabase.from('user_history')
-      .select('watched_at')
-      .eq('user_id', userId)
-      .order('watched_at', { ascending: false })
-      .limit(120)
-      .then(({ data }) => {
-        if (dead) return;
-        const dates = [...new Set((data ?? []).map((r: any) =>
-          new Date(r.watched_at).toISOString().split('T')[0]
-        ))] as string[];
-        const realStreak = computeStreakFromCheckins(dates);
-        setCheckinsCount(dates.length);
-        setProfile(prev => (prev.streak_days === realStreak ? prev : { ...prev, streak_days: realStreak }));
-      }, () => {});
-    return () => { dead = true; };
-  }, [userId]);
+// ★ Realtime XP — robuste contre double-mount / topic reuse
 
+// en haut du hook useGamification
+const xpChannelRef = useRef<RealtimeChannel | null>(null);
+
+useEffect(() => {
+  if (!isValidUUID(userId)) return;
+
+  let disposed = false;
+  // topic unique par montage => empêche la réutilisation d'un ancien channel déjà subscribe()
+  const topic = `xp_sync:${userId}:${Math.random().toString(36).slice(2)}`;
+
+  const ch = supabase
+    .channel(topic)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'quest_progress',
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        if (disposed) return;
+        const row = (payload.new ?? payload.old) as any;
+        const newXp = row?.xp;
+        if (typeof newXp !== 'number') return;
+
+        const lvl = xpToLevel(newXp);
+        setProfile((prev) =>
+          prev.xp === newXp
+            ? prev
+            : { ...prev, xp: newXp, ...lvl, title: TITLES[lvl.level - 1] }
+        );
+      }
+    )
+    .subscribe();
+
+  xpChannelRef.current = ch;
+
+  return () => {
+    disposed = true;
+    const current = xpChannelRef.current;
+    xpChannelRef.current = null;
+    if (current) {
+      current.unsubscribe().catch(() => {});
+      supabase.removeChannel(current).catch(() => {});
+    }
+  };
+}, [userId]);
   const earnedBadges = useMemo(() => badges.filter(b => b.earned), [badges]);
   const pendingBadges = useMemo(() => badges.filter(b => !b.earned), [badges]);
+
+  // ★ Re-lit l'XP depuis la DB — appelé sur focus depuis profile.tsx
+  const refreshXP = useCallback(() => {
+    if (!isValidUUID(userId)) return;
+    supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle()
+      .then(({ data }) => {
+        const newXp = (data as any)?.xp;
+        if (typeof newXp !== 'number') return;
+        const lvl = xpToLevel(newXp);
+        setProfile(prev => prev.xp === newXp ? prev : {
+          ...prev, xp: newXp, ...lvl, title: TITLES[lvl.level - 1],
+        });
+      }, () => {});
+  }, [userId]);
+
 
   const awardXP = useCallback((amount: number, _reason: string) => {
     if (!isValidUUID(userId)) return;
     setProfile(prev => {
       const newXp = prev.xp + amount;
       const lvl = xpToLevel(newXp);
-      // Persist : RPC en priorité, sinon update direct profiles.xp
-      supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: _reason }).then(
-        () => {},
-        () => {
-          supabase.from('profiles').update({ xp: newXp }).eq('id', userId).then(() => {}, () => {});
-        },
-      );
+      // Persist via quest_progress (source de vérité XP), fallback sur profiles
+      supabase.from('quest_progress').upsert(
+        { user_id: userId, xp: newXp, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' },
+      ).then(() => {}, () => {
+        supabase.from('profiles').update({ contribution_score: newXp }).eq('id', userId).then(() => {}, () => {});
+      });
       return { ...prev, xp: newXp, ...lvl, title: TITLES[lvl.level - 1] };
     });
   }, [userId]);
@@ -790,15 +775,13 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
   const awardBadge = useCallback(async (badgeId: string) => {
     if (!isValidUUID(userId)) return;
     if (badges.find(b => b.id === badgeId && b.earned)) return;
-    const { error } = await supabase.from('user_badges').upsert({ user_id: userId, badge_id: badgeId }, { onConflict: 'user_id,badge_id' });
-    if (!error) {
-      const badge = badges.find(b => b.id === badgeId);
-      setBadges(prev => prev.map(b => b.id === badgeId ? { ...b, earned: true, earned_at: new Date().toISOString() } : b));
-      if (badge?.xp_reward) awardXP(badge.xp_reward, `badge_${badgeId}`);
-    }
+    // user_badges supprimée — état local uniquement (pas de persistence DB)
+    const badge = badges.find(b => b.id === badgeId);
+    setBadges(prev => prev.map(b => b.id === badgeId ? { ...b, earned: true, earned_at: new Date().toISOString() } : b));
+    if (badge?.xp_reward) awardXP(badge.xp_reward, `badge_${badgeId}`);
   }, [userId, badges, awardXP]);
 
-  return { profile, badges, earnedBadges, pendingBadges, loading, checkinsCount, awardXP, awardBadge };
+  return { profile, badges, earnedBadges, pendingBadges, loading, checkinsCount, awardXP, awardBadge, refresh: refreshXP };
 }
 
 // ─── ★ SYSTÈME DE NOTIFICATION IN-APP (style Duolingo) ───────────────────────
@@ -1003,7 +986,7 @@ export function useWeeklyChallenge(userId: string) {
     if (!isValidUUID(userId)) return;
     let dead = false;
     supabase
-      .from('challenge_progress')
+      .from('quest_progress')
       .select('step_index,steps_done,completed,points_earned,xp_earned,time_spent_s')
       .eq('user_id', userId)
       .eq('week_number', weekNum)
@@ -1044,7 +1027,7 @@ export function useWeeklyChallenge(userId: string) {
 
     setProgress(next);
 
-    await supabase.from('challenge_progress').upsert({
+    await supabase.from('quest_progress').upsert({
       user_id: userId,
       week_number: weekNum,
       step_index: stepIndex,
@@ -1070,7 +1053,7 @@ export function useQuests(userId: string) {
       return;
     }
     let dead = false;
-    supabase.from('user_quests').select('quest_id,progress,completed,completed_at').eq('user_id', userId)
+    supabase.from('quests').select('quest_id,progress,completed,completed_at').eq('user_id', userId)
       .then(({ data }) => {
         if (dead) return;
         const m = new Map<string, QuestProgress>();
@@ -1107,7 +1090,7 @@ export function useQuests(userId: string) {
       nm.set(questId, next);
       return nm;
     });
-    await supabase.from('user_quests').upsert({
+    await supabase.from('quests').upsert({
       user_id: userId,
       quest_id: questId,
       progress: newProg,
@@ -1260,7 +1243,8 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
     }
     let dead = false;
     const ids = DAILY_QUEST_DEFINITIONS.map(d => `${d.id}_${today}`);
-    supabase.from('user_quests').select('quest_id,progress,completed,claimed').eq('user_id', userId).in('quest_id', ids)
+    // quests remplace user_quests — plus de colonne `claimed`, completed = réclamé
+    supabase.from('quests').select('quest_id,progress,completed').eq('user_id', userId).in('quest_id', ids)
       .then(({ data }) => {
         if (dead) return;
         const m = new Map<string, DailyQuestProgress>();
@@ -1271,7 +1255,7 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
             date: today,
             progress: r.progress ?? 0,
             completed: r.completed ?? false,
-            claimed: r.claimed ?? false,
+            claimed: r.completed ?? false, // completed = réclamé dans le nouveau schéma
           });
         });
         setProgressMap(m);
@@ -1297,13 +1281,12 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
 
     if (completed) hapticSuccess(); else hapticLight();
 
-    await supabase.from('user_quests').upsert({
+    await supabase.from('quests').upsert({
       user_id: userId,
       quest_id: `${questId}_${today}`,
       progress: newProg,
       completed,
       completed_at: completed ? new Date().toISOString() : null,
-      claimed: false,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
   }, [userId, today, progressMap]);
@@ -1339,13 +1322,12 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
       return nm;
     });
 
-    await supabase.from('user_quests').upsert({
+    await supabase.from('quests').upsert({
       user_id: userId,
       quest_id: `${questId}_${today}`,
       progress: prev.progress,
       completed: true,
-      claimed: true,
-      claimed_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
 
@@ -1380,6 +1362,42 @@ export function useDailyQuests(userId: string, onXPClaimed?: (xp: number, questI
     claimDailyQuest,
     today,
   };
+}
+
+// Auto-claim un défi du jour sans passer par le hook — fire-and-forget.
+// Appelé directement depuis les handlers d'action (handleWatch, etc.).
+export async function tryAutoClaimDailyQuest(
+  userId: string,
+  questId: 'daily_watch' | 'daily_explore' | 'daily_critique' | 'daily_create',
+): Promise<void> {
+  if (!isValidUUID(userId)) return;
+  const def = DAILY_QUEST_DEFINITIONS.find(d => d.id === questId);
+  if (!def) return;
+  const today = todayKey();
+  const fullId = `${questId}_${today}`;
+  // quests remplace user_quests — completed = réclamé (pas de colonne claimed)
+  const { data: existing } = await supabase.from('quests')
+    .select('completed')
+    .eq('user_id', userId)
+    .eq('quest_id', fullId)
+    .maybeSingle();
+  if (existing?.completed) return;
+  const ok = await verifyQuestCompletion(userId, questId, def.target);
+  if (!ok) return;
+  await supabase.from('quests').upsert({
+    user_id: userId, quest_id: fullId,
+    progress: def.target, completed: true,
+    completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
+  // XP via quest_progress (add_xp RPC supprimé)
+  const { data: qp } = await supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle();
+  const currentXP = (qp as any)?.xp ?? 0;
+  await supabase.from('quest_progress').upsert(
+    { user_id: userId, xp: currentXP + def.xp, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id' },
+  ).then(() => {}, () => {
+    supabase.from('profiles').update({ contribution_score: currentXP + def.xp }).eq('id', userId).then(() => {}, () => {});
+  });
 }
 
 export function useXPMultiplier(streakDays: number, profilePct: number): XPMultiplier {

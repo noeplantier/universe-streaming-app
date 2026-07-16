@@ -32,9 +32,18 @@ if (Platform.OS !== 'web') {
 
 const { height: H } = Dimensions.get('window');
 
-function grantXP(userId: string | null, amount: number, reason: string) {
+function grantXP(userId: string | null, amount: number, _reason: string) {
   if (!userId) return;
-  supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason }).then(() => {}, () => {});
+  supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle()
+    .then(({ data }) => {
+      const cur = (data as any)?.xp ?? 0;
+      supabase.from('quest_progress').upsert(
+        { user_id: userId, xp: cur + amount, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' },
+      ).then(() => {}, () => {
+        supabase.from('profiles').update({ contribution_score: cur + amount }).eq('id', userId).then(() => {}, () => {});
+      });
+    }, () => {});
 }
 
 // ─── Design tokens ─────────────────────────────────────────────────────────
@@ -142,35 +151,24 @@ const VideoModal = memo(function VideoModal({
   visible, videoUrl, title, onClose,
 }: { visible: boolean; videoUrl: string | null; title: string; onClose: () => void }) {
   const isWeb = Platform.OS === 'web';
-  const [buffering, setBuffering] = useState(false);
   const [videoError, setVideoError] = useState(false);
   const player = _useVideoPlayer(visible && videoUrl ? videoUrl : null, (p: any) => {
     if (!p) return; p.loop = false; p.muted = false;
   });
 
   useEffect(() => {
-    if (!visible) { setVideoError(false); setBuffering(false); return; }
+    if (!visible) { setVideoError(false); return; }
     setVideoError(false);
-    if (!player || isWeb) return;
-    if (visible && videoUrl) {
-      setBuffering(true);
-      try { player.play(); } catch {}
-      let cleanup: () => void = () => {};
-      try {
-        const sub = player.addListener('statusChange', ({ status }: any) => {
-          if (status === 'readyToPlay') setBuffering(false);
-          else if (status === 'error') { setBuffering(false); setVideoError(true); }
-        });
-        cleanup = () => { try { sub?.remove?.(); } catch {} };
-      } catch {
-        const t = setTimeout(() => setBuffering(false), 30000);
-        cleanup = () => clearTimeout(t);
-      }
-      return cleanup;
-    } else {
-      setBuffering(false);
-      try { player.pause(); } catch {}
-    }
+    if (!player || isWeb || !videoUrl) return;
+    try { player.play(); } catch {}
+    let cleanup: () => void = () => {};
+    try {
+      const sub = player.addListener('statusChange', ({ status }: any) => {
+        if (status === 'error') setVideoError(true);
+      });
+      cleanup = () => { try { sub?.remove?.(); } catch {} };
+    } catch {}
+    return cleanup;
   }, [visible, videoUrl, player, isWeb]);
 
   return (
@@ -184,12 +182,9 @@ const VideoModal = memo(function VideoModal({
         {!isWeb && !!videoUrl && !videoError && (
           <_VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="contain" nativeControls />
         )}
-        {(!videoUrl || buffering) && !videoError && (
-          <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center', gap: 16, backgroundColor: videoUrl ? 'rgba(0,0,0,0.65)' : '#000' }]}>
-            <ActivityIndicator color="#fff" size="large" />
-            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>
-              {videoUrl ? 'Mise en mémoire tampon…' : 'Chargement…'}
-            </Text>
+        {!videoUrl && !videoError && (
+          <View style={[StyleSheet.absoluteFillObject, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }]}>
+            <ActivityIndicator color="rgba(255,255,255,0.45)" size="small" />
           </View>
         )}
         {videoError && (
@@ -687,10 +682,6 @@ const s = StyleSheet.create({
   statsRow:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
   likePill:   { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
   likePillVal: { color: C.text, fontSize: 13, fontWeight: '700' },
-  statPill:   { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: C.surf, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
-  statVal:    { color: C.text, fontSize: 13, fontWeight: '700' },
-  statLbl:    { color: C.textTert, fontSize: 10, fontWeight: '600', marginTop: 1 },
-
   playBtn:      { borderRadius: 16, overflow: 'hidden', marginBottom: 26, borderWidth: 1, borderColor: C.borderBlue },
   playGrad:     { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16, paddingHorizontal: 20 },
   playIconWrap: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.12)', justifyContent: 'center', alignItems: 'center' },

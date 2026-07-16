@@ -849,7 +849,7 @@ export default function UserProfileScreen() {
         {/* ★ Véloces Favoris */}
         <SecHead icon="heart-outline" label="Véloces Favoris" count={veloceErr?undefined:likedReels.length}/>
         {veloceErr
-          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
+          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub=""/>
           :likedReels.length===0
             ?<Empty icon="heart-outline" text="Aucun Véloce aimé" sub="Les Véloces likés apparaissent ici"/>
             :<HRow pb={8} c={likedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
@@ -858,33 +858,13 @@ export default function UserProfileScreen() {
         {/* ★ Véloces Enregistrés */}
         <SecHead icon="bookmark-outline" label="Véloces Enregistrés" count={veloceErr?undefined:savedReels.length}/>
         {veloceErr
-          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
+          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub=""/>
           :savedReels.length===0
             ?<Empty icon="bookmark-outline" text="Aucun Véloce enregistré" sub="Les Véloces sauvegardés apparaissent ici"/>
             :<HRow pb={8} c={savedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
         }
         <Div/>
-        <CinemaAccordion icon="person-circle-outline" title="Identité" defaultOpen badge={roleLabel}>
-          <View style={{flexDirection:'row',flexWrap:'wrap',gap:7}}>
-            {[roleLabel,...profile.specialties].map((s,i)=>(
-              <View key={`sp_${i}`} style={{paddingHorizontal:11,paddingVertical:6,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:i===0?C.borderHi:C.border,backgroundColor:i===0?C.subtle:C.faint}}>
-                <Text style={{color:i===0?C.white:C.mid,fontSize:11,fontWeight:i===0?'700':'500'}}>{s}</Text>
-              </View>
-            ))}
-          </View>
-          {!!profile.location&&<View style={{flexDirection:'row',alignItems:'center',gap:7}}><Ionicons name="location-outline" size={12} color={C.muted}/><Text style={{color:C.muted,fontSize:12}}>{profile.location}</Text></View>}
-          {!!profile.equipment&&<View style={{gap:4}}><Text style={{color:C.muted,fontSize:9,fontWeight:'800',letterSpacing:1,textTransform:'uppercase'}}>Équipement</Text><Text style={{color:C.mid,fontSize:12,lineHeight:18}}>{profile.equipment}</Text></View>}
-          {profile.is_industry_contact&&<View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:9,borderRadius:10,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}><Ionicons name="briefcase-outline" size={13} color={C.mid}/><Text style={{color:C.mid,fontSize:12,flex:1}}>Contact professionnel</Text><View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.subtle}}><Text style={{color:C.white,fontSize:9,fontWeight:'700'}}>ACTIF</Text></View></View>}
-          {profile.open_to.length>0&&<View style={{gap:7}}><Text style={{color:C.muted,fontSize:9,fontWeight:'800',letterSpacing:1,textTransform:'uppercase'}}>Ouvert à</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>{profile.open_to.map(col=>(<View key={col} style={{flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:10,paddingVertical:5,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:C.blueDim,backgroundColor:'rgba(90,150,230,0.06)'}}><Ionicons name="checkmark-circle-outline" size={10} color={C.blue}/><Text style={{color:C.blue,fontSize:10,fontWeight:'600'}}>{col}</Text></View>))}</View></View>}
-        </CinemaAccordion>
-        <CinemaAccordion icon="layers-outline" title="Genres explorés" count={genreStats.length}>
-          {genreStats.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Aucun genre à afficher pour l'instant</Text>:genreStats.map(([genre,count])=><GenreRowGalaxy key={genre} genre={genre} count={count} max={maxGenre}/>)}
-        </CinemaAccordion>
-        <CinemaAccordion icon="star-outline" title="Notes & avis" count={reviews.length}>
-          {reviews.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Aucune critique publiée</Text>:<View style={{gap:4}}>{[5,4,3,2,1].map(s=><StarRatingRowGalaxy key={s} rating={s} count={ratingDist[s]??0} max={maxRating}/>)}<Text style={{color:C.muted,fontSize:10,textAlign:'center',marginTop:6}}>Note moyenne : {avgRating} / 5</Text></View>}
-        </CinemaAccordion>
-        {profile.notable_works.length>0&&<CinemaAccordion icon="film-outline" title="Œuvres notables" count={profile.notable_works.length}>{profile.notable_works.map((w:any,i:number)=><NotableWorkGalaxy key={w.id??i} w={w} isLast={i===profile.notable_works.length-1}/>)}</CinemaAccordion>}
-        <View style={{height:110}}/>
+     
       </View>
     );
   },[loading,profile,genreStats,maxGenre,reviews,ratingDist,maxRating,avgRating,likedReels,savedReels,veloceErr]);

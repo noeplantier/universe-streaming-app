@@ -130,16 +130,17 @@ function scoreForFeed(r: SupabaseReel, aff: Record<string, number>): number {
 
 // Direct XP award (sans hook complet) — utile pour récompenser les interactions
 // depuis des écrans qui ne consomment pas useGamification.
-function awardXPDirect(userId: string, amount: number, reason: string) {
-  supabase.rpc('add_xp', { p_user_id: userId, p_xp: amount, p_reason: reason })
-    .then(() => {}, () => {
-      // Fallback : lecture puis update si le RPC n'existe pas encore
-      supabase.from('profiles').select('xp').eq('id', userId).maybeSingle()
-        .then(({ data }) => {
-          const cur = (data as any)?.xp ?? 0;
-          supabase.from('profiles').update({ xp: cur + amount }).eq('id', userId).then(() => {}, () => {});
-        }, () => {});
-    });
+function awardXPDirect(userId: string, amount: number, _reason: string) {
+  supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle()
+    .then(({ data }) => {
+      const cur = (data as any)?.xp ?? 0;
+      supabase.from('quest_progress').upsert(
+        { user_id: userId, xp: cur + amount, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' },
+      ).then(() => {}, () => {
+        supabase.from('profiles').update({ contribution_score: cur + amount }).eq('id', userId).then(() => {}, () => {});
+      });
+    }, () => {});
 }
 
 // ★ Filtrage réel par genre : genre = clé exacte de public.genres.value,

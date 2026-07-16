@@ -1,12 +1,3 @@
-/**
- * app/(tabs)/profile.tsx — UNIVERSE v2
- *
- * ✦ Header dynamique branché sur GamificationSystem (xpToLevel + TITLES)
- * ✦ Avatar cliquable → édition implicite (caméra overlay, no edit button)
- * ✦ Header plus aéré : avatar 90px, level section proéminente, spacing ++
- * ✦ getDeviceId() — ZERO supabase.auth.*
- * ✦ gamiProfile rechargé à chaque useFocusEffect
- */
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
@@ -26,6 +17,8 @@ import { getDeviceId }                 from '@/services/api';
 import {
   xpToLevel, TITLES, resolveImg as resolveImgGami,
   type GamiProfile, type Work,
+  useGamification, useDailyQuests,
+  XPFloat, XPBar as GamiXPBar, LevelUpCelebration, DailyQuestsPanel,
 } from '@/contexts/GamificationSystem';
 
 const { width: SW } = Dimensions.get('window');
@@ -43,6 +36,30 @@ const C = {
   ring:'rgba(255,255,255,0.22)',
 } as const;
 
+// ─── Gamification badge constants (identiques à search.tsx) ──────────────────
+const SECTIONS = [
+  { label:'Galaxie XP', icon:'planet-outline'   as const },
+  { label:'Cosmos',     icon:'infinite-outline' as const },
+];
+const FOMO = [
+  "Tu es à quelques XP du prochain niveau — continue.",
+  "Ton streak reste ton meilleur atout.",
+  "Une critique = 50 XP. C'est maintenant ou jamais.",
+  "Chaque film visionné = +20 XP directs.",
+  "3 minutes d'action = XP garantis.",
+  "Chaque défi terminé = badge en approche.",
+];
+function levelIcon(lvl: number): keyof typeof Ionicons.glyphMap {
+  if (lvl >= 9) return 'planet';
+  if (lvl >= 7) return 'star';
+  if (lvl >= 5) return 'flash';
+  if (lvl >= 3) return 'compass-outline';
+  return 'film-outline';
+}
+let _Hp: any = null;
+if (Platform.OS !== 'web') { try { _Hp = require('expo-haptics'); } catch {} }
+function hL() { _Hp?.impactAsync?.(_Hp.ImpactFeedbackStyle?.Light).catch(() => {}); }
+
 const H_PAD = 20;
 const CARD_W = 124, CARD_H = 185;
 const REEL_W = 156, REEL_H = 220;
@@ -51,11 +68,6 @@ const GRID_GAP = 10;
 const GRID_COL = (SW - 32 - GRID_GAP) / 2;
 const WORK_COLS = 'id,title,category,genre,year,likes,image,is_original,duration,director';
 
-// Valeur par défaut GamiProfile (avant fetch)
-const DEFAULT_GAMI: GamiProfile = {
-  xp:0, level:1, title:TITLES[0], streak_days:0,
-  xpToNext:100, xpInLevel:0, pct:0, contribution_score:0,
-};
 
 // ─── GENRE META ───────────────────────────────────────────────────────────────
 const GENRE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -612,6 +624,128 @@ const CinemaAccordion=memo(function CinemaAccordion({icon,title,count,badge,defa
 });
 const SkeletonSection=memo(()=>(<View><View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:H_PAD,paddingTop:20,paddingBottom:12}}><Shimmer w={24} h={24} r={8}/><Shimmer w={120} h={11} r={6}/></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,gap:10}}>{[0,1,2,3].map(i=><Shimmer key={i} w={CARD_W} h={CARD_H} r={12}/>)}</ScrollView></View>));
 
+// ─── GAMIFICATION BADGE (identique à search.tsx) ─────────────────────────────
+const GamificationBadge = memo(function GamificationBadge({
+  profile, earnedCount, onPress,
+}: { profile: GamiProfile; earnedCount: number; onPress: () => void }) {
+  const [si, setSi] = useState(0);
+  const fade  = useRef(new Animated.Value(1)).current;
+  const btnSc = useRef(new Animated.Value(1)).current;
+  const glowOp = useRef(new Animated.Value(0.18)).current;
+  useEffect(() => {
+    const l = Animated.loop(Animated.sequence([
+      Animated.timing(glowOp, { toValue:1.0, duration:1600, easing:Easing.inOut(Easing.ease), useNativeDriver:true }),
+      Animated.timing(glowOp, { toValue:0.18, duration:1600, easing:Easing.inOut(Easing.ease), useNativeDriver:true }),
+    ]));
+    l.start(); return () => l.stop();
+  }, [glowOp]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      Animated.timing(fade, { toValue:0, duration:200, useNativeDriver:true }).start(() => {
+        setSi(i => (i + 1) % SECTIONS.length);
+        Animated.timing(fade, { toValue:1, duration:260, useNativeDriver:true }).start();
+      });
+    }, 3600);
+    return () => clearInterval(t);
+  }, [fade]);
+  const press = () => {
+    hL();
+    Animated.sequence([
+      Animated.timing(btnSc, { toValue:0.94, duration:80, useNativeDriver:true }),
+      Animated.spring(btnSc, { toValue:1, tension:300, friction:8, useNativeDriver:true }),
+    ]).start(onPress);
+  };
+  const sec = SECTIONS[si];
+  const phrase = FOMO[Math.floor((profile.xp + si * 37) % FOMO.length)];
+  const fmtXP = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+  const glowStyle: any = {
+    position:'absolute', top:-3, bottom:-3, left:-3, right:-3, borderRadius:21,
+    ...(Platform.OS === 'web'
+      ? { boxShadow:'0 0 24px 8px rgba(245,200,66,0.42), 0 0 8px 2px rgba(245,200,66,0.18)' }
+      : { shadowColor:C.gold, shadowOffset:{width:0,height:0}, shadowOpacity:0.82, shadowRadius:16, elevation:8 }),
+  };
+  return (
+    <TouchableOpacity onPress={press} activeOpacity={1} style={{ marginHorizontal:H_PAD, marginBottom:14 }}>
+      <Animated.View style={{ transform:[{ scale:btnSc }] }}>
+        <Animated.View style={[glowStyle, { opacity:glowOp }]} pointerEvents="none"/>
+        <LinearGradient
+          colors={['rgba(245,200,66,0.12)','rgba(13,32,64,0.88)','rgba(4,8,15,0.97)']}
+          start={{ x:0, y:0 }} end={{ x:1, y:1 }}
+          style={{ height:88, borderRadius:18, paddingHorizontal:17, borderWidth:1, borderColor:C.goldBd, flexDirection:'row', alignItems:'center', gap:14 }}
+        >
+          <View style={{ width:46, height:46, borderRadius:14, flexShrink:0, backgroundColor:C.goldDim, borderWidth:1.5, borderColor:C.goldBd, alignItems:'center', justifyContent:'center' }}>
+            <Ionicons name={levelIcon(profile.level)} size={21} color={C.gold}/>
+          </View>
+          <View style={{ flex:1, gap:4 }}>
+            <Animated.View style={{ opacity:fade, flexDirection:'row', alignItems:'center', gap:6 }}>
+              <Ionicons name={sec.icon} size={11} color={C.gold}/>
+              <Text style={{ color:C.gold, fontSize:12, fontWeight:'900', letterSpacing:0.4 }}>{sec.label}</Text>
+              <View style={{ paddingHorizontal:7, paddingVertical:2, borderRadius:7, backgroundColor:C.goldDim, borderWidth:StyleSheet.hairlineWidth, borderColor:C.goldBd }}>
+                <Text style={{ color:C.gold, fontSize:9, fontWeight:'800' }}>NIV.{profile.level}</Text>
+              </View>
+            </Animated.View>
+            <Animated.Text style={{ color:C.muted, fontSize:11, fontStyle:'italic', opacity:fade }} numberOfLines={1}>{phrase}</Animated.Text>
+            <View style={{ height:3, backgroundColor:C.faint, borderRadius:2, overflow:'hidden' }}>
+              <View style={{ height:'100%', borderRadius:2, backgroundColor:C.gold, width:`${profile.pct * 100}%` as any }}/>
+            </View>
+          </View>
+          <View style={{ alignItems:'flex-end', gap:5, flexShrink:0 }}>
+            <View style={{ flexDirection:'row', alignItems:'center', gap:3 }}>
+              <Ionicons name="flash" size={11} color={C.gold}/>
+              <Text style={{ color:C.gold, fontSize:13, fontWeight:'900' }}>{fmtXP(profile.xp)}</Text>
+            </View>
+            {profile.streak_days > 0 && <Text style={{ color:C.gold, fontSize:10, fontWeight:'800' }}>★{profile.streak_days}j</Text>}
+            {earnedCount > 0 && <Text style={{ color:C.muted, fontSize:9, fontWeight:'700' }}>{earnedCount} badges</Text>}
+            <Ionicons name="chevron-forward" size={13} color={C.muted}/>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+});
+
+// ─── COSMOS MODAL (défis du jour + XP bar) ───────────────────────────────────
+const CosmosModal = memo(function CosmosModal({
+  visible, onClose, profile, userId, earnedCount, awardXP,
+}: {
+  visible: boolean; onClose: () => void; profile: GamiProfile;
+  userId: string; earnedCount: number; awardXP: (xp: number, reason: string) => void;
+}) {
+  const [burst, setBurst] = useState({ n:0, v:false });
+  const showBurst = (xp: number) => { setBurst({ n:xp, v:true }); setTimeout(() => setBurst(b => ({ ...b, v:false })), 1200); };
+  const daily = useDailyQuests(userId, (xp, questId) => { awardXP(xp, `daily_${questId}`); showBurst(xp); });
+  const handleClaim  = useCallback((questId: string) => { daily.claimDailyQuest(questId); }, [daily]);
+  const handleAction = useCallback((_action: string) => { onClose(); }, [onClose]);
+  return (
+    <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <View style={{ flex:1, backgroundColor:'#070C17' }}>
+        <LinearGradient colors={['rgba(245,200,66,0.08)','rgba(7,12,23,0)','rgba(7,12,23,0)']} style={{ position:'absolute', top:0, left:0, right:0, height:220 }} pointerEvents="none"/>
+        <ScrollView contentContainerStyle={{ paddingBottom:60 }}>
+          <View style={{ paddingTop:Platform.OS==='ios'?56:32, paddingHorizontal:H_PAD }}>
+            <TouchableOpacity onPress={onClose} hitSlop={14} style={{ alignSelf:'flex-end', marginBottom:12, padding:8 }}>
+              <Ionicons name="close" size={22} color="rgba(255,255,255,0.5)"/>
+            </TouchableOpacity>
+            <Text style={{ color:'#fff', fontSize:22, fontWeight:'900', letterSpacing:-0.5, marginBottom:4 }}>Galaxie XP</Text>
+            <Text style={{ color:C.gold, fontSize:11, fontWeight:'700', marginBottom:18 }}>{profile.title} · {profile.xp.toLocaleString()} XP</Text>
+            <GamiXPBar profile={profile}/>
+            <View style={{ height:24 }}/>
+            <Text style={{ color:C.muted, fontSize:11, fontWeight:'700', letterSpacing:0.6, marginBottom:10, textTransform:'uppercase' }}>
+              {daily.completedToday} défi{daily.completedToday > 1 ? 's' : ''} réclamé{daily.completedToday > 1 ? 's' : ''} aujourd'hui
+            </Text>
+            <DailyQuestsPanel
+              questsWithStatus={daily.questsWithStatus}
+              completedToday={daily.completedToday}
+              onClaim={handleClaim}
+              onAction={handleAction}
+            />
+          </View>
+        </ScrollView>
+        <XPFloat amount={burst.n} visible={burst.v} onDone={() => {}}/>
+      </View>
+    </Modal>
+  );
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 // ★★★  PROFILE SCREEN
 // ════════════════════════════════════════════════════════════════════════════
@@ -636,34 +770,13 @@ export default function ProfileScreen() {
   const [savedReels,     setSavedReels]  = useState<VeloceItem[]>([]);
   const [veloceErr,      setVeloceErr]   = useState(false);
   // ★ Gamification réelle depuis GamificationSystem (profiles)
-  const [gamiProfile, setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
-  const [showLevel,   setShowLevel]  = useState(true);
+  const { profile: gamiProfile, badges: gamiBadges, awardXP } = useGamification(uid ?? '');
+  const [showLevel,     setShowLevel]    = useState(true);
+  const [cosmosVisible, setCosmosVisible] = useState(false);
+  const [levelUp,       setLevelUp]      = useState<{ level: number; title: string } | null>(null);
 
   const { score, level, badges } = useLocalGamification(uid);
   const isFirstLoad = useRef(false);
-
-  // Charge le profil gamification depuis profiles
-  const loadGami = useCallback(async(userId:string)=>{
-    try {
-      const{data}=await supabase.from('profiles')
-        .select('level,title,streak_days,contribution_score')
-        .eq('user_id',userId).maybeSingle();
-      if(data){
-        const d=data as any;
-        const lvl=xpToLevel(d.contribution_score??0); // xp col n'existe pas encore → contribution_score comme proxy
-        setGamiProfile({
-          xp:d.contribution_score??0,
-          level:d.level??lvl.level,
-          title:d.title??TITLES[lvl.level-1],
-          streak_days:d.streak_days??0,
-          xpToNext:lvl.xpToNext,
-          xpInLevel:lvl.xpInLevel,
-          pct:lvl.pct,
-          contribution_score:d.contribution_score??0,
-        });
-      }
-    } catch{}
-  },[]);
 
   useEffect(()=>{
     getDeviceId().then(deviceId=>{
@@ -671,7 +784,6 @@ export default function ProfileScreen() {
       isFirstLoad.current=true;
       loadAll(deviceId);
       loadStreak(deviceId);
-      loadGami(deviceId);
       loadShowLevel(deviceId);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -680,7 +792,6 @@ export default function ProfileScreen() {
   useFocusEffect(useCallback(()=>{
     if(!uid||!isFirstLoad.current)return;
     loadAll(uid);
-    loadGami(uid); // ★ rafraîchit le niveau à chaque retour sur l'onglet
     loadShowLevel(uid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[uid]));
@@ -806,7 +917,7 @@ export default function ProfileScreen() {
   const renderCinema = useCallback(()=>{
     if(loading)return<View><SkeletonSection/></View>;
     return(
-      <View style={{marginTop:16}}>
+      <View style={{marginTop:5}}>
         <SecHead icon="heart-outline" label="Véloces Favoris" count={veloceErr?undefined:likedReels.length}/>
         {veloceErr
           ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
@@ -825,9 +936,7 @@ export default function ProfileScreen() {
         {profile.notable_works.length>0&&(
           <>
             <Div/>
-            <CinemaAccordion icon="film-outline" title="Œuvres notables" count={profile.notable_works.length}>
-              {profile.notable_works.map((w:any,i:number)=><NotableWorkGalaxy key={w.id??i} w={w} isLast={i===profile.notable_works.length-1}/>)}
-            </CinemaAccordion>
+            
           </>
         )}
         <View style={{height:110}}/>
@@ -860,14 +969,14 @@ export default function ProfileScreen() {
     );
   },[loading,reels,reelsByCat,hotId,router]);
 
-  const tabs=[{icon:'grid-outline' as const,label:'Films'},{icon:'star-outline' as const,label:'Cinéma'},{icon:'play-circle-outline' as const,label:'Créations'}];
+  const tabs=[{icon:'grid-outline' as const,label:'Films'},{icon:'star-outline' as const,label:'Véloces'},{icon:'play-circle-outline' as const,label:'Créations'}];
 
   return(
     <View style={{flex:1,backgroundColor:C.bg}}>
       <StatusBar style="light"/>
       <GalaxyBackground/>
       <ScrollView showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadGami(uid);loadShowLevel(uid);}}} tintColor={C.mid}/>}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadShowLevel(uid);}}} tintColor={C.mid}/>}>
         <SafeAreaView edges={['top']}>
           {/* ★ Header branché sur gamiProfile (GamificationSystem) */}
           <ProfileHeader
@@ -885,7 +994,26 @@ export default function ProfileScreen() {
           />
         </SafeAreaView>
 
-     
+        {/* ── Photo obligatoire ── */}
+        {!loading && !profile.avatar_url && (
+          <TouchableOpacity
+            onPress={nav.avatarEdit}
+            activeOpacity={0.82}
+            style={{
+              flexDirection:'row', alignItems:'center', gap:10,
+              marginHorizontal:H_PAD, marginBottom:12, padding:12,
+              borderRadius:14, borderWidth:1.5, borderColor:C.goldBd,
+              backgroundColor:'rgba(245,200,66,0.07)',
+            }}
+          >
+            <Ionicons name="camera-outline" size={18} color={C.gold}/>
+            <View style={{ flex:1 }}>
+              <Text style={{ color:C.gold, fontSize:12, fontWeight:'800', letterSpacing:0.2 }}>Ajoutez une photo de profil</Text>
+              <Text style={{ color:C.muted, fontSize:10, marginTop:1 }}>Votre identité Universe reste incomplète</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={14} color={C.gold}/>
+          </TouchableOpacity>
+        )}
 
         {/* Tabs */}
         <View style={{flexDirection:'row',borderTopWidth:StyleSheet.hairlineWidth,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginTop:10}}>
@@ -913,6 +1041,24 @@ export default function ProfileScreen() {
       <SeeAllModal visible={modal==='watched'}   onClose={()=>setModal(null)} type="watched"   title="Œuvres visionnées" icon="eye-outline"         works={watched}/>
       <SeeAllModal visible={modal==='recs'}      onClose={()=>setModal(null)} type="recs"      title="Recommandations"   icon="shuffle-outline"     works={recs}/>
       <SeeAllModal visible={modal==='creations'} onClose={()=>setModal(null)} type="creations" title="Mes créations"     icon="play-circle-outline" reels={reels} hotReelId={hotId}/>
+      {uid && (
+        <CosmosModal
+          visible={cosmosVisible}
+          onClose={() => setCosmosVisible(false)}
+          profile={gamiProfile}
+          userId={uid}
+          earnedCount={gamiBadges.filter(b => b.earned).length}
+          awardXP={awardXP}
+        />
+      )}
+      {levelUp && (
+        <LevelUpCelebration
+          level={levelUp.level}
+          title={levelUp.title}
+          visible={!!levelUp}
+          onClose={() => setLevelUp(null)}
+        />
+      )}
     </View>
   );
 }
