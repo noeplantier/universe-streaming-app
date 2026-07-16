@@ -437,6 +437,30 @@ const SearchOverlay=memo(({visible,onClose,works}:{visible:boolean;onClose:()=>v
 });
 const so=StyleSheet.create({top:{flexDirection:'row',alignItems:'center',paddingHorizontal:14,paddingBottom:10,gap:8},row:{flex:1,flexDirection:'row',alignItems:'center',borderRadius:10,paddingHorizontal:12,height:40,gap:8,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},input:{flex:1,color:C.white,fontSize:14},card:{height:200,borderRadius:12,overflow:'hidden',backgroundColor:C.card},img:{width:'100%',height:'100%'},pep:{position:'absolute',top:7,right:7,paddingHorizontal:5,paddingVertical:2.5,borderRadius:5,backgroundColor:'rgba(255,255,255,0.18)',borderWidth:StyleSheet.hairlineWidth,borderColor:C.borderHi},info:{position:'absolute',bottom:8,left:9,right:9,gap:4},iT:{color:C.white,fontSize:12,fontWeight:'700'},iM:{color:C.muted,fontSize:10,fontWeight:'600'}});
 
+// ─── UNIVERSE LOGO — aura dorée identique au badge Galaxie XP ────────────────
+const UniverseLogo = memo(function UniverseLogo() {
+  const glowOp = useRef(new Animated.Value(0.22)).current;
+  useEffect(() => {
+    const l = Animated.loop(Animated.sequence([
+      Animated.timing(glowOp, { toValue: 0.92, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(glowOp, { toValue: 0.22, duration: 2600, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+    ]));
+    l.start(); return () => l.stop();
+  }, [glowOp]);
+  const glowBox: any = {
+    position: 'absolute', top: -6, left: -6, right: -6, bottom: -6,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 0 22px 8px rgba(245,200,66,0.52)' }
+      : { shadowColor: C.gold, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 1, shadowRadius: 22, elevation: 0 }
+    ),
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={{ color: "#fff", fontSize: 30, fontWeight: '900', letterSpacing: -0.5 }}>UNIVERSE</Text>
+    </View>
+  );
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ★★★ SEARCH SCREEN
 // ══════════════════════════════════════════════════════════════════════════════
@@ -474,7 +498,7 @@ export default function SearchScreen(){
       <StatusBar style="light"/>
       <GalaxyBackground/>
       <Animated.View pointerEvents="box-none" style={{position:'absolute',top:5,left:0,right:0,zIndex:10,flexDirection:'row',alignItems:'center',paddingHorizontal:E,paddingTop:insets.top+4,paddingBottom:8,opacity:headerOp}}>
-        <Text style={{flex:1,color:C.white,fontSize:30,fontWeight:'800',letterSpacing:-0.5}}>UNIVERSE</Text>
+        <UniverseLogo/>
         <TouchableOpacity onPress={()=>{hL();setSrch(true);}} style={{width:38,height:38,borderRadius:19,backgroundColor:C.faint,alignItems:'center',justifyContent:'center',borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}} activeOpacity={0.78}>
           <Ionicons name="search-outline" size={18} color={C.white}/>
         </TouchableOpacity>

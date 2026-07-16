@@ -14,16 +14,18 @@ import React, {
   } from 'react';
   import { Animated } from 'react-native';
   
-  const AUTO_HIDE_MS = 4000; // 4 secondes sans interaction → fullscreen
+  const AUTO_HIDE_MS = 3000; // 3 secondes sans interaction → fullscreen
   
   interface ReelsUICtx {
     /** true = chrome visible, false = fullscreen pur */
     uiVisible:     boolean;
     /** Animated.Value 0↔1 — brancher sur opacity de NavBar + TopHeader */
     navBarOpacity: Animated.Value;
+    /** Alias de navBarOpacity — pour la compatibilité avec index.tsx */
+    uiOpacity:     Animated.Value;
     /** Cacher/montrer tout le chrome — appelé par FeedItem / index */
     setUIVisible:  (v: boolean) => void;
-    /** Reset le timer 4 s — appelé à chaque interaction utilisateur */
+    /** Reset le timer 3 s — appelé à chaque interaction utilisateur */
     resetTimer:    () => void;
     /** Suspend l'auto-hide (ex: vidéo en pause → overlay doit rester) */
     pauseAutoHide: () => void;
@@ -33,9 +35,11 @@ import React, {
     restoreNavBar: () => void;
   }
   
+  const _defaultOpacity = new Animated.Value(1);
   const ReelsUIContext = createContext<ReelsUICtx>({
     uiVisible:      true,
-    navBarOpacity:  new Animated.Value(1),
+    navBarOpacity:  _defaultOpacity,
+    uiOpacity:      _defaultOpacity,
     setUIVisible:   () => {},
     resetTimer:     () => {},
     pauseAutoHide:  () => {},
@@ -129,6 +133,7 @@ import React, {
     return (
       <ReelsUIContext.Provider value={{
         uiVisible, navBarOpacity,
+        uiOpacity: navBarOpacity, // alias — même Animated.Value
         setUIVisible, resetTimer,
         pauseAutoHide, resumeAutoHide,
         restoreNavBar,

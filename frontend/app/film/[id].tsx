@@ -13,8 +13,7 @@ import React, {
 import {
   View, Text, StyleSheet, Image, ScrollView, Modal,
   TouchableOpacity, Dimensions, Platform, Animated,
-  Easing, Share, ActivityIndicator, Linking, TextInput,
-  KeyboardAvoidingView, Pressable,
+  Easing, Share, ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView }       from 'expo-blur';
@@ -25,6 +24,8 @@ import * as Haptics from 'expo-haptics';
 import { supabase }     from '@/lib/supabase';
 import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import { getDeviceId }  from '@/services/api'; // ★ UUID device — zero auth
+import PendingContent  from '@/components/PendingContent';
+import { tryAutoClaimDailyQuest } from '@/contexts/GamificationSystem';
 
 const { width: W, height: H } = Dimensions.get('window');
 
@@ -45,13 +46,14 @@ interface Work {
   likes:number; comments:number|null; image:string|null; is_original:boolean;
   adjective:string|null; duration:number|null; description:string|null;
   director:string|null; cast_list:string[]|null; created_at:string;
+  video_url:string|null;
 }
-interface Pro {
-  id:string; name:string; role:string; avatar:string|null; bio:string|null;
-  films:string[]; location:string|null; contact_email:string|null;
-  website:string|null; verified:boolean; open_to:string[];
+interface CreatorReel {
+  id: string; user_id: string; title: string;
+  video_url: string | null; thumbnail_url: string | null;
+  duration: number | null; likes_count: number | null;
+  views_count: number | null; status: string; created_at: string;
 }
-type ConnStatus = 'none'|'pending'|'accepted'|'rejected';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function resolveImage(raw:string|null|undefined, id:number): string {
@@ -72,26 +74,50 @@ async function fetchSimilarWorks(work:Work): Promise<Work[]> {
   const { data } = await supabase.from('works').select('id,title,image,likes,genre,category,is_original,duration').neq('id',work.id).eq('genre',work.genre).order('likes',{ascending:false}).limit(12);
   return (data ?? []) as Work[];
 }
-async function fetchProfessionals(workTitle:string): Promise<Pro[]> {
-  const { data:direct } = await supabase.from('professionals').select('id,name,role,avatar,bio,films,location,contact_email,website,verified,open_to').contains('films',[workTitle]).order('verified',{ascending:false}).limit(8);
-  if (direct?.length) return direct as Pro[];
-  const { data:fb } = await supabase.from('professionals').select('id,name,role,avatar,bio,films,location,contact_email,website,verified,open_to').order('verified',{ascending:false}).order('created_at',{ascending:false}).limit(6);
-  return (fb ?? []) as Pro[];
+async function fetchCreatorReels(title:string): Promise<CreatorReel[]> {
+  const { data } = await supabase.from('reels')
+    .select('id,user_id,title,video_url,thumbnail_url,duration,likes_count,views_count,status,created_at')
+    .ilike('title', `%${title}%`)
+    .in('status', ['approved', 'pending'])
+    .order('likes_count', { ascending: false, nullsFirst: false })
+    .limit(6);
+  return (data ?? []) as CreatorReel[];
 }
-async function fetchRandomVideoUrl(): Promise<string> {
-  const FALLBACK = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+// Résout un video_url stocké en base → null si absent (pas de fallback mock)
+function resolveVideoUrl(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  if (raw.startsWith('http')) return raw;
   try {
-    const { data } = await supabase.from('reels').select('video_url').not('video_url','is',null).order('created_at',{ascending:false}).limit(30);
-    if (!data?.length) return FALLBACK;
-    return data[Math.floor(Math.random()*data.length)].video_url ?? FALLBACK;
-  } catch { return FALLBACK; }
-}
-async function fetchConnStatus(userId:string, proId:string): Promise<{status:ConnStatus;connId?:string}> {
-  const { data } = await supabase.from('pro_connections').select('id,status').eq('requester_id',userId).eq('pro_id',proId).maybeSingle();
-  if (!data) return { status:'none' };
-  return { status:data.status as ConnStatus, connId:data.id };
+    const { data } = supabase.storage.from('community-images').getPublicUrl(raw);
+    if (data?.publicUrl) return data.publicUrl;
+  } catch {}
+  return null;
 }
 
+function grantXP(userId: string, amount: number, _reason: string) {
+  if (!userId) return;
+  // add_xp RPC supprimé — increment via quest_progress puis fallback profiles
+  supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle()
+    .then(({ data }) => {
+      const cur = (data as any)?.xp ?? 0;
+      supabase.from('quest_progress').upsert(
+        { user_id: userId, xp: cur + amount, updated_at: new Date().toISOString() },
+        { onConflict: 'user_id' },
+      ).then(() => {}, () => {
+        supabase.from('profiles').update({ contribution_score: cur + amount }).eq('id', userId).then(() => {}, () => {});
+      });
+    }, () => {
+      supabase.from('profiles').select('contribution_score').eq('id', userId).maybeSingle()
+        .then(({ data: p }) => {
+          const cur = (p as any)?.contribution_score ?? 0;
+          supabase.from('profiles').update({ contribution_score: cur + amount }).eq('id', userId).then(() => {}, () => {});
+        }, () => {});
+    });
+}
+
+function getWorkVideoUrl(work: Work): string | null {
+  return resolveVideoUrl(work.video_url);
+}
 // ─── Video player ─────────────────────────────────────────────────────────────
 let _useVideoPlayer: any = () => ({ play(){}, pause(){}, muted:false });
 let _VideoView: any = () => null;
@@ -101,19 +127,47 @@ if (Platform.OS !== 'web') {
 
 const VideoModal = memo(function VideoModal({ visible, videoUrl, title, onClose }: { visible:boolean; videoUrl:string|null; title:string; onClose:()=>void }) {
   const isWeb = Platform.OS === 'web';
+  const [videoError, setVideoError] = useState(false);
   const player = _useVideoPlayer(visible&&videoUrl?videoUrl:null, (p:any) => { if (!p) return; p.loop=false; p.muted=false; });
+
   useEffect(() => {
-    if (!player || isWeb) return;
-    if (visible && videoUrl) { try { player.play(); } catch {} }
-    else                     { try { player.pause(); } catch {} }
+    if (!visible) { setVideoError(false); return; }
+    setVideoError(false);
+    if (!player || isWeb || !videoUrl) return;
+    try { player.play(); } catch {}
+    let cleanup: () => void = () => {};
+    try {
+      const sub = player.addListener('statusChange', ({ status }: any) => {
+        if (status === 'error') setVideoError(true);
+      });
+      cleanup = () => { try { sub?.remove?.(); } catch {} };
+    } catch {}
+    return cleanup;
   }, [visible, videoUrl, player, isWeb]);
+
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <View style={{ flex:1, backgroundColor:'#000' }}>
         <StatusBar style="light"/>
         {isWeb && !!videoUrl && React.createElement('video', { src:videoUrl, autoPlay:true, controls:true, playsInline:true, style:{ width:'100%', height:'100%', objectFit:'contain', background:'#000' } })}
-        {!isWeb && !!videoUrl && <_VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="contain" nativeControls/>}
-        {!videoUrl && <View style={{ flex:1, alignItems:'center', justifyContent:'center', gap:16 }}><ActivityIndicator color="#fff" size="large"/><Text style={{ color:'rgba(255,255,255,0.6)', fontSize:14 }}>Chargement…</Text></View>}
+        {!isWeb && !!videoUrl && !videoError && <_VideoView player={player} style={StyleSheet.absoluteFillObject} contentFit="contain" nativeControls/>}
+        {/* Overlay léger — uniquement si l'URL n'est pas encore arrivée */}
+        {!videoUrl && !videoError && (
+          <View style={[StyleSheet.absoluteFillObject, { alignItems:'center', justifyContent:'center', backgroundColor:'#000' }]}>
+            <ActivityIndicator color="rgba(255,255,255,0.45)" size="small"/>
+          </View>
+        )}
+        {/* Overlay erreur vidéo */}
+        {videoError && (
+          <View style={[StyleSheet.absoluteFillObject, { alignItems:'center', justifyContent:'center', gap:20, backgroundColor:'#000' }]}>
+            <Ionicons name="alert-circle-outline" size={48} color="rgba(255,255,255,0.4)"/>
+            <Text style={{ color:'rgba(255,255,255,0.7)', fontSize:16, fontWeight:'700' }}>Vidéo indisponible</Text>
+            <Text style={{ color:'rgba(255,255,255,0.4)', fontSize:13, textAlign:'center', paddingHorizontal:32 }}>La source vidéo est inaccessible pour le moment.</Text>
+            <TouchableOpacity onPress={onClose} style={{ marginTop:8, paddingHorizontal:24, paddingVertical:12, borderRadius:22, backgroundColor:'rgba(255,255,255,0.12)', borderWidth:1, borderColor:'rgba(255,255,255,0.2)' }}>
+              <Text style={{ color:'#fff', fontSize:14, fontWeight:'600' }}>Fermer</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <TouchableOpacity style={{ position:'absolute', top:Platform.OS==='ios'?54:20, right:16, zIndex:10 }} onPress={onClose} hitSlop={12}>
           <BlurView intensity={40} tint="dark" style={{ width:42, height:42, borderRadius:21, overflow:'hidden', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:'rgba(255,255,255,0.2)' }}>
             <Ionicons name="close" size={22} color="#fff"/>
@@ -166,142 +220,27 @@ const SimilarCard = memo(({ item, onPress }:{ item:Work; onPress:()=>void }) => 
 });
 const sc = StyleSheet.create({ wrap:{ width:120, height:178, borderRadius:14, overflow:'hidden', marginRight:12, backgroundColor:C.surf }, img:{ width:'100%', height:'100%' }, badge:{ position:'absolute', top:7, left:7, backgroundColor:C.blue, paddingHorizontal:6, paddingVertical:2.5, borderRadius:5 }, badgeTxt:{ color:C.white, fontSize:8, fontWeight:'800', letterSpacing:0.5 }, info:{ position:'absolute', bottom:9, left:9, right:9, gap:3 }, title:{ color:C.white, fontSize:12, fontWeight:'700', lineHeight:15 }, likes:{ color:'rgba(255,255,255,0.55)', fontSize:10 } });
 
-// ─── Pro Mini Card ────────────────────────────────────────────────────────────
-const ProMiniCard = memo(function ProMiniCard({ pro, status, onPress }:{ pro:Pro; status:ConnStatus; onPress:()=>void }) {
-  const avatarUri = pro.avatar ?? `https://i.pravatar.cc/80?u=${pro.id}`;
+// ─── Creator Reel Card ────────────────────────────────────────────────────────
+const CreatorReelCard = memo(function CreatorReelCard({ reel, onPress }:{ reel:CreatorReel; onPress:()=>void }) {
+  const thumb = reel.thumbnail_url
+    ? (reel.thumbnail_url.startsWith('http') ? reel.thumbnail_url : supabase.storage.from('community-images').getPublicUrl(reel.thumbnail_url).data?.publicUrl ?? `https://picsum.photos/seed/cr_${reel.id}/200/300`)
+    : `https://picsum.photos/seed/cr_${reel.id}/200/300`;
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={pm.wrap}>
-      <BlurView intensity={Platform.OS==='ios'?14:10} tint="dark" style={StyleSheet.absoluteFillObject}/>
-      <View style={pm.row}>
-        <View style={{ position:'relative' }}>
-          <Image source={{ uri:avatarUri }} style={pm.avatar} resizeMode="cover"/>
-          {pro.verified && <View style={pm.vBadge}><Ionicons name="checkmark" size={8} color={C.white}/></View>}
-        </View>
-        <View style={{ flex:1, gap:2 }}>
-          <Text style={pm.name} numberOfLines={1}>{pro.name}</Text>
-          <Text style={pm.role}>{pro.role}</Text>
-          {pro.location && <View style={{ flexDirection:'row', alignItems:'center', gap:3 }}><Ionicons name="location-outline" size={9} color={C.textTert}/><Text style={pm.loc}>{pro.location}</Text></View>}
-        </View>
-        <View style={[pm.statusBadge, status==='accepted'&&pm.statusAccepted]}>
-          <Ionicons name={status==='accepted'?'checkmark-circle':status==='pending'?'time-outline':'person-add-outline'} size={12} color={status==='accepted'?C.green:status==='pending'?C.gold:C.textSec}/>
-          <Text style={[pm.statusTxt, status==='accepted'&&{color:C.green}, status==='pending'&&{color:C.gold}]}>{status==='accepted'?'Connecté':status==='pending'?'En attente':'Contacter'}</Text>
+    <TouchableOpacity style={crc.wrap} onPress={onPress} activeOpacity={0.85}>
+      <Image source={{ uri:thumb }} style={crc.img} resizeMode="cover"/>
+      <LinearGradient colors={['transparent','rgba(2,8,16,0.92)']} style={StyleSheet.absoluteFillObject}/>
+      {reel.status === 'pending' && <View style={crc.pendBadge}><Text style={crc.pendTxt}>TRAITEMENT</Text></View>}
+      <View style={crc.info}>
+        <Text style={crc.title} numberOfLines={2}>{reel.title}</Text>
+        <View style={{ flexDirection:'row', gap:8, alignItems:'center' }}>
+          {(reel.likes_count ?? 0) > 0 && <View style={{ flexDirection:'row', gap:3, alignItems:'center' }}><Ionicons name="heart" size={9} color={C.muted}/><Text style={crc.stat}>{fmtLikes(reel.likes_count!)}</Text></View>}
+          {reel.duration != null && <View style={{ flexDirection:'row', gap:3, alignItems:'center' }}><Ionicons name="time-outline" size={9} color={C.muted}/><Text style={crc.stat}>{fmtDur(reel.duration)}</Text></View>}
         </View>
       </View>
-      {status==='accepted' && (pro.contact_email||pro.website) && (
-        <View style={pm.contactRow}>
-          {pro.contact_email && <TouchableOpacity style={pm.contactBtn} onPress={() => Linking.openURL(`mailto:${pro.contact_email}`).catch(()=>{})} activeOpacity={0.85}><Ionicons name="mail-outline" size={12} color={C.blue}/><Text style={pm.contactTxt}>{pro.contact_email}</Text></TouchableOpacity>}
-          {pro.website && <TouchableOpacity style={pm.contactBtn} onPress={() => Linking.openURL(pro.website!).catch(()=>{})} activeOpacity={0.85}><Ionicons name="globe-outline" size={12} color={C.blue}/><Text style={pm.contactTxt}>Portfolio</Text></TouchableOpacity>}
-        </View>
-      )}
-      {pro.open_to.length > 0 && <View style={{ flexDirection:'row', flexWrap:'wrap', gap:5, marginTop:6 }}>{pro.open_to.slice(0,3).map(o => <View key={o} style={{ paddingHorizontal:8, paddingVertical:3, borderRadius:8, backgroundColor:'rgba(90,150,230,0.10)', borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(90,150,230,0.22)' }}><Text style={{ color:C.blue, fontSize:9, fontWeight:'600' }}>{o}</Text></View>)}</View>}
     </TouchableOpacity>
   );
 });
-const pm = StyleSheet.create({ wrap:{ marginBottom:10, borderRadius:16, overflow:'hidden', borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBlue }, row:{ flexDirection:'row', alignItems:'center', gap:12, padding:14 }, avatar:{ width:46, height:46, borderRadius:23, borderWidth:1.5, borderColor:C.borderBlue }, vBadge:{ position:'absolute', bottom:-2, right:-2, width:16, height:16, borderRadius:8, backgroundColor:C.navyMid, borderWidth:1, borderColor:C.blue, alignItems:'center', justifyContent:'center' }, name:{ color:C.white, fontSize:14, fontWeight:'800', letterSpacing:-0.2 }, role:{ color:C.textSec, fontSize:11 }, loc:{ color:C.textTert, fontSize:10 }, statusBadge:{ flexDirection:'row', alignItems:'center', gap:5, paddingHorizontal:10, paddingVertical:6, borderRadius:12, backgroundColor:C.surf, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border }, statusAccepted:{ borderColor:'rgba(46,204,138,0.30)', backgroundColor:'rgba(46,204,138,0.08)' }, statusTxt:{ color:C.textSec, fontSize:11, fontWeight:'700' }, contactRow:{ flexDirection:'row', flexWrap:'wrap', gap:8, paddingHorizontal:14, paddingBottom:12 }, contactBtn:{ flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:12, paddingVertical:6, borderRadius:10, borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBlue, backgroundColor:'rgba(90,150,230,0.08)' }, contactTxt:{ color:C.blue, fontSize:11, fontWeight:'600' } });
-
-// ─── Connection Modal ─────────────────────────────────────────────────────────
-const ProConnectionModal = memo(function ProConnectionModal({ pro, status, connId, userId, onClose, onSent }:{ pro:Pro|null; status:ConnStatus; connId?:string; userId:string; onClose:()=>void; onSent:(proId:string,newStatus:ConnStatus)=>void }) {
-  const [note, setNote]     = useState('');
-  const [sending, setSending] = useState(false);
-  const [phase, setPhase]   = useState<'form'|'success'|'contacts'>('form');
-  const slide = useRef(new Animated.Value(H)).current;
-  const succSc = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (pro) { setNote(''); setSending(false); setPhase(status==='accepted'?'contacts':'form'); Animated.spring(slide,{toValue:0,tension:65,friction:12,useNativeDriver:true}).start(); }
-    else { Animated.timing(slide,{toValue:H,duration:220,useNativeDriver:true}).start(); }
-  }, [pro, status]);
-
-  const handleSend = useCallback(async () => {
-    if (!pro || note.trim().length < 20 || sending) return;
-    setSending(true);
-    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    try {
-      const { data:existing } = await supabase.from('pro_connections').select('id').eq('requester_id',userId).eq('pro_id',pro.id).maybeSingle();
-      if (existing) {
-        await supabase.from('pro_connections').update({ status:'pending', message:note.trim(), updated_at:new Date().toISOString() }).eq('id',existing.id);
-      } else {
-        await supabase.from('pro_connections').insert({ requester_id:userId, pro_id:pro.id, status:'pending', message:note.trim() });
-      }
-      await supabase.from('notifications').insert({ user_id:pro.id, actor_id:userId, type:'connection_request', title:'Nouvelle demande de connexion', body:note.trim().slice(0,120), data:JSON.stringify({ requester_id:userId, pro_id:pro.id }) }).then(()=>{}).catch(()=>{});
-      setSending(false); setPhase('success');
-      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      Animated.spring(succSc, { toValue:1, tension:80, friction:8, useNativeDriver:true }).start();
-      onSent(pro.id, 'pending');
-      setTimeout(onClose, 2600);
-    } catch { setSending(false); }
-  }, [pro, note, userId, sending, onSent, onClose]);
-
-  if (!pro) return null;
-  return (
-    <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <GalaxyBackground/>
-      <View style={{ flex:1, justifyContent:'flex-end' }}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose}/>
-        <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={{ flex:1, justifyContent:'flex-end' }}>
-          <Animated.View style={{ maxHeight:'92%', borderTopLeftRadius:28, borderTopRightRadius:28, overflow:'hidden', borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBlue, transform:[{ translateY:slide }] }}>
-            <BlurView intensity={Platform.OS==='ios'?90:70} tint="dark" style={StyleSheet.absoluteFillObject}/>
-            <View style={{ width:38, height:4, borderRadius:2, backgroundColor:C.border, alignSelf:'center', marginTop:14 }}/>
-            <View style={{ flexDirection:'row', alignItems:'flex-start', gap:14, padding:20, paddingTop:16 }}>
-              <Image source={{ uri:pro.avatar??`https://i.pravatar.cc/100?u=${pro.id}` }} style={{ width:56, height:56, borderRadius:28, borderWidth:2, borderColor:C.borderBlue }} resizeMode="cover"/>
-              <View style={{ flex:1, gap:3 }}>
-                <View style={{ flexDirection:'row', alignItems:'center', gap:8 }}>
-                  <Text style={{ color:C.white, fontSize:16, fontWeight:'900', flex:1 }} numberOfLines={1}>{pro.name}</Text>
-                  {pro.verified && <View style={{ flexDirection:'row', alignItems:'center', gap:4, paddingHorizontal:7, paddingVertical:2, borderRadius:8, backgroundColor:'rgba(90,150,230,0.15)', borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBlue }}><Ionicons name="checkmark-circle" size={9} color={C.blue}/><Text style={{ color:C.blue, fontSize:9, fontWeight:'800' }}>VÉRIFIÉ</Text></View>}
-                </View>
-                <Text style={{ color:C.textSec, fontSize:12 }}>{pro.role}</Text>
-              </View>
-              <TouchableOpacity onPress={onClose} style={{ width:30, height:30, borderRadius:15, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border, backgroundColor:C.faint, alignItems:'center', justifyContent:'center' }} hitSlop={10}><Ionicons name="close" size={14} color={C.muted}/></TouchableOpacity>
-            </View>
-            {phase === 'contacts' && (
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding:20, gap:14, paddingBottom:40 }}>
-                <View style={{ alignItems:'center', gap:10, paddingBottom:16 }}>
-                  <View style={{ width:52, height:52, borderRadius:26, backgroundColor:'rgba(46,204,138,0.12)', borderWidth:1, borderColor:'rgba(46,204,138,0.30)', alignItems:'center', justifyContent:'center' }}><Ionicons name="checkmark-circle" size={28} color={C.green}/></View>
-                  <Text style={{ color:C.white, fontSize:18, fontWeight:'900' }}>Vous êtes connectés</Text>
-                </View>
-                {pro.contact_email && <TouchableOpacity style={{ flexDirection:'row', alignItems:'center', gap:12, padding:16, borderRadius:16, borderWidth:StyleSheet.hairlineWidth, borderColor:'rgba(90,150,230,0.30)', backgroundColor:'rgba(90,150,230,0.08)' }} onPress={() => Linking.openURL(`mailto:${pro.contact_email}`).catch(()=>{})} activeOpacity={0.85}><Ionicons name="mail-outline" size={18} color={C.blue}/><Text style={{ color:C.white, fontSize:14, fontWeight:'700' }}>{pro.contact_email}</Text><Ionicons name="open-outline" size={14} color={C.blue} style={{ marginLeft:'auto' as any }}/></TouchableOpacity>}
-                {pro.website && <TouchableOpacity style={{ flexDirection:'row', alignItems:'center', gap:12, padding:16, borderRadius:16, borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBlue, backgroundColor:C.surf }} onPress={() => Linking.openURL(pro.website!).catch(()=>{})} activeOpacity={0.85}><Ionicons name="globe-outline" size={18} color={C.blue}/><Text style={{ color:C.white, fontSize:13, fontWeight:'700' }}>{pro.website}</Text><Ionicons name="open-outline" size={14} color={C.blue} style={{ marginLeft:'auto' as any }}/></TouchableOpacity>}
-                <TouchableOpacity onPress={onClose} style={{ alignSelf:'center', paddingVertical:12 }}><Text style={{ color:C.muted, fontSize:13 }}>Fermer</Text></TouchableOpacity>
-              </ScrollView>
-            )}
-            {phase === 'success' && (
-              <View style={{ alignItems:'center', padding:40, gap:14 }}>
-                <Animated.View style={{ width:76, height:76, borderRadius:38, borderWidth:1, borderColor:C.borderBlue, backgroundColor:'rgba(90,150,230,0.12)', alignItems:'center', justifyContent:'center', transform:[{ scale:succSc }] }}><Ionicons name="checkmark" size={34} color={C.blue}/></Animated.View>
-                <Text style={{ color:C.white, fontSize:20, fontWeight:'900' }}>Demande envoyée</Text>
-                <Text style={{ color:C.textSec, fontSize:13, textAlign:'center', lineHeight:20 }}>Ses coordonnées seront partagées à l'acceptation.</Text>
-              </View>
-            )}
-            {phase === 'form' && (
-              <>
-                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-                  {status === 'pending' && <View style={{ flexDirection:'row', alignItems:'flex-start', gap:12, marginHorizontal:20, marginBottom:16, padding:14, borderRadius:14, borderWidth:StyleSheet.hairlineWidth, borderColor:C.borderBlue, backgroundColor:'rgba(90,150,230,0.06)' }}><Ionicons name="time-outline" size={18} color={C.gold}/><Text style={{ color:C.text, fontSize:12, lineHeight:18, flex:1 }}>Invitation envoyée, en attente de réponse.</Text></View>}
-                  {pro.bio && <Text style={{ color:C.textSec, fontSize:13, lineHeight:19, paddingHorizontal:20, marginBottom:16 }}>{pro.bio}</Text>}
-                  {status !== 'pending' && (
-                    <View style={{ paddingHorizontal:20 }}>
-                      <View style={{ flexDirection:'row', alignItems:'center', marginBottom:8 }}><Text style={{ color:C.white, fontSize:13, fontWeight:'700', flex:1 }}>Message</Text><Text style={{ color:C.textTert, fontSize:10 }}>20 car. min</Text></View>
-                      <TextInput style={{ color:C.white, fontSize:14, minHeight:110, lineHeight:22, paddingVertical:4, borderBottomWidth:StyleSheet.hairlineWidth, borderBottomColor:note.trim().length>=20?C.borderBlue:C.border }} value={note} onChangeText={setNote} multiline maxLength={300} placeholder={`Bonjour ${pro.name.split(' ')[0]},\n\nJe vous ai découvert sur Universe…`} placeholderTextColor="rgba(255,255,255,0.16)" selectionColor={C.blue} textAlignVertical="top"/>
-                      <Text style={{ color:note.trim().length>=20?C.blue:C.textTert, fontSize:10, fontWeight:'700', textAlign:'right', marginTop:6 }}>{note.trim().length}/300</Text>
-                    </View>
-                  )}
-                  <View style={{ height:100 }}/>
-                </ScrollView>
-                <View style={{ flexDirection:'row', alignItems:'center', gap:10, paddingHorizontal:20, paddingBottom:Platform.OS==='ios'?36:20, paddingTop:14, borderTopWidth:StyleSheet.hairlineWidth, borderTopColor:C.border }}>
-                  <TouchableOpacity style={{ paddingHorizontal:18, paddingVertical:13, borderRadius:15, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border, backgroundColor:C.faint }} onPress={onClose} activeOpacity={0.80}><Text style={{ color:C.muted, fontSize:14, fontWeight:'600' }}>Annuler</Text></TouchableOpacity>
-                  {status === 'pending'
-                    ? <TouchableOpacity style={{ flex:1, alignItems:'center', justifyContent:'center', paddingVertical:13, borderRadius:15, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border, backgroundColor:C.surf }} onPress={onClose} activeOpacity={0.85}><Text style={{ color:C.white, fontSize:14, fontWeight:'700' }}>Fermer</Text></TouchableOpacity>
-                    : <TouchableOpacity style={{ flex:1, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, paddingVertical:13, borderRadius:15, borderWidth:StyleSheet.hairlineWidth, borderColor:note.trim().length>=20?C.borderBlue:C.border, backgroundColor:note.trim().length>=20?'rgba(90,150,230,0.12)':C.faint, opacity:sending||note.trim().length<20?0.45:1 }} onPress={handleSend} disabled={note.trim().length<20||sending} activeOpacity={0.88}>
-                        {sending?<ActivityIndicator color={C.blue} size="small"/>:<><Ionicons name="person-add-outline" size={14} color={C.blue}/><Text style={{ color:C.blue, fontSize:14, fontWeight:'800' }}>Se connecter</Text></>}
-                      </TouchableOpacity>
-                  }
-                </View>
-              </>
-            )}
-          </Animated.View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
-  );
-});
+const crc = StyleSheet.create({ wrap:{ width:112, height:164, borderRadius:12, overflow:'hidden', marginRight:10, backgroundColor:C.surf }, img:{ width:'100%', height:'100%' }, pendBadge:{ position:'absolute', top:6, left:6, backgroundColor:'rgba(245,200,66,0.88)', paddingHorizontal:5, paddingVertical:2, borderRadius:5 }, pendTxt:{ color:'#000', fontSize:7, fontWeight:'900', letterSpacing:0.5 }, info:{ position:'absolute', bottom:8, left:8, right:8, gap:4 }, title:{ color:C.white, fontSize:11, fontWeight:'700', lineHeight:14 }, stat:{ color:C.muted, fontSize:9 } });
 
 // ─── UI atoms ─────────────────────────────────────────────────────────────────
 const SectionTitle = memo(({ children }:{ children:string }) => (
@@ -334,9 +273,7 @@ export default function FilmDetailScreen() {
 
   const [work,          setWork]          = useState<Work|null>(null);
   const [similar,       setSimilar]       = useState<Work[]>([]);
-  const [professionals, setPros]          = useState<Pro[]>([]);
-  const [proStatuses,   setProStatuses]   = useState<Record<string,{ status:ConnStatus; connId?:string }>>({});
-  const [selectedPro,   setSelectedPro]   = useState<Pro|null>(null);
+  const [creators,      setCreators]      = useState<CreatorReel[]>([]);
   const [loading,       setLoading]       = useState(true);
   const [error,         setError]         = useState(false);
   const [liked,         setLiked]         = useState(false);
@@ -346,7 +283,8 @@ export default function FilmDetailScreen() {
   const [userId,        setUserId]        = useState('');
   const [videoOpen,     setVideoOpen]     = useState(false);
   const [videoUrl,      setVideoUrl]      = useState<string|null>(null);
-  const [videoLoading,  setVideoLoading]  = useState(false);
+  const [pendingOpen,   setPendingOpen]   = useState(false);
+  const [creatorReelVideoUrl, setCreatorReelVideoUrl] = useState<string|null>(null);
 
   const heartSc = useRef(new Animated.Value(1)).current;
   const reveal  = useRef(new Animated.Value(0)).current;
@@ -383,23 +321,24 @@ export default function FilmDetailScreen() {
         if ((favData as any)?.data) setSaved(true);
         setLoading(false);
 
-        // Phase 2 : similar + pros en parallèle
-        const [simItems, proItems] = await Promise.all([
+        // Phase 2 : similaires + reels créateurs en parallèle (pros supprimés)
+        const [simItems, creatorItems] = await Promise.all([
           fetchSimilarWorks(workData),
-          fetchProfessionals(workData.title),
+          fetchCreatorReels(workData.title),
         ]);
         if (dead) return;
         setSimilar(simItems);
-        setPros(proItems);
+        setCreators(creatorItems);
 
-        // Statuts connexion
-        if (uid && proItems.length) {
-          const statuses = await Promise.all(proItems.map(p => fetchConnStatus(uid, p.id).then(r => ({ id:p.id, ...r }))));
-          if (!dead) {
-            const map: Record<string,{ status:ConnStatus; connId?:string }> = {};
-            statuses.forEach(s => { map[s.id] = { status:s.status, connId:s.connId }; });
-            setProStatuses(map);
-          }
+        // Meilleure vidéo parmi les reels créateurs : approuvée en priorité
+        const bestReel = creatorItems.find(r => r.video_url && r.status === 'approved')
+                      ?? creatorItems.find(r => r.video_url);
+        if (bestReel?.video_url) {
+          const rv = bestReel.video_url;
+          const reelUrl = rv.startsWith('http')
+            ? rv
+            : supabase.storage.from('community-images').getPublicUrl(rv).data?.publicUrl ?? '';
+          if (reelUrl && !dead) setCreatorReelVideoUrl(reelUrl);
         }
       } catch {
         if (!dead) { setError(true); setLoading(false); }
@@ -410,7 +349,7 @@ export default function FilmDetailScreen() {
   }, [rawId, userId]);
 
   // Reset sur changement d'id
-  useEffect(() => { setLiked(false); setExpanded(false); setSaved(false); setVideoUrl(null); }, [rawId]);
+  useEffect(() => { setLiked(false); setExpanded(false); setSaved(false); setVideoUrl(null); setCreatorReelVideoUrl(null); setPendingOpen(false); }, [rawId]);
 
   // ── ★ handleSave — écrit dans user_favorites ────────────────────────────
   const handleSave = useCallback(async () => {
@@ -424,31 +363,46 @@ export default function FilmDetailScreen() {
         const { error } = await supabase.from('user_favorites')
           .upsert({ user_id:uid, work_id:Number(rawId) }, { onConflict:'user_id,work_id' });
         if (error) console.warn('[film] save error:', error.message);
+        grantXP(uid, 15, 'save_work');
       } else {
         await supabase.from('user_favorites').delete().eq('user_id', uid).eq('work_id', Number(rawId));
       }
     } catch (e) { console.warn('[film] save error', e); }
   }, [saved, userId, rawId]);
 
-  // ── ★ handleWatch — écrit dans user_history ─────────────────────────────
-  const handleWatch = useCallback(async () => {
-    setVideoOpen(true);
-    if (!videoUrl) {
-      setVideoLoading(true);
-      const url = await fetchRandomVideoUrl();
-      setVideoUrl(url);
-      setVideoLoading(false);
+  // ── ★ handleWatch — sync pour éviter le flash gris ─────────────────────
+  const handleWatch = useCallback(() => {
+    // Résout l'URL en avance (sync) — pas d'attente async avant d'ouvrir le modal
+    let url = videoUrl;
+    if (!url && work) {
+      url = getWorkVideoUrl(work) ?? creatorReelVideoUrl ?? null;
     }
-    try {
-      const uid = userId || await getDeviceId();
-      if (uid && rawId) {
-        const { error } = await supabase.from('user_history')
-          .upsert({ user_id:uid, work_id:Number(rawId), watched_at:new Date().toISOString() },
-                  { onConflict:'user_id,work_id' });
-        if (error) console.warn('[film] history error:', error.message);
-      }
-    } catch (e) { console.warn('[film] history error', e); }
-  }, [videoUrl, userId, rawId]);
+
+    if (!url) {
+      setPendingOpen(true);
+      if (userId && rawId)
+        supabase.from('user_history').upsert(
+          { user_id:userId, work_id:Number(rawId), watched_at:new Date().toISOString() },
+          { onConflict:'user_id,work_id' },
+        ).then(()=>{}, ()=>{});
+      return;
+    }
+
+    // Les deux mises à jour sont batchées par React 18 → modal ouvre avec URL déjà prête
+    if (!videoUrl) setVideoUrl(url);
+    setVideoOpen(true);
+
+    // Historique + XP + quêtes en fire-and-forget
+    if (userId && rawId) {
+      supabase.from('user_history')
+        .upsert({ user_id:userId, work_id:Number(rawId), watched_at:new Date().toISOString() }, { onConflict:'user_id,work_id' })
+        .then(() => {
+          grantXP(userId, 25, 'watch_work');
+          tryAutoClaimDailyQuest(userId, 'daily_watch').then(() => {}, () => {});
+          tryAutoClaimDailyQuest(userId, 'daily_explore').then(() => {}, () => {});
+        }, () => {});
+    }
+  }, [videoUrl, creatorReelVideoUrl, work, userId, rawId]);
 
   // Like
   const handleLike = useCallback(() => {
@@ -461,17 +415,13 @@ export default function FilmDetailScreen() {
       Animated.spring(heartSc, { toValue:1, useNativeDriver:true, tension:200, friction:8 }),
     ]).start();
     supabase.from('works').update({ likes:localLikes+(next?1:-1) }).eq('id', rawId).then(() => {});
-  }, [liked, heartSc, localLikes, rawId]);
+    if (next) grantXP(userId, 10, 'like_work');
+  }, [liked, heartSc, localLikes, rawId, userId]);
 
   const handleShare = useCallback(() => {
     if (!work) return;
     Share.share({ message:`${work.title} — ${work.description??work.genre}`, title:work.title });
   }, [work]);
-
-  const handleProSent = useCallback((proId:string, newStatus:ConnStatus) => {
-    setProStatuses(prev => ({ ...prev, [proId]:{ ...prev[proId], status:newStatus } }));
-    setSelectedPro(null);
-  }, []);
 
   const descShort = useMemo(() => {
     if (!work?.description) return '';
@@ -491,7 +441,6 @@ export default function FilmDetailScreen() {
   }, [work]);
 
   const bodyAnim = useMemo(() => ({ opacity:reveal, transform:[{ translateY:reveal.interpolate({ inputRange:[0,1], outputRange:[20,0] }) }] }), [reveal]);
-  const selectedStatus = selectedPro ? proStatuses[selectedPro.id] : { status:'none' as ConnStatus };
 
   if (loading) return <View style={s.root}><StatusBar style="light"/><GalaxyBackground/><Skeleton/></View>;
   if (error || !work) return (
@@ -510,7 +459,17 @@ export default function FilmDetailScreen() {
       <StatusBar style="light"/>
       <GalaxyBackground/>
       <VideoModal visible={videoOpen} videoUrl={videoUrl} title={work.title} onClose={() => { setVideoOpen(false); setVideoUrl(null); }}/>
-      <ProConnectionModal pro={selectedPro} status={selectedStatus.status} connId={selectedStatus.connId} userId={userId} onClose={() => setSelectedPro(null)} onSent={handleProSent}/>
+      <Modal visible={pendingOpen} animationType="fade" onRequestClose={() => setPendingOpen(false)}>
+        <View style={{ flex:1 }}>
+          <PendingContent message="Vidéo en cours de traitement" subtitle="Ce contenu sera disponible très prochainement"/>
+          <TouchableOpacity
+            onPress={() => setPendingOpen(false)}
+            style={{ position:'absolute', top:56, left:20, width:40, height:40, borderRadius:20, backgroundColor:'rgba(0,0,0,0.55)', alignItems:'center', justifyContent:'center' }}
+          >
+            <Ionicons name="close" size={20} color="#fff"/>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
         {/* HERO */}
@@ -566,7 +525,7 @@ export default function FilmDetailScreen() {
                 <Text style={s.watchTxt}>Regarder</Text>
                 {work.duration!=null && <Text style={s.watchMeta}>{fmtDur(work.duration)} · HD</Text>}
               </View>
-              {videoLoading && <ActivityIndicator color="rgba(255,255,255,0.6)" size="small" style={{ marginLeft:'auto' as any }}/>}
+           
             </LinearGradient>
           </TouchableOpacity>
 
@@ -598,14 +557,15 @@ export default function FilmDetailScreen() {
             </View>
           )}
 
-          {/* Pros */}
-          {professionals.length > 0 && (
+          {/* Créateurs — reels liés à cette œuvre */}
+          {creators.length > 0 && (
             <View style={s.section}>
-              <SectionTitle>Avec & Industrie</SectionTitle>
-              <Text style={{ color:C.textSec, fontSize:12, marginBottom:14, lineHeight:18 }}>Professionnels associés à cette œuvre.</Text>
-              {professionals.map(pro => (
-                <ProMiniCard key={pro.id} pro={pro} status={proStatuses[pro.id]?.status??'none'} onPress={() => setSelectedPro(pro)}/>
-              ))}
+              <SectionTitle>Créateurs</SectionTitle>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight:4 }}>
+                {creators.map(r => (
+                  <CreatorReelCard key={r.id} reel={r} onPress={() => router.push(`/reel/${r.id}` as any)}/>
+                ))}
+              </ScrollView>
             </View>
           )}
 

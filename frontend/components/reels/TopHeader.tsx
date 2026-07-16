@@ -8,7 +8,7 @@
  */
 
 import React, {
-  memo, useCallback, useMemo, useEffect, useRef,
+  memo, useCallback, useMemo, useEffect, useRef, useState,
 } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, Animated, Platform,
@@ -19,7 +19,8 @@ import { Ionicons }       from '@expo/vector-icons';
 import { useRouter }      from 'expo-router';
 
 import { type MenuKey }   from '../DropDownMenu';
-import { FRIENDS_POOL }   from './mockData';
+import { supabase }        from '@/lib/supabase';
+import { getDeviceId }    from '@/services/api';
 
 // ── Haptics web-safe ──────────────────────────────────────────────────────
 let _Haptics: any = null;
@@ -70,15 +71,51 @@ const STATIC_LABELS: Record<string,string> = {
 // FRIENDS PILE — 3 cercles, sans label "Amis", bordure transparente
 // ─────────────────────────────────────────────────────────────────────────────
 const FriendsPile = memo(function FriendsPile({ onPress }: { onPress: () => void }) {
-  // Toujours 3 avatars (mockData + globe si besoin)
-  const slots = useMemo(() => {
-    const base = FRIENDS_POOL.slice(0, 3);
-    // Si moins de 3 amis, compléter avec le globe
-    const result: { type: 'avatar'; id: string; uri: string }[] | { type: 'globe' }[] = [];
-    base.forEach(f => result.push({ type:'avatar', id:f.id, uri:f.avatar }));
-    while (result.length < 3) result.push({ type:'globe' } as any);
-    return result;
+  const [liveProfiles, setLiveProfiles] = useState<{ id: string; avatar_url: string | null; display_name: string | null }[]>([]);
+
+  useEffect(() => {
+    let dead = false;
+    getDeviceId().then(deviceId => {
+      if (!deviceId || dead) return;
+      supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', deviceId)
+        .limit(3)
+        .then(({ data: followData }) => {
+          if (dead) return;
+          const ids = (followData ?? []).map((r: any) => r.following_id).filter(Boolean);
+          if (!ids.length) {
+            // Fallback : top contributeurs si l'utilisateur ne suit personne encore
+            supabase.from('profiles').select('id,avatar_url,display_name')
+              .neq('id', deviceId).order('contribution_score', { ascending: false }).limit(3)
+              .then(({ data }) => { if (!dead && data?.length) setLiveProfiles(data as any); }, () => {});
+            return;
+          }
+          supabase.from('profiles').select('id,avatar_url,display_name')
+            .in('id', ids).limit(3)
+            .then(({ data }) => { if (!dead && data?.length) setLiveProfiles(data as any); }, () => {});
+        }, () => {});
+    }, () => {});
+    return () => { dead = true; };
   }, []);
+
+  const slots = useMemo(() => {
+    const result: ({ type: 'avatar'; id: string; uri: string } | { type: 'initials'; id: string; initials: string })[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = liveProfiles[i];
+      if (p?.avatar_url) {
+        result.push({ type: 'avatar', id: p.id, uri: p.avatar_url });
+      } else {
+        const name = p?.display_name ?? '';
+        const initials = name.trim()
+          ? name.trim().split(/\s+/).map((w: string) => w[0]).slice(0, 2).join('').toUpperCase()
+          : '?';
+        result.push({ type: 'initials', id: p?.id ?? `slot-${i}`, initials });
+      }
+    }
+    return result;
+  }, [liveProfiles]);
 
   return (
     <TouchableOpacity style={fp.wrap} onPress={onPress} activeOpacity={0.75}>
@@ -92,10 +129,10 @@ const FriendsPile = memo(function FriendsPile({ onPress }: { onPress: () => void
               contentFit="cover"
             />
           ) : (
-            <View key={`globe-${i}`}
-              style={[fp.avatar, fp.globe, { marginLeft: i > 0 ? -9 : 0, zIndex: 10 - i }]}
+            <View key={slot.id}
+              style={[fp.avatar, fp.initials, { marginLeft: i > 0 ? -9 : 0, zIndex: 10 - i }]}
             >
-              <Text style={{ fontSize: 13 }}>🌍</Text>
+              <Text style={fp.initTxt}>{slot.initials}</Text>
             </View>
           )
         ))}
@@ -114,8 +151,15 @@ const fp = StyleSheet.create({
     borderColor:   T.avatarBorder,
     backgroundColor: T.surf,
   },
-  globe: {
+  initials: {
     alignItems:'center', justifyContent:'center',
+    backgroundColor: 'rgba(90,130,210,0.30)',
+  },
+  initTxt: {
+    color: T.white,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
 });
 

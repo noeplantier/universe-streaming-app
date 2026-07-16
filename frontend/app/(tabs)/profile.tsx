@@ -1,12 +1,3 @@
-/**
- * app/(tabs)/profile.tsx — UNIVERSE v2
- *
- * ✦ Header dynamique branché sur GamificationSystem (xpToLevel + TITLES)
- * ✦ Avatar cliquable → édition implicite (caméra overlay, no edit button)
- * ✦ Header plus aéré : avatar 90px, level section proéminente, spacing ++
- * ✦ getDeviceId() — ZERO supabase.auth.*
- * ✦ gamiProfile rechargé à chaque useFocusEffect
- */
 import React, {
   memo, useCallback, useEffect, useMemo, useRef, useState,
 } from 'react';
@@ -26,6 +17,8 @@ import { getDeviceId }                 from '@/services/api';
 import {
   xpToLevel, TITLES, resolveImg as resolveImgGami,
   type GamiProfile, type Work,
+  useGamification, useDailyQuests,
+  XPFloat, XPBar as GamiXPBar, LevelUpCelebration, DailyQuestsPanel,
 } from '@/contexts/GamificationSystem';
 
 const { width: SW } = Dimensions.get('window');
@@ -43,6 +36,30 @@ const C = {
   ring:'rgba(255,255,255,0.22)',
 } as const;
 
+// ─── Gamification badge constants (identiques à search.tsx) ──────────────────
+const SECTIONS = [
+  { label:'Galaxie XP', icon:'planet-outline'   as const },
+  { label:'Cosmos',     icon:'infinite-outline' as const },
+];
+const FOMO = [
+  "Tu es à quelques XP du prochain niveau — continue.",
+  "Ton streak reste ton meilleur atout.",
+  "Une critique = 50 XP. C'est maintenant ou jamais.",
+  "Chaque film visionné = +20 XP directs.",
+  "3 minutes d'action = XP garantis.",
+  "Chaque défi terminé = badge en approche.",
+];
+function levelIcon(lvl: number): keyof typeof Ionicons.glyphMap {
+  if (lvl >= 9) return 'planet';
+  if (lvl >= 7) return 'star';
+  if (lvl >= 5) return 'flash';
+  if (lvl >= 3) return 'compass-outline';
+  return 'film-outline';
+}
+let _Hp: any = null;
+if (Platform.OS !== 'web') { try { _Hp = require('expo-haptics'); } catch {} }
+function hL() { _Hp?.impactAsync?.(_Hp.ImpactFeedbackStyle?.Light).catch(() => {}); }
+
 const H_PAD = 20;
 const CARD_W = 124, CARD_H = 185;
 const REEL_W = 156, REEL_H = 220;
@@ -51,11 +68,6 @@ const GRID_GAP = 10;
 const GRID_COL = (SW - 32 - GRID_GAP) / 2;
 const WORK_COLS = 'id,title,category,genre,year,likes,image,is_original,duration,director';
 
-// Valeur par défaut GamiProfile (avant fetch)
-const DEFAULT_GAMI: GamiProfile = {
-  xp:0, level:1, title:TITLES[0], streak_days:0,
-  xpToNext:100, xpInLevel:0, pct:0, contribution_score:0,
-};
 
 // ─── GENRE META ───────────────────────────────────────────────────────────────
 const GENRE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -81,6 +93,7 @@ const ROLE_LABELS: Record<string,string> = {
 interface LocalWork { id:number;title:string;category:string;genre:string;year:number;likes:number;image:string|null;is_original:boolean;duration:number|null;director:string|null }
 interface UserReel { id:string;video_url:string;thumbnail_url:string|null;title:string|null;genre:string|null;duration:number|null;status:'pending'|'approved'|'rejected';likes_count:number;views_count:number;created_at:string }
 interface ReviewItem { id:string;content:string;rating:number;likes:number;film:{id:string;title:string;genre:string} }
+interface VeloceItem { id:string;title:string|null;thumbnail_url:string|null;video_url:string;likes_count:number;views_count:number;genre:string|null }
 interface ProfileData { display_name:string;username:string;bio:string;role:string;location:string;avatar_url:string;website:string;is_pro:boolean;is_industry_contact:boolean;specialties:string[];open_to:string[];notable_works:any[];equipment:string;social_instagram:string;social_vimeo:string;social_youtube:string;social_imdb:string;films_seen_count:number;following_count:number }
 interface Badge { id:string;label:string;icon:keyof typeof Ionicons.glyphMap;earned:boolean;pts:number;desc:string }
 interface GamiStats { watchCount:number;critiqueCount:number;favCount:number;isNight:boolean;streak:number }
@@ -116,6 +129,11 @@ const mapReel   = (r:any): UserReel => ({
   status:(['pending','approved','rejected'].includes(r?.status)?r.status:'pending') as any,
   likes_count:Number(r?.likes_count)||0,views_count:Number(r?.views_count)||0,
   created_at:r?.created_at??new Date().toISOString(),
+});
+const mapVeloce = (r:any): VeloceItem => ({
+  id:String(r?.id??''),title:r?.title??null,thumbnail_url:r?.thumbnail_url??null,
+  video_url:r?.video_url??'',likes_count:Number(r?.likes_count)||0,
+  views_count:Number(r?.views_count)||0,genre:r?.genre??null,
 });
 const mapReview = (r:any): ReviewItem => ({
   id:String(r?.id??''),content:String(r?.content??r?.contenu??''),
@@ -239,12 +257,12 @@ const AVATAR_SIZE = 90;
 const RING_SIZE   = AVATAR_SIZE;
 
 const ProfileHeader = memo(function ProfileHeader({
-  profile, filmCount, critiqueCount, reelCount,
+  profile, filmCount, critiqueCount, reelCount, followersCount,
   gamiProfile, showLevel,
   streak,
   onAvatarEdit, onAdmin, onSettings,
 }:{
-  profile:ProfileData; filmCount:number; critiqueCount:number; reelCount:number;
+  profile:ProfileData; filmCount:number; critiqueCount:number; reelCount:number; followersCount:number;
   gamiProfile:GamiProfile; showLevel:boolean;
   streak:number;
   onAvatarEdit:()=>void; onAdmin:()=>void; onSettings:()=>void;
@@ -349,9 +367,9 @@ const ProfileHeader = memo(function ProfileHeader({
 
           {/* Stats principales + réseaux (icônes fixes) sur une seule ligne */}
           <View style={ph.statsRow}>
-            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.films_seen_count}</Text> Films</Text>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{reelCount}</Text> Créations</Text>
             <Text style={ph.statTxt}>·</Text>
-            <Text style={ph.statTxt}><Text style={ph.statNum}>{profile.following_count}</Text> Abonnements</Text>
+            <Text style={ph.statTxt}><Text style={ph.statNum}>{followersCount}</Text> Abonnés</Text>
             {links.length>0&&(
               <View style={ph.socialRow}>
                 {links.map(l=>(
@@ -525,6 +543,39 @@ const rlc=StyleSheet.create({card:{width:REEL_W,height:REEL_H,borderRadius:13,ov
 const ReelGridCard=memo(({reel,isHot,onPress}:{reel:UserReel;isHot:boolean;onPress:()=>void})=>{const thumb=useThumb(reel.video_url,reel.thumbnail_url);const[err,setErr]=useState(false);const cfg=STATUS_CFG[reel.status]??STATUS_CFG.pending;return(<TouchableOpacity style={rgc.card} onPress={onPress} activeOpacity={0.88}>{thumb&&!err?<Image source={{uri:thumb}} style={rgc.img} resizeMode="cover" onError={()=>setErr(true)}/>:<View style={rgc.ph}><LinearGradient colors={[C.navyMid,C.navyLow]} style={StyleSheet.absoluteFillObject}/><Ionicons name="film-outline" size={22} color={C.subtle}/></View>}<LinearGradient colors={['transparent','rgba(7,12,23,0.96)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.35}} end={{x:0,y:1}}/><View style={rgc.status}><Ionicons name={cfg.icon} size={9} color={C.mid}/><Text style={rgc.stTxt}>{cfg.label}</Text></View>{isHot&&<View style={rgc.hot}><Ionicons name="flame-outline" size={8} color={C.mid}/></View>}<View style={rgc.meta}><Text style={rgc.title} numberOfLines={2}>{reel.title||'Sans titre'}</Text><View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:2}}><View style={{flexDirection:'row',alignItems:'center',gap:2}}><Ionicons name="eye-outline" size={8} color={C.muted}/><Text style={rgc.stat}>{fmt(reel.views_count)}</Text></View><View style={{flexDirection:'row',alignItems:'center',gap:2}}><Ionicons name="heart-outline" size={8} color={C.muted}/><Text style={rgc.stat}>{fmt(reel.likes_count)}</Text></View></View></View></TouchableOpacity>);});
 const rgc=StyleSheet.create({card:{width:GRID_COL,height:GRID_COL*1.4,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},img:{width:'100%',height:'100%',position:'absolute'},ph:{width:'100%',height:'100%',alignItems:'center',justifyContent:'center'},status:{position:'absolute',top:8,left:8,flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:7,paddingVertical:3,borderRadius:8,backgroundColor:'rgba(7,12,23,0.72)'},stTxt:{color:C.muted,fontSize:7.5,fontWeight:'700'},hot:{position:'absolute',top:8,right:8,width:22,height:22,borderRadius:11,backgroundColor:'rgba(7,12,23,0.72)',alignItems:'center',justifyContent:'center'},meta:{position:'absolute',bottom:0,left:0,right:0,padding:10,gap:2},title:{color:C.white,fontSize:11,fontWeight:'800',lineHeight:14},stat:{color:C.muted,fontSize:9,fontWeight:'600'}});
 
+// ─── ★ VELOCE CARD ────────────────────────────────────────────────────────────
+const VeloceCard=memo(function VeloceCard({item}:{item:VeloceItem}){
+  const router=useRouter();const[err,setErr]=useState(false);
+  return(
+    <TouchableOpacity style={{marginRight:10}} onPress={()=>router.push({pathname:'/reel/[id]',params:{id:item.id}} as any)} activeOpacity={0.88}>
+      <View style={vc.card}>
+        {item.thumbnail_url&&!err
+          ?<Image source={{uri:item.thumbnail_url}} style={vc.img} resizeMode="cover" onError={()=>setErr(true)}/>
+          :<View style={vc.ph}><LinearGradient colors={[C.navyMid,C.navyLow]} style={StyleSheet.absoluteFillObject}/><Ionicons name="play-circle-outline" size={22} color={C.subtle}/></View>
+        }
+        <LinearGradient colors={['transparent','rgba(7,12,23,0.94)']} style={StyleSheet.absoluteFillObject} start={{x:0,y:0.4}} end={{x:0,y:1}}/>
+        <View style={vc.meta}>
+          {!!item.genre&&<Text style={vc.genre}>{item.genre.toUpperCase()}</Text>}
+          <Text style={vc.title} numberOfLines={2}>{item.title||'Sans titre'}</Text>
+          <View style={{flexDirection:'row',alignItems:'center',gap:6,marginTop:2}}>
+            <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="heart" size={8} color={C.muted}/><Text style={vc.stat}>{fmt(item.likes_count)}</Text></View>
+            <View style={{flexDirection:'row',alignItems:'center',gap:3}}><Ionicons name="eye-outline" size={8} color={C.muted}/><Text style={vc.stat}>{fmt(item.views_count)}</Text></View>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+const vc=StyleSheet.create({
+  card:{width:REEL_W,height:REEL_H,borderRadius:13,overflow:'hidden',backgroundColor:C.navyMid},
+  img:{width:REEL_W,height:REEL_H},
+  ph:{width:REEL_W,height:REEL_H,alignItems:'center',justifyContent:'center'},
+  genre:{color:C.muted,fontSize:7,fontWeight:'800',letterSpacing:0.8,marginBottom:1},
+  meta:{position:'absolute',bottom:0,left:0,right:0,padding:10,gap:2},
+  title:{color:C.white,fontSize:10.5,fontWeight:'800',lineHeight:13},
+  stat:{color:C.muted,fontSize:8,fontWeight:'600'},
+});
+
 // ─── SEE ALL MODAL ────────────────────────────────────────────────────────────
 interface SeeAllModalProps{visible:boolean;onClose:()=>void;type:ModalType;title:string;icon:keyof typeof Ionicons.glyphMap;works?:LocalWork[];reviews?:ReviewItem[];reels?:UserReel[];hotReelId?:string|null}
 const SeeAllModal=memo(function SeeAllModal({visible,onClose,type,title,icon,works=[],reviews=[],reels=[],hotReelId=null}:SeeAllModalProps){
@@ -573,6 +624,128 @@ const CinemaAccordion=memo(function CinemaAccordion({icon,title,count,badge,defa
 });
 const SkeletonSection=memo(()=>(<View><View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:H_PAD,paddingTop:20,paddingBottom:12}}><Shimmer w={24} h={24} r={8}/><Shimmer w={120} h={11} r={6}/></View><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal:H_PAD,gap:10}}>{[0,1,2,3].map(i=><Shimmer key={i} w={CARD_W} h={CARD_H} r={12}/>)}</ScrollView></View>));
 
+// ─── GAMIFICATION BADGE (identique à search.tsx) ─────────────────────────────
+const GamificationBadge = memo(function GamificationBadge({
+  profile, earnedCount, onPress,
+}: { profile: GamiProfile; earnedCount: number; onPress: () => void }) {
+  const [si, setSi] = useState(0);
+  const fade  = useRef(new Animated.Value(1)).current;
+  const btnSc = useRef(new Animated.Value(1)).current;
+  const glowOp = useRef(new Animated.Value(0.18)).current;
+  useEffect(() => {
+    const l = Animated.loop(Animated.sequence([
+      Animated.timing(glowOp, { toValue:1.0, duration:1600, easing:Easing.inOut(Easing.ease), useNativeDriver:true }),
+      Animated.timing(glowOp, { toValue:0.18, duration:1600, easing:Easing.inOut(Easing.ease), useNativeDriver:true }),
+    ]));
+    l.start(); return () => l.stop();
+  }, [glowOp]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      Animated.timing(fade, { toValue:0, duration:200, useNativeDriver:true }).start(() => {
+        setSi(i => (i + 1) % SECTIONS.length);
+        Animated.timing(fade, { toValue:1, duration:260, useNativeDriver:true }).start();
+      });
+    }, 3600);
+    return () => clearInterval(t);
+  }, [fade]);
+  const press = () => {
+    hL();
+    Animated.sequence([
+      Animated.timing(btnSc, { toValue:0.94, duration:80, useNativeDriver:true }),
+      Animated.spring(btnSc, { toValue:1, tension:300, friction:8, useNativeDriver:true }),
+    ]).start(onPress);
+  };
+  const sec = SECTIONS[si];
+  const phrase = FOMO[Math.floor((profile.xp + si * 37) % FOMO.length)];
+  const fmtXP = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n}`;
+  const glowStyle: any = {
+    position:'absolute', top:-3, bottom:-3, left:-3, right:-3, borderRadius:21,
+    ...(Platform.OS === 'web'
+      ? { boxShadow:'0 0 24px 8px rgba(245,200,66,0.42), 0 0 8px 2px rgba(245,200,66,0.18)' }
+      : { shadowColor:C.gold, shadowOffset:{width:0,height:0}, shadowOpacity:0.82, shadowRadius:16, elevation:8 }),
+  };
+  return (
+    <TouchableOpacity onPress={press} activeOpacity={1} style={{ marginHorizontal:H_PAD, marginBottom:14 }}>
+      <Animated.View style={{ transform:[{ scale:btnSc }] }}>
+        <Animated.View style={[glowStyle, { opacity:glowOp }]} pointerEvents="none"/>
+        <LinearGradient
+          colors={['rgba(245,200,66,0.12)','rgba(13,32,64,0.88)','rgba(4,8,15,0.97)']}
+          start={{ x:0, y:0 }} end={{ x:1, y:1 }}
+          style={{ height:88, borderRadius:18, paddingHorizontal:17, borderWidth:1, borderColor:C.goldBd, flexDirection:'row', alignItems:'center', gap:14 }}
+        >
+          <View style={{ width:46, height:46, borderRadius:14, flexShrink:0, backgroundColor:C.goldDim, borderWidth:1.5, borderColor:C.goldBd, alignItems:'center', justifyContent:'center' }}>
+            <Ionicons name={levelIcon(profile.level)} size={21} color={C.gold}/>
+          </View>
+          <View style={{ flex:1, gap:4 }}>
+            <Animated.View style={{ opacity:fade, flexDirection:'row', alignItems:'center', gap:6 }}>
+              <Ionicons name={sec.icon} size={11} color={C.gold}/>
+              <Text style={{ color:C.gold, fontSize:12, fontWeight:'900', letterSpacing:0.4 }}>{sec.label}</Text>
+              <View style={{ paddingHorizontal:7, paddingVertical:2, borderRadius:7, backgroundColor:C.goldDim, borderWidth:StyleSheet.hairlineWidth, borderColor:C.goldBd }}>
+                <Text style={{ color:C.gold, fontSize:9, fontWeight:'800' }}>NIV.{profile.level}</Text>
+              </View>
+            </Animated.View>
+            <Animated.Text style={{ color:C.muted, fontSize:11, fontStyle:'italic', opacity:fade }} numberOfLines={1}>{phrase}</Animated.Text>
+            <View style={{ height:3, backgroundColor:C.faint, borderRadius:2, overflow:'hidden' }}>
+              <View style={{ height:'100%', borderRadius:2, backgroundColor:C.gold, width:`${profile.pct * 100}%` as any }}/>
+            </View>
+          </View>
+          <View style={{ alignItems:'flex-end', gap:5, flexShrink:0 }}>
+            <View style={{ flexDirection:'row', alignItems:'center', gap:3 }}>
+              <Ionicons name="flash" size={11} color={C.gold}/>
+              <Text style={{ color:C.gold, fontSize:13, fontWeight:'900' }}>{fmtXP(profile.xp)}</Text>
+            </View>
+            {profile.streak_days > 0 && <Text style={{ color:C.gold, fontSize:10, fontWeight:'800' }}>★{profile.streak_days}j</Text>}
+            {earnedCount > 0 && <Text style={{ color:C.muted, fontSize:9, fontWeight:'700' }}>{earnedCount} badges</Text>}
+            <Ionicons name="chevron-forward" size={13} color={C.muted}/>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+    </TouchableOpacity>
+  );
+});
+
+// ─── COSMOS MODAL (défis du jour + XP bar) ───────────────────────────────────
+const CosmosModal = memo(function CosmosModal({
+  visible, onClose, profile, userId, earnedCount, awardXP,
+}: {
+  visible: boolean; onClose: () => void; profile: GamiProfile;
+  userId: string; earnedCount: number; awardXP: (xp: number, reason: string) => void;
+}) {
+  const [burst, setBurst] = useState({ n:0, v:false });
+  const showBurst = (xp: number) => { setBurst({ n:xp, v:true }); setTimeout(() => setBurst(b => ({ ...b, v:false })), 1200); };
+  const daily = useDailyQuests(userId, (xp, questId) => { awardXP(xp, `daily_${questId}`); showBurst(xp); });
+  const handleClaim  = useCallback((questId: string) => { daily.claimDailyQuest(questId); }, [daily]);
+  const handleAction = useCallback((_action: string) => { onClose(); }, [onClose]);
+  return (
+    <Modal visible={visible} animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <View style={{ flex:1, backgroundColor:'#070C17' }}>
+        <LinearGradient colors={['rgba(245,200,66,0.08)','rgba(7,12,23,0)','rgba(7,12,23,0)']} style={{ position:'absolute', top:0, left:0, right:0, height:220 }} pointerEvents="none"/>
+        <ScrollView contentContainerStyle={{ paddingBottom:60 }}>
+          <View style={{ paddingTop:Platform.OS==='ios'?56:32, paddingHorizontal:H_PAD }}>
+            <TouchableOpacity onPress={onClose} hitSlop={14} style={{ alignSelf:'flex-end', marginBottom:12, padding:8 }}>
+              <Ionicons name="close" size={22} color="rgba(255,255,255,0.5)"/>
+            </TouchableOpacity>
+            <Text style={{ color:'#fff', fontSize:22, fontWeight:'900', letterSpacing:-0.5, marginBottom:4 }}>Galaxie XP</Text>
+            <Text style={{ color:C.gold, fontSize:11, fontWeight:'700', marginBottom:18 }}>{profile.title} · {profile.xp.toLocaleString()} XP</Text>
+            <GamiXPBar profile={profile}/>
+            <View style={{ height:24 }}/>
+            <Text style={{ color:C.muted, fontSize:11, fontWeight:'700', letterSpacing:0.6, marginBottom:10, textTransform:'uppercase' }}>
+              {daily.completedToday} défi{daily.completedToday > 1 ? 's' : ''} réclamé{daily.completedToday > 1 ? 's' : ''} aujourd'hui
+            </Text>
+            <DailyQuestsPanel
+              questsWithStatus={daily.questsWithStatus}
+              completedToday={daily.completedToday}
+              onClaim={handleClaim}
+              onAction={handleAction}
+            />
+          </View>
+        </ScrollView>
+        <XPFloat amount={burst.n} visible={burst.v} onDone={() => {}}/>
+      </View>
+    </Modal>
+  );
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 // ★★★  PROFILE SCREEN
 // ════════════════════════════════════════════════════════════════════════════
@@ -591,36 +764,19 @@ export default function ProfileScreen() {
   const [fetchError,   setFErr]    = useState(false);
   const [activeTab,    setTab]     = useState<GridTab>(0);
   const [modal,        setModal]   = useState<ModalType|null>(null);
-  const [streak,       setStreak]  = useState(0);
+  const [streak,         setStreak]       = useState(0);
+  const [followersCount, setFollowersCount] = useState(0);
+  const [likedReels,     setLikedReels]  = useState<VeloceItem[]>([]);
+  const [savedReels,     setSavedReels]  = useState<VeloceItem[]>([]);
+  const [veloceErr,      setVeloceErr]   = useState(false);
   // ★ Gamification réelle depuis GamificationSystem (profiles)
-  const [gamiProfile, setGamiProfile] = useState<GamiProfile>(DEFAULT_GAMI);
-  const [showLevel,   setShowLevel]  = useState(true);
+  const { profile: gamiProfile, badges: gamiBadges, awardXP } = useGamification(uid ?? '');
+  const [showLevel,     setShowLevel]    = useState(true);
+  const [cosmosVisible, setCosmosVisible] = useState(false);
+  const [levelUp,       setLevelUp]      = useState<{ level: number; title: string } | null>(null);
 
   const { score, level, badges } = useLocalGamification(uid);
   const isFirstLoad = useRef(false);
-
-  // Charge le profil gamification depuis profiles
-  const loadGami = useCallback(async(userId:string)=>{
-    try {
-      const{data}=await supabase.from('profiles')
-        .select('xp,level,title,streak_days,contribution_score')
-        .eq('user_id',userId).maybeSingle();
-      if(data){
-        const d=data as any;
-        const lvl=xpToLevel(d.xp??0);
-        setGamiProfile({
-          xp:d.xp??0,
-          level:d.level??lvl.level,
-          title:d.title??TITLES[lvl.level-1],
-          streak_days:d.streak_days??0,
-          xpToNext:lvl.xpToNext,
-          xpInLevel:lvl.xpInLevel,
-          pct:lvl.pct,
-          contribution_score:d.contribution_score??0,
-        });
-      }
-    } catch{}
-  },[]);
 
   useEffect(()=>{
     getDeviceId().then(deviceId=>{
@@ -628,7 +784,6 @@ export default function ProfileScreen() {
       isFirstLoad.current=true;
       loadAll(deviceId);
       loadStreak(deviceId);
-      loadGami(deviceId);
       loadShowLevel(deviceId);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -637,7 +792,6 @@ export default function ProfileScreen() {
   useFocusEffect(useCallback(()=>{
     if(!uid||!isFirstLoad.current)return;
     loadAll(uid);
-    loadGami(uid); // ★ rafraîchit le niveau à chaque retour sur l'onglet
     loadShowLevel(uid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[uid]));
@@ -648,36 +802,55 @@ export default function ProfileScreen() {
 
   const loadShowLevel = useCallback(async(userId:string)=>{
     try{
-      const{data,error}=await supabase.from('user_preferences').select('show_level_on_profile').eq('user_id',userId).maybeSingle();
-      if(error){console.error('[profile] lecture show_level_on_profile:',error.message);return;}
-      setShowLevel(data?.show_level_on_profile??true);
+      // show_level_on_profile n'existe pas encore → lire depuis la pref privée existante, défaut true
+      const{data}=await supabase.from('user_preferences').select('private_profile').eq('user_id',userId).maybeSingle();
+      void data; // colonne show_level_on_profile à ajouter via migration SQL
+      setShowLevel(true);
     }catch(e){console.error('[profile] lecture show_level_on_profile:',e);}
   },[]);
+
+  
+
+  // Load all profile data: profile, reels, critiques, favorites, seen items, followers count, liked/saved reels, recommendations
 
   const loadAll = useCallback(async(userId:string)=>{
     if(!userId)return;
     setLoading(true);setFErr(false);
     try{
-      const[profR,reelsR,critiques,favR,seenItems]=await Promise.all([
+      const[profR,reelsR,critiques,favR,seenItems,followersR]=await Promise.all([
         supabase.from('profiles').select('*').eq('id',userId).maybeSingle(),
         supabase.from('reels').select('id,video_url,thumbnail_url,title,genre,duration,status,likes_count,views_count,created_at').eq('user_id',userId).order('created_at',{ascending:false}),
         fetchCritiques(userId),
         supabase.from('user_favorites').select('work_id').eq('user_id',userId),
         fetchSeen(userId),
+        supabase.from('follows').select('follower_id',{count:'exact',head:true}).eq('following_id',userId),
       ]);
       if(profR.data)setProfile(mapProfile(profR.data));
       setReels((reelsR.data??[]).map(mapReel));
       setReviews(critiques);
+      setFollowersCount((followersR as any).count ?? 0);
       const favIds=[...new Set((favR.data??[]).map((r:any)=>Number(r.work_id)).filter(Boolean))];
       const seenIds=[...new Set(seenItems.map(r=>r.workId).filter(Boolean))];
       const allIds=[...new Set([...favIds,...seenIds])];
-      const[favD,seenD]=await Promise.all([
+      const[favD,seenD,likedIdsR,savedIdsR]=await Promise.all([
         favIds.length?supabase.from('works').select(WORK_COLS).in('id',favIds):Promise.resolve({data:[]}),
         seenIds.length?supabase.from('works').select(WORK_COLS).in('id',seenIds):Promise.resolve({data:[]}),
+        supabase.from('user_liked_reels').select('reel_id').eq('user_id',userId).limit(20),
+        supabase.from('user_saved_reels').select('reel_id').eq('user_id',userId).limit(20),
       ]);
       const favWks=((favD.data??[]) as any[]).map(mapWork);
       const seenWks=((seenD.data??[]) as any[]).map(mapWork);
       setFavW(favWks);setWatched(seenWks);
+      setVeloceErr(!!(likedIdsR.error||savedIdsR.error));
+      const likedRIds=(likedIdsR.data??[]).map((r:any)=>String(r.reel_id)).filter(Boolean);
+      const savedRIds=(savedIdsR.data??[]).map((r:any)=>String(r.reel_id)).filter(Boolean);
+      const REEL_V_COLS='id,title,thumbnail_url,video_url,likes_count,views_count,genre';
+      const[lVD,sVD]=await Promise.all([
+        likedRIds.length?supabase.from('reels').select(REEL_V_COLS).in('id',likedRIds):Promise.resolve({data:[]}),
+        savedRIds.length?supabase.from('reels').select(REEL_V_COLS).in('id',savedRIds):Promise.resolve({data:[]}),
+      ]);
+      setLikedReels((lVD.data??[]).map(mapVeloce));
+      setSavedReels((sVD.data??[]).map(mapVeloce));
       const gW:Record<string,number>={};
       favWks.forEach(w=>{if(w.genre)gW[w.genre]=(gW[w.genre]??0)+3;if(w.category)gW[w.category]=(gW[w.category]??0)+1.5;});
       seenWks.forEach(w=>{if(w.genre)gW[w.genre]=(gW[w.genre]??0)+1;});
@@ -743,33 +916,33 @@ export default function ProfileScreen() {
   // ─── Tab Cinéma ─────────────────────────────────────────────────────────────
   const renderCinema = useCallback(()=>{
     if(loading)return<View><SkeletonSection/></View>;
-    const roleLabel=ROLE_LABELS[profile.role]??'Cinéaste';
     return(
-      <View style={{marginTop:16}}>
-        <CinemaAccordion icon="person-circle-outline" title="Identité" defaultOpen badge={roleLabel}>
-          <View style={{flexDirection:'row',flexWrap:'wrap',gap:7}}>
-            {[roleLabel,...profile.specialties].map((s,i)=>(
-              <View key={`sp_${i}`} style={{paddingHorizontal:11,paddingVertical:6,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:i===0?C.borderHi:C.border,backgroundColor:i===0?C.subtle:C.faint}}>
-                <Text style={{color:i===0?C.white:C.mid,fontSize:11,fontWeight:i===0?'700':'500'}}>{s}</Text>
-              </View>
-            ))}
-          </View>
-          {!!profile.location&&<View style={{flexDirection:'row',alignItems:'center',gap:7}}><Ionicons name="location-outline" size={12} color={C.muted}/><Text style={{color:C.muted,fontSize:12}}>{profile.location}</Text></View>}
-          {!!profile.equipment&&<View style={{gap:4}}><Text style={{color:C.muted,fontSize:9,fontWeight:'800',letterSpacing:1,textTransform:'uppercase'}}>Équipement</Text><Text style={{color:C.mid,fontSize:12,lineHeight:18}}>{profile.equipment}</Text></View>}
-          {profile.is_industry_contact&&<View style={{flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:9,borderRadius:10,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border}}><Ionicons name="briefcase-outline" size={13} color={C.mid}/><Text style={{color:C.mid,fontSize:12,flex:1}}>Contact professionnel</Text><View style={{paddingHorizontal:7,paddingVertical:2,borderRadius:7,backgroundColor:C.subtle}}><Text style={{color:C.white,fontSize:9,fontWeight:'700'}}>ACTIF</Text></View></View>}
-          {profile.open_to.length>0&&<View style={{gap:7}}><Text style={{color:C.muted,fontSize:9,fontWeight:'800',letterSpacing:1,textTransform:'uppercase'}}>Ouvert à</Text><View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>{profile.open_to.map(col=>(<View key={col} style={{flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:10,paddingVertical:5,borderRadius:18,borderWidth:StyleSheet.hairlineWidth,borderColor:C.blueDim,backgroundColor:'rgba(90,150,230,0.06)'}}><Ionicons name="checkmark-circle-outline" size={10} color={C.blue}/><Text style={{color:C.blue,fontSize:10,fontWeight:'600'}}>{col}</Text></View>))}</View></View>}
-        </CinemaAccordion>
-        <CinemaAccordion icon="layers-outline" title="Genres explorés" count={genreStats.length}>
-          {genreStats.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Regardez des films pour voir vos genres préférés</Text>:genreStats.map(([genre,count])=><GenreRowGalaxy key={genre} genre={genre} count={count} max={maxGenre}/>)}
-        </CinemaAccordion>
-        <CinemaAccordion icon="star-outline" title="Notes & avis" count={reviews.length}>
-          {reviews.length===0?<Text style={{color:C.muted,fontSize:12,textAlign:'center',paddingVertical:8}}>Aucune critique publiée</Text>:<View style={{gap:4}}>{[5,4,3,2,1].map(s=><StarRatingRowGalaxy key={s} rating={s} count={ratingDist[s]??0} max={maxRating}/>)}<Text style={{color:C.muted,fontSize:10,textAlign:'center',marginTop:6}}>Note moyenne : {avgRating} / 5</Text></View>}
-        </CinemaAccordion>
-        {profile.notable_works.length>0&&<CinemaAccordion icon="film-outline" title="Œuvres notables" count={profile.notable_works.length}>{profile.notable_works.map((w:any,i:number)=><NotableWorkGalaxy key={w.id??i} w={w} isLast={i===profile.notable_works.length-1}/>)}</CinemaAccordion>}
+      <View style={{marginTop:5}}>
+        <SecHead icon="heart-outline" label="Véloces Favoris" count={veloceErr?undefined:likedReels.length}/>
+        {veloceErr
+          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
+          :likedReels.length===0
+            ?<Empty icon="heart-outline" text="Aucun Véloce aimé" sub="Les Véloces likés apparaissent ici"/>
+            :<HRow pb={8} c={likedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
+        }
+        <Div/>
+        <SecHead icon="bookmark-outline" label="Véloces Enregistrés" count={veloceErr?undefined:savedReels.length}/>
+        {veloceErr
+          ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
+          :savedReels.length===0
+            ?<Empty icon="bookmark-outline" text="Aucun Véloce enregistré" sub="Les Véloces sauvegardés apparaissent ici"/>
+            :<HRow pb={8} c={savedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
+        }
+        {profile.notable_works.length>0&&(
+          <>
+            <Div/>
+            
+          </>
+        )}
         <View style={{height:110}}/>
       </View>
     );
-  },[loading,profile,genreStats,maxGenre,reviews,ratingDist,maxRating,avgRating]);
+  },[loading,profile.notable_works,likedReels,savedReels,veloceErr]);
 
   // ─── Tab Créations ──────────────────────────────────────────────────────────
   const renderCreations = useCallback(()=>{
@@ -796,14 +969,14 @@ export default function ProfileScreen() {
     );
   },[loading,reels,reelsByCat,hotId,router]);
 
-  const tabs=[{icon:'grid-outline' as const,label:'Films'},{icon:'star-outline' as const,label:'Cinéma'},{icon:'play-circle-outline' as const,label:'Créations'}];
+  const tabs=[{icon:'grid-outline' as const,label:'Films'},{icon:'star-outline' as const,label:'Véloces'},{icon:'play-circle-outline' as const,label:'Créations'}];
 
   return(
     <View style={{flex:1,backgroundColor:C.bg}}>
       <StatusBar style="light"/>
       <GalaxyBackground/>
       <ScrollView showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadGami(uid);loadShowLevel(uid);}}} tintColor={C.mid}/>}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={()=>{setRef(true);if(uid){loadAll(uid);loadShowLevel(uid);}}} tintColor={C.mid}/>}>
         <SafeAreaView edges={['top']}>
           {/* ★ Header branché sur gamiProfile (GamificationSystem) */}
           <ProfileHeader
@@ -811,6 +984,7 @@ export default function ProfileScreen() {
             filmCount={watched.length}
             critiqueCount={reviews.length}
             reelCount={reels.length}
+            followersCount={followersCount}
             gamiProfile={gamiProfile}
             showLevel={showLevel}
             streak={streak}
@@ -820,7 +994,26 @@ export default function ProfileScreen() {
           />
         </SafeAreaView>
 
-     
+        {/* ── Photo obligatoire ── */}
+        {!loading && !profile.avatar_url && (
+          <TouchableOpacity
+            onPress={nav.avatarEdit}
+            activeOpacity={0.82}
+            style={{
+              flexDirection:'row', alignItems:'center', gap:10,
+              marginHorizontal:H_PAD, marginBottom:12, padding:12,
+              borderRadius:14, borderWidth:1.5, borderColor:C.goldBd,
+              backgroundColor:'rgba(245,200,66,0.07)',
+            }}
+          >
+            <Ionicons name="camera-outline" size={18} color={C.gold}/>
+            <View style={{ flex:1 }}>
+              <Text style={{ color:C.gold, fontSize:12, fontWeight:'800', letterSpacing:0.2 }}>Ajoutez une photo de profil</Text>
+              <Text style={{ color:C.muted, fontSize:10, marginTop:1 }}>Votre identité Universe reste incomplète</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={14} color={C.gold}/>
+          </TouchableOpacity>
+        )}
 
         {/* Tabs */}
         <View style={{flexDirection:'row',borderTopWidth:StyleSheet.hairlineWidth,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginTop:10}}>
@@ -848,6 +1041,24 @@ export default function ProfileScreen() {
       <SeeAllModal visible={modal==='watched'}   onClose={()=>setModal(null)} type="watched"   title="Œuvres visionnées" icon="eye-outline"         works={watched}/>
       <SeeAllModal visible={modal==='recs'}      onClose={()=>setModal(null)} type="recs"      title="Recommandations"   icon="shuffle-outline"     works={recs}/>
       <SeeAllModal visible={modal==='creations'} onClose={()=>setModal(null)} type="creations" title="Mes créations"     icon="play-circle-outline" reels={reels} hotReelId={hotId}/>
+      {uid && (
+        <CosmosModal
+          visible={cosmosVisible}
+          onClose={() => setCosmosVisible(false)}
+          profile={gamiProfile}
+          userId={uid}
+          earnedCount={gamiBadges.filter(b => b.earned).length}
+          awardXP={awardXP}
+        />
+      )}
+      {levelUp && (
+        <LevelUpCelebration
+          level={levelUp.level}
+          title={levelUp.title}
+          visible={!!levelUp}
+          onClose={() => setLevelUp(null)}
+        />
+      )}
     </View>
   );
 }
