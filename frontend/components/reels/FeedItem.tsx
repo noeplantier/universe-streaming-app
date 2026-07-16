@@ -428,7 +428,7 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
       <View style={[StyleSheet.absoluteFill,fi.bg]}/>
 
       {!isWeb&&isNear&&!!src&&!hasErr&&_VideoView&&player&&(
-        <_VideoView player={player} style={[StyleSheet.absoluteFill,{width:itemW,height:itemH}]}
+        <_VideoView player={player} style={StyleSheet.absoluteFill}
           contentFit="cover" nativeControls={false} allowsFullscreen={false} allowsPictureInPicture={false}/>
       )}
       {isWeb&&!!src&&!hasErr&&(
@@ -475,7 +475,7 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
 
       {/* ★ Sidebar animée — fade fluide au lieu d'un hard-cut booléen */}
       <Animated.View
-        style={[fi.sidebar,{opacity:sidebarAnim}]}
+        style={[fi.sidebar,{opacity:sidebarAnim, bottom: 250 + insetBot}]}
         pointerEvents={showUI?'box-none':'none'}
       >
         <TouchableOpacity style={fi.sBtn} onPress={handleSideLike}>

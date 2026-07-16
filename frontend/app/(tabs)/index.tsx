@@ -289,7 +289,8 @@ function ReelsScreenInner() {
   const { width: W, height: H } = useWindowDimensions();
   const insets                  = useSafeAreaInsets();
   const { newReelId }           = useLocalSearchParams<{ newReelId?: string }>();
-  const ITEM_H                  = H;
+  const [feedH, setFeedH]       = useState(H);
+  const ITEM_H                  = feedH;
 
   // ★ Contexte — même Animated.Value pour TopHeader ET NavBar
   const { uiVisible, uiOpacity, setUIVisible } = useReelsUI();
@@ -527,7 +528,10 @@ function ReelsScreenInner() {
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <View style={s.root}>
+    <View
+      style={s.root}
+      onLayout={e => { const h = e.nativeEvent.layout.height; if (h > 0) setFeedH(h); }}
+    >
       <StatusBar style="light" translucent />
 
       <FlatList

@@ -18,7 +18,7 @@ import { StatusBar }    from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Haptics     from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { supabase }     from '@/lib/supabase';
+import { supabase, SUPABASE_ANON, SUPABASE_URL } from '@/lib/supabase';
 import GalaxyBackground from '@/components/shared/GalaxyBackground';
 import { getDeviceId }  from '@/services/api';
 import { useGamification, type GamiProfile } from '@/contexts/GamificationSystem';
@@ -134,19 +134,32 @@ function dataUriToBlob(dataUri: string): Blob {
   return new Blob([bytes], { type: mime });
 }
 
+// XHR upload sans supabase.auth — même pattern que VideoTab.tsx (SUPABASE_ANON bearer)
+function uploadAvatarXHR(path: string, blob: Blob): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const url = `${SUPABASE_URL}/storage/v1/object/community-images/${path}`;
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_ANON}`);
+    xhr.setRequestHeader('Content-Type', 'image/jpeg');
+    xhr.setRequestHeader('x-upsert', 'true');
+    xhr.onload  = () => (xhr.status >= 200 && xhr.status < 300) ? resolve() : reject(new Error(`${xhr.status}`));
+    xhr.onerror = () => reject(new Error('network'));
+    xhr.send(blob);
+  });
+}
+
 async function uploadAvatar(uri: string, userId: string): Promise<string|null> {
   try {
-    const path = `${userId}/avatar.jpg`;
+    // posts/ prefix — seul préfixe ouvert aux écritures anon dans community-images
+    const path = `posts/avatars/${userId}_avatar.jpg`;
     let blob: Blob;
 
     if (uri.startsWith('data:')) {
-      // ★ Pas de fetch() → parse manuel pour respecter la CSP connect-src
       blob = dataUriToBlob(uri);
     } else if (uri.startsWith('blob:') || uri.startsWith('http')) {
-      // blob: et https: sont autorisés par la CSP
       blob = await fetch(uri).then(r => r.blob());
     } else if (FileSystem) {
-      // Natif iOS / Android — lecture base64 via expo-file-system
       const b64   = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
       const bytes = new Uint8Array(atob(b64).split('').map(c => c.charCodeAt(0)));
       blob = new Blob([bytes], { type: 'image/jpeg' });
@@ -154,13 +167,8 @@ async function uploadAvatar(uri: string, userId: string): Promise<string|null> {
       blob = await fetch(uri).then(r => r.blob());
     }
 
-    const { data, error } = await supabase.storage
-      .from('avatars')
-      .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
-    if (error) throw error;
-
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(data.path);
-    return `${publicUrl}?t=${Date.now()}`;
+    await uploadAvatarXHR(path, blob);
+    return `${SUPABASE_URL}/storage/v1/object/public/community-images/${path}?t=${Date.now()}`;
   } catch (e) {
     console.error('[edit] avatar:', e);
     return null;
@@ -592,7 +600,9 @@ export default function EditProfileScreen() {
     }
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!granted) { Alert.alert('Permission requise',"Autorisez l'accès à votre galerie."); return; }
-    const res = await ImagePicker.launchImageLibraryAsync({mediaTypes:ImagePicker.MediaTypeOptions.Images,quality:0.88,allowsEditing:true,aspect:[1,1]});
+    const legacyTypes = !!(ImagePicker as any).MediaTypeOptions;
+    const imageTypes: any = legacyTypes ? (ImagePicker as any).MediaTypeOptions.Images : ['images'];
+    const res = await ImagePicker.launchImageLibraryAsync({mediaTypes:imageTypes,quality:0.88,allowsEditing:true,aspect:[1,1]});
     if (res.canceled||!res.assets?.[0]) return;
     await finishAvatarUpload(res.assets[0].uri);
   }, [finishAvatarUpload]);
