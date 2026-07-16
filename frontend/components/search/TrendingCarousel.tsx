@@ -32,9 +32,9 @@ export interface Work {
 }
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const CAROUSEL_ITEM_W = SCREEN_W * 0.8;
+const CAROUSEL_ITEM_W = SCREEN_W;
 const CAROUSEL_ITEM_H = CAROUSEL_ITEM_W * 1.5;
-const CAROUSEL_SPACING = 16;
+const CAROUSEL_SPACING = 0;
 
 const T = {
   navyMid: '#1a2235',
@@ -49,7 +49,7 @@ const T = {
 
 const cc = StyleSheet.create({
   card: { width: CAROUSEL_ITEM_W, height: CAROUSEL_ITEM_H, borderRadius: 22, overflow: 'hidden', backgroundColor: T.navyMid },
-  img: { width: '115%', height: '100%', position: 'absolute', left: '-7.5%' as any },
+  img: { width: '100%', height: '100%', position: 'absolute', left: 0 },
   rankWrap: { position: 'absolute', top: 0, right: 0, bottom: '35%', justifyContent: 'center', alignItems: 'flex-end', paddingRight: 12 },
   rankNum: { fontSize: 96, fontWeight: '900', lineHeight: 96, letterSpacing: -6, opacity: 0.9, color: 'rgba(255,255,255,0.2)' },
   originalBadge: { position: 'absolute', top: 14, left: 14, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(245,200,66,0.18)', paddingHorizontal: 9, paddingVertical: 4, borderRadius: 10, borderWidth: 0.5, borderColor: 'rgba(245,200,66,0.4)' },
@@ -124,23 +124,19 @@ interface TrendingCarouselProps {
 export const TrendingCarousel = memo(function TrendingCarousel({ items, loading }: TrendingCarouselProps) {
   const scrollX = useRef(new Animated.Value(0)).current;
   const flatRef = useRef<FlatList>(null);
-  const snapIv = CAROUSEL_ITEM_W + CAROUSEL_SPACING;
 
   // Extracteurs et rendu factorisés pour la performance
   const keyExtractor = useCallback((item: Work) => item.id.toString(), []);
   
   const renderItem = useCallback(({ item, index }: { item: Work; index: number }) => (
-    <View style={{ marginRight: CAROUSEL_SPACING }}>
-      <TrendingCard item={item} index={index} />
-    </View>
+    <TrendingCard item={item} index={index} />
   ), []);
 
-  // Calcul exact des positions pour éviter au moteur de list de devoir reflow les layout
   const getItemLayout = useCallback((_: any, index: number) => ({
-    length: snapIv,
-    offset: snapIv * index,
+    length: CAROUSEL_ITEM_W,
+    offset: CAROUSEL_ITEM_W * index,
     index,
-  }), [snapIv]);
+  }), []);
 
   if (loading) {
     return (
@@ -158,10 +154,9 @@ export const TrendingCarousel = memo(function TrendingCarousel({ items, loading 
       renderItem={renderItem}
       horizontal
       showsHorizontalScrollIndicator={false}
-      snapToInterval={snapIv}
+      pagingEnabled
       decelerationRate="fast"
       bounces={false}
-      contentContainerStyle={{ paddingHorizontal: CAROUSEL_SPACING }}
       onScroll={Animated.event(
         [{ nativeEvent: { contentOffset: { x: scrollX } } }],
         { useNativeDriver: true }

@@ -20,6 +20,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -2118,11 +2119,13 @@ const DailyQuestCard = memo(function DailyQuestCard({
   // ★ Le bouton Claim n'apparaît / n'est cliquable QUE si la progression
   // locale confirme la cible atteinte. La vérification serveur définitive
   // a lieu dans claimDailyQuest lui-même (voir useDailyQuests ci-dessus).
+  const { width: W } = useWindowDimensions();
+  const cardW = (W - 20 * 2 - 10) / 2;
   const trulyReady = readyToClaim && quest.progress >= quest.target;
   const pctStr = `${Math.round(quest.pct * 100)}%`;
 
   return (
-    <Animated.View style={[{ transform: [{ scale: trulyReady ? pulseAnim : 1 }] }, dq.cardWrap]}>
+    <Animated.View style={[{ transform: [{ scale: trulyReady ? pulseAnim : 1 }] }, dq.cardWrap, { width: cardW }]}>
       <TouchableOpacity
         activeOpacity={0.88}
         disabled={quest.claimed || quest.verifying}
@@ -2303,6 +2306,8 @@ const fsg = StyleSheet.create({
 });
 
 export const PillarsDashboard = memo(function PillarsDashboard({ pillars }: { pillars: PillarProgress[] }) {
+  const { width: W } = useWindowDimensions();
+  const cardW = (W - 20 * 2 - 10) / 2;
   return (
     <View style={pd.wrap}>
       <View style={pd.header}>
@@ -2311,7 +2316,7 @@ export const PillarsDashboard = memo(function PillarsDashboard({ pillars }: { pi
       </View>
       <View style={pd.grid}>
         {pillars.map(p => (
-          <TouchableOpacity key={p.key} activeOpacity={0.85} style={pd.card}>
+          <TouchableOpacity key={p.key} activeOpacity={0.85} style={[pd.card, { width: cardW }]}>
             <View style={[pd.iconWrap, { borderColor: `${p.color}35`, backgroundColor: `${p.color}14` }]}>
               <Ionicons name={p.icon} size={16} color={p.color} />
             </View>

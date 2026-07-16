@@ -899,6 +899,7 @@ const VideoTab = memo(function VideoTab() {
   // ─────────────────────────────────────────────────────────────────────────
   const submit = useCallback(async () => {
     // Validation
+    if (!video)              { setError('Sélectionne une vidéo.');      return; }
     if (!thumbUri)           { setError('Ajoute une miniature.');       return; }
     if (!form.title.trim())  { setError('Le titre est obligatoire.');   return; }
     if (!form.genre)         { setError('Sélectionne un genre.');       return; }
