@@ -150,25 +150,36 @@ function uploadAvatarXHR(path: string, blob: Blob): Promise<void> {
 }
 
 async function uploadAvatar(uri: string, userId: string): Promise<string|null> {
+  const path      = `posts/avatars/${userId}_avatar.jpg`;
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/community-images/${path}?t=${Date.now()}`;
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/community-images/${path}`;
   try {
-    // posts/ prefix — seul préfixe ouvert aux écritures anon dans community-images
-    const path = `posts/avatars/${userId}_avatar.jpg`;
-    let blob: Blob;
-
-    if (uri.startsWith('data:')) {
-      blob = dataUriToBlob(uri);
-    } else if (uri.startsWith('blob:') || uri.startsWith('http')) {
-      blob = await fetch(uri).then(r => r.blob());
-    } else if (FileSystem) {
-      const b64   = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      const bytes = new Uint8Array(atob(b64).split('').map(c => c.charCodeAt(0)));
-      blob = new Blob([bytes], { type: 'image/jpeg' });
-    } else {
-      blob = await fetch(uri).then(r => r.blob());
+    // iOS/Android native URI (file:// from expo-image-picker) :
+    // FileSystem.uploadAsync lit le fichier au niveau natif — aucun atob(), aucun Blob JS.
+    // C'est la seule approche fiable sur iOS (atob() = ReferenceError ou explosion mémoire).
+    if (FileSystem && !uri.startsWith('data:') && !uri.startsWith('blob:') && !uri.startsWith('http')) {
+      const res = await FileSystem.uploadAsync(uploadUrl, uri, {
+        httpMethod: 'POST',
+        uploadType: (FileSystem.FileSystemUploadType ?? {}).BINARY_CONTENT ?? 0,
+        headers: {
+          Authorization: `Bearer ${SUPABASE_ANON}`,
+          'Content-Type': 'image/jpeg',
+          'x-upsert': 'true',
+        },
+      });
+      if (res.status < 200 || res.status >= 300) {
+        console.error('[edit] avatar uploadAsync:', res.status, res.body);
+        return null;
+      }
+      return publicUrl;
     }
 
+    // Web : data: → blob via dataUriToBlob, blob:/http → fetch
+    const blob = uri.startsWith('data:')
+      ? dataUriToBlob(uri)
+      : await fetch(uri).then(r => r.blob());
     await uploadAvatarXHR(path, blob);
-    return `${SUPABASE_URL}/storage/v1/object/public/community-images/${path}?t=${Date.now()}`;
+    return publicUrl;
   } catch (e) {
     console.error('[edit] avatar:', e);
     return null;
@@ -564,63 +575,66 @@ export default function EditProfileScreen() {
   const updateWork = useCallback((w:NotableWork)=>setForm(p=>({...p,notable_works:p.notable_works.map(x=>x.id===w.id?w:x)})),[]);
   const deleteWork = useCallback((id:string)=>setForm(p=>({...p,notable_works:p.notable_works.filter(x=>x.id!==id)})),[]);
 
-  // ── Avatar ────────────────────────────────────────────────────────────────
   const finishAvatarUpload = useCallback(async (uri: string) => {
+    if (!userId) {
+      Alert.alert('Erreur', "Utilisateur non identifié.");
+      return;
+    }
+  
     setAVL(true);
-    if (Platform.OS!=='web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{});
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
+  
     try {
       const url = await uploadAvatar(uri, userId);
       if (!url) {
-        Alert.alert('Erreur upload', "L'upload vers le storage a échoué. Vérifiez la connexion ou les permissions Supabase.");
+        Alert.alert(
+          'Erreur upload',
+          "L'upload vers le storage a échoué. Vérifiez la connexion ou les permissions Supabase."
+        );
         return;
       }
+  
       setAvUrl(url);
-      // upsert guarantees the row is created if it doesn't exist yet
-      const { error: dbErr } = await supabase.from('profiles')
-        .upsert({ id: userId, avatar_url: url, updated_at: new Date().toISOString() }, { onConflict: 'id' });
-      if (dbErr) console.warn('[edit] avatar db:', dbErr.message);
-      // Mark profile as dirty so NavBar and profile.tsx re-fetch the avatar
-      try { SecureStore?.setItemAsync('profile_dirty', '1'); } catch {}
-      if (Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
-    } catch(e:any) { Alert.alert('Erreur', e?.message ?? "Impossible d'uploader la photo."); }
-    finally { setAVL(false); }
-  }, [userId]);
-
-  const handlePickAvatar = useCallback(async () => {
-    // expo-image-picker passe par FileReader.readAsDataURL() sur web, qui
-    // échoue sans message exploitable sur certains fichiers (ex: photos
-    // iCloud non encore téléchargées en local, HEIC). On bypass entièrement
-    // ImagePicker sur web — même <input type="file"> + blob: URI que
-    // app/settings.tsx, qui n'a jamais ce problème.
-    if (Platform.OS === 'web') {
-      if (typeof document === 'undefined') return;
-      const input = document.createElement('input');
-      input.type = 'file'; input.accept = 'image/*';
-      // Must be in the DOM before .click() — iOS Safari blocks detached-element clicks
-      input.style.cssText = 'position:fixed;top:-100px;left:-100px;width:0;height:0;opacity:0;';
-      document.body.appendChild(input);
-      input.onchange = (e: any) => {
-        if (document.body.contains(input)) document.body.removeChild(input);
-        const file = e.target.files?.[0]; if (!file) return;
-        // FileReader → data: URI — avoids blob: URL revocation on iOS Safari
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const dataUrl = ev.target?.result as string;
-          if (dataUrl) finishAvatarUpload(dataUrl);
-        };
-        reader.readAsDataURL(file);
+  
+      const payload = {
+        avatar_url: url,
+        updated_at: new Date().toISOString(),
       };
-      input.click();
-      return;
+  
+      // 1) Try update existing profile row
+      const { data: updatedRows, error: updErr } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', userId)
+        .select('id');
+  
+      if (updErr) throw updErr;
+  
+      // 2) If no row exists, insert it
+      if (!updatedRows || updatedRows.length === 0) {
+        const { error: insErr } = await supabase
+          .from('profiles')
+          .insert({ id: userId, ...payload });
+  
+        if (insErr) throw insErr;
+      }
+  
+      try {
+        await SecureStore?.setItemAsync('profile_dirty', String(Date.now()));
+      } catch {}
+  
+      if (Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
+    } catch (e: any) {
+      console.warn('[edit] avatar db/upload error:', e);
+      Alert.alert('Erreur', e?.message ?? "Impossible d'uploader la photo.");
+    } finally {
+      setAVL(false);
     }
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) { Alert.alert('Permission requise',"Autorisez l'accès à votre galerie."); return; }
-    const legacyTypes = !!(ImagePicker as any).MediaTypeOptions;
-    const imageTypes: any = legacyTypes ? (ImagePicker as any).MediaTypeOptions.Images : ['images'];
-    const res = await ImagePicker.launchImageLibraryAsync({mediaTypes:imageTypes,quality:0.88,allowsEditing:true,aspect:[1,1]});
-    if (res.canceled||!res.assets?.[0]) return;
-    await finishAvatarUpload(res.assets[0].uri);
-  }, [finishAvatarUpload]);
+  }, [userId]);
 
   // ── Validation ────────────────────────────────────────────────────────────
   const validate = useCallback(():boolean => {
@@ -793,4 +807,8 @@ export default function EditProfileScreen() {
       </SafeAreaView>
     </View>
   );
+}
+
+function handlePickAvatar(): void {
+  throw new Error('Function not implemented.');
 }

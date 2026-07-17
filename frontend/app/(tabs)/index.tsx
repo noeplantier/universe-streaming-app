@@ -49,6 +49,7 @@ const ALL_GENRES_KEY = 'all'; // doit matcher la clé émise par DropdownMenu
 // ─────────────────────────────────────────────────────────────────────────────
 interface SupabaseReel {
   id: string; created_at: string; user_id: string; video_url: string;
+  thumbnail_url: string | null;
   title: string | null; genre: string | null; director: string | null;
   year: string | null; synopsis: string | null; duration: number | null;
   likes_count: number; views_count: number; status: string;
@@ -72,7 +73,7 @@ function mapReel(r: SupabaseReel): FeedFilm {
   return {
     id:          r.id,
     video_url:   resolveVideoUrl(r.video_url),
-    poster_url:  `https://picsum.photos/seed/${r.id}/720/1280`,
+    poster_url:  r.thumbnail_url ? resolveVideoUrl(r.thumbnail_url) : `https://picsum.photos/seed/${r.id}/720/1280`,
     title:       r.title    ?? '',
     genre:       r.genre    ?? '',
     director:    r.director ?? '',
@@ -89,7 +90,7 @@ function mapReel(r: SupabaseReel): FeedFilm {
 }
 
 const COLS =
-  'id,created_at,user_id,video_url,title,genre,director,' +
+  'id,created_at,user_id,video_url,thumbnail_url,title,genre,director,' +
   'year,synopsis,duration,likes_count,views_count,status';
 
 const PAGE_SIZE = 20;

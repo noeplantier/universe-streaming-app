@@ -994,27 +994,7 @@ export default function ProfileScreen() {
           />
         </SafeAreaView>
 
-        {/* ── Photo obligatoire ── */}
-        {!loading && !profile.avatar_url && (
-          <TouchableOpacity
-            onPress={nav.avatarEdit}
-            activeOpacity={0.82}
-            style={{
-              flexDirection:'row', alignItems:'center', gap:10,
-              marginHorizontal:H_PAD, marginBottom:12, padding:12,
-              borderRadius:14, borderWidth:1.5, borderColor:C.goldBd,
-              backgroundColor:'rgba(245,200,66,0.07)',
-            }}
-          >
-            <Ionicons name="camera-outline" size={18} color={C.gold}/>
-            <View style={{ flex:1 }}>
-              <Text style={{ color:C.gold, fontSize:12, fontWeight:'800', letterSpacing:0.2 }}>Ajoutez une photo de profil</Text>
-              <Text style={{ color:C.muted, fontSize:10, marginTop:1 }}>Votre identité Universe reste incomplète</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={14} color={C.gold}/>
-          </TouchableOpacity>
-        )}
-
+      
         {/* Tabs */}
         <View style={{flexDirection:'row',borderTopWidth:StyleSheet.hairlineWidth,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginTop:10}}>
           {tabs.map(({icon,label},idx)=>{
