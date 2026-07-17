@@ -596,9 +596,19 @@ export default function EditProfileScreen() {
       if (typeof document === 'undefined') return;
       const input = document.createElement('input');
       input.type = 'file'; input.accept = 'image/*';
+      // Must be in the DOM before .click() — iOS Safari blocks detached-element clicks
+      input.style.cssText = 'position:fixed;top:-100px;left:-100px;width:0;height:0;opacity:0;';
+      document.body.appendChild(input);
       input.onchange = (e: any) => {
+        if (document.body.contains(input)) document.body.removeChild(input);
         const file = e.target.files?.[0]; if (!file) return;
-        finishAvatarUpload(URL.createObjectURL(file));
+        // FileReader → data: URI — avoids blob: URL revocation on iOS Safari
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const dataUrl = ev.target?.result as string;
+          if (dataUrl) finishAvatarUpload(dataUrl);
+        };
+        reader.readAsDataURL(file);
       };
       input.click();
       return;

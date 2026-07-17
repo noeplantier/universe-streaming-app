@@ -634,6 +634,8 @@ export function useGamification(userId: string, works: Work[] = [], opts?: { ski
   const [loading, setLoading] = useState(true);
   const [checkinsCount, setCheckinsCount] = useState(0);
   const skipBadges = !!opts?.skipBadges;
+  const profileRef = useRef<GamiProfile | null>(null);
+  profileRef.current = profile;
 
   useEffect(() => {
     if (!isValidUUID(userId)) {
@@ -757,20 +759,20 @@ useEffect(() => {
   }, [userId]);
 
 
-  const awardXP = useCallback((amount: number, _reason: string) => {
+  const awardXP = useCallback((amount: number, reason: string) => {
     if (!isValidUUID(userId)) return;
-    setProfile(prev => {
-      const newXp = prev.xp + amount;
-      const lvl = xpToLevel(newXp);
-      // Persist via quest_progress (source de vérité XP), fallback sur profiles
-      supabase.from('quest_progress').upsert(
-        { user_id: userId, xp: newXp, updated_at: new Date().toISOString() },
-        { onConflict: 'user_id' },
-      ).then(() => {}, () => {
-        supabase.from('profiles').update({ contribution_score: newXp }).eq('id', userId).then(() => {}, () => {});
-      });
-      return { ...prev, xp: newXp, ...lvl, title: TITLES[lvl.level - 1] };
-    });
+    const newXp = (profileRef.current?.xp ?? 0) + amount;
+    const lvl = xpToLevel(newXp);
+    setProfile(prev => ({ ...prev, xp: newXp, ...lvl, title: TITLES[lvl.level - 1] }));
+    supabase.from('quest_progress')
+      .upsert({ user_id: userId, xp: newXp, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      .then(({ error }) => {
+        if (error) {
+          console.error('[XP] quest_progress upsert failed:', reason, error.message);
+          supabase.from('profiles').update({ contribution_score: newXp }).eq('id', userId)
+            .then(() => {}, (e: any) => console.error('[XP] profiles fallback failed:', e));
+        }
+      }, (e: any) => console.error('[XP] network error:', reason, e));
   }, [userId]);
 
   const awardBadge = useCallback(async (badgeId: string) => {

@@ -288,6 +288,7 @@ export default function FilmDetailScreen() {
   const [videoUrl,      setVideoUrl]      = useState<string|null>(null);
   const [pendingOpen,   setPendingOpen]   = useState(false);
   const [creatorReelVideoUrl, setCreatorReelVideoUrl] = useState<string|null>(null);
+  const [phase2Loading,       setPhase2Loading]       = useState(false);
 
   const heartSc = useRef(new Animated.Value(1)).current;
   const reveal  = useRef(new Animated.Value(0)).current;
@@ -324,12 +325,14 @@ export default function FilmDetailScreen() {
         if ((favData as any)?.data) setSaved(true);
         setLoading(false);
 
-        // Phase 2 : similaires + reels créateurs en parallèle (pros supprimés)
+        // Phase 2 : similaires + reels créateurs en parallèle
+        setPhase2Loading(true);
         const [simItems, creatorItems] = await Promise.all([
           fetchSimilarWorks(workData),
           fetchCreatorReels(workData.genre ?? ''),
         ]);
         if (dead) return;
+        setPhase2Loading(false);
         setSimilar(simItems);
         setCreators(creatorItems);
 
@@ -352,7 +355,7 @@ export default function FilmDetailScreen() {
   }, [rawId, userId]);
 
   // Reset sur changement d'id
-  useEffect(() => { setLiked(false); setExpanded(false); setSaved(false); setVideoUrl(null); setCreatorReelVideoUrl(null); setPendingOpen(false); }, [rawId]);
+  useEffect(() => { setLiked(false); setExpanded(false); setSaved(false); setVideoUrl(null); setCreatorReelVideoUrl(null); setPendingOpen(false); setPhase2Loading(false); }, [rawId]);
 
   // ── ★ handleSave — écrit dans user_favorites ────────────────────────────
   const handleSave = useCallback(async () => {
@@ -520,15 +523,18 @@ export default function FilmDetailScreen() {
             {work.year!=null && <StatPill icon="calendar-outline" value={String(work.year)} label="Année"/>}
           </View>
 
-          {/* ★ Bouton Regarder — écrit dans user_history */}
-          <TouchableOpacity style={s.watchBtn} onPress={handleWatch} activeOpacity={0.88}>
+          {/* ★ Bouton Regarder — spinner pendant phase2, play dès que l'URL est prête */}
+          <TouchableOpacity style={s.watchBtn} onPress={handleWatch} activeOpacity={0.88}
+            disabled={phase2Loading && !creatorReelVideoUrl && !work.video_url}>
             <LinearGradient colors={[C.navyBright, C.navyMid]} start={{ x:0, y:0 }} end={{ x:1, y:0 }} style={s.watchGrad}>
-              <View style={s.watchIcon}><Ionicons name="play" size={18} color={C.white}/></View>
+              {phase2Loading && !creatorReelVideoUrl && !work.video_url
+                ? <ActivityIndicator size="small" color={C.white} style={{ width:38 }}/>
+                : <View style={s.watchIcon}><Ionicons name="play" size={18} color={C.white}/></View>
+              }
               <View>
                 <Text style={s.watchTxt}>Regarder</Text>
                 {work.duration!=null && <Text style={s.watchMeta}>{fmtDur(work.duration)} · HD</Text>}
               </View>
-           
             </LinearGradient>
           </TouchableOpacity>
 

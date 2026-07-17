@@ -87,12 +87,12 @@ const Spinner=memo(function Spinner(){
 // ── WebPlayer ─────────────────────────────────────────────────────────────────
 interface WPProps {
   src:string;paused:boolean;isActive:boolean;muted:boolean;
-  itemW:number;itemH:number;
+  itemW:number;itemH:number;poster?:string;
   onPlay:(v:boolean)=>void;onTime:(ct:number,dur:number)=>void;
   onWait:(v:boolean)=>void;onErr:()=>void;
   seekRef:React.MutableRefObject<((t:number)=>void)|null>;
 }
-const WebPlayer=memo(function WebPlayer({src,paused,isActive,muted,itemW,itemH,onPlay,onTime,onWait,onErr,seekRef}:WPProps){
+const WebPlayer=memo(function WebPlayer({src,paused,isActive,muted,itemW,itemH,poster,onPlay,onTime,onWait,onErr,seekRef}:WPProps){
   const ref=useRef<HTMLVideoElement>(null);
   useEffect(()=>{ seekRef.current=(t)=>{ if(ref.current) ref.current.currentTime=t; }; return()=>{ seekRef.current=null; }; },[seekRef]);
   useEffect(()=>{
@@ -116,7 +116,8 @@ const WebPlayer=memo(function WebPlayer({src,paused,isActive,muted,itemW,itemH,o
       v.removeEventListener('canplay',oC);v.removeEventListener('error',onErr);
     };
   },[onPlay,onTime,onWait,onErr]);
-  return React.createElement('video',{ref,src,muted,playsInline:true,preload:'auto',
+  // poster shows the thumbnail immediately while the video loads
+  return React.createElement('video',{ref,src,muted,playsInline:true,preload:'auto',poster:poster||undefined,
     style:{position:'absolute',top:0,left:0,width:itemW,height:itemH,objectFit:'cover',background:'#000'}});
 });
 
@@ -433,7 +434,8 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
       )}
       {isWeb&&!!src&&!hasErr&&(
         <WebPlayer src={src} paused={isPaused} isActive={isActive&&screenFocused} muted={muted}
-          itemW={itemW} itemH={itemH} onPlay={onWebPlay} onTime={onWebTime}
+          itemW={itemW} itemH={itemH} poster={film.poster_url||undefined}
+          onPlay={onWebPlay} onTime={onWebTime}
           onWait={onWebWait} onErr={onWebErr} seekRef={seekRef}/>
       )}
       {!src&&(

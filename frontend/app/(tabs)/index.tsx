@@ -552,9 +552,9 @@ function ReelsScreenInner() {
         scrollEventThrottle={16}
         onEndReached={loadMore}
         onEndReachedThreshold={0.5}
-        windowSize={3}
-        maxToRenderPerBatch={3}
-        initialNumToRender={3}
+        windowSize={5}
+        maxToRenderPerBatch={2}
+        initialNumToRender={2}
         updateCellsBatchingPeriod={100}
         removeClippedSubviews={Platform.OS !== 'web'}
         overScrollMode="never"

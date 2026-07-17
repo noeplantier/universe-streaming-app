@@ -57,7 +57,7 @@ const NavAvatar = memo(function NavAvatar({ profile }: { profile: ProfileMini | 
         />
       ) : (
         <View style={[ns.avatar, ns.monogram]}>
-          <Text style={ns.mono}>{initials}</Text>
+          <Ionicons name="person-circle-outline" size={28} color="rgba(255,255,255,0.45)"/>
         </View>
       )}
     </View>
