@@ -150,25 +150,36 @@ function uploadAvatarXHR(path: string, blob: Blob): Promise<void> {
 }
 
 async function uploadAvatar(uri: string, userId: string): Promise<string|null> {
+  const path      = `posts/avatars/${userId}_avatar.jpg`;
+  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/community-images/${path}?t=${Date.now()}`;
+  const uploadUrl = `${SUPABASE_URL}/storage/v1/object/community-images/${path}`;
   try {
-    // posts/ prefix — seul préfixe ouvert aux écritures anon dans community-images
-    const path = `posts/avatars/${userId}_avatar.jpg`;
-    let blob: Blob;
-
-    if (uri.startsWith('data:')) {
-      blob = dataUriToBlob(uri);
-    } else if (uri.startsWith('blob:') || uri.startsWith('http')) {
-      blob = await fetch(uri).then(r => r.blob());
-    } else if (FileSystem) {
-      const b64   = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' });
-      const bytes = new Uint8Array(atob(b64).split('').map(c => c.charCodeAt(0)));
-      blob = new Blob([bytes], { type: 'image/jpeg' });
-    } else {
-      blob = await fetch(uri).then(r => r.blob());
+    // iOS/Android native URI (file:// from expo-image-picker) :
+    // FileSystem.uploadAsync lit le fichier au niveau natif — aucun atob(), aucun Blob JS.
+    // C'est la seule approche fiable sur iOS (atob() = ReferenceError ou explosion mémoire).
+    if (FileSystem && !uri.startsWith('data:') && !uri.startsWith('blob:') && !uri.startsWith('http')) {
+      const res = await FileSystem.uploadAsync(uploadUrl, uri, {
+        httpMethod: 'POST',
+        uploadType: (FileSystem.FileSystemUploadType ?? {}).BINARY_CONTENT ?? 0,
+        headers: {
+          Authorization: `Bearer ${SUPABASE_ANON}`,
+          'Content-Type': 'image/jpeg',
+          'x-upsert': 'true',
+        },
+      });
+      if (res.status < 200 || res.status >= 300) {
+        console.error('[edit] avatar uploadAsync:', res.status, res.body);
+        return null;
+      }
+      return publicUrl;
     }
 
+    // Web : data: → blob via dataUriToBlob, blob:/http → fetch
+    const blob = uri.startsWith('data:')
+      ? dataUriToBlob(uri)
+      : await fetch(uri).then(r => r.blob());
     await uploadAvatarXHR(path, blob);
-    return `${SUPABASE_URL}/storage/v1/object/public/community-images/${path}?t=${Date.now()}`;
+    return publicUrl;
   } catch (e) {
     console.error('[edit] avatar:', e);
     return null;
@@ -580,7 +591,7 @@ export default function EditProfileScreen() {
         .upsert({ id: userId, avatar_url: url, updated_at: new Date().toISOString() }, { onConflict: 'id' });
       if (dbErr) console.warn('[edit] avatar db:', dbErr.message);
       // Mark profile as dirty so NavBar and profile.tsx re-fetch the avatar
-      try { SecureStore?.setItemAsync('profile_dirty', '1'); } catch {}
+      try { SecureStore?.setItemAsync('profile_dirty', String(Date.now())); } catch {}
       if (Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
     } catch(e:any) { Alert.alert('Erreur', e?.message ?? "Impossible d'uploader la photo."); }
     finally { setAVL(false); }

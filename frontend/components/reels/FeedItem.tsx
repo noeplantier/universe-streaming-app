@@ -13,7 +13,7 @@ import React, {
   memo, useCallback, useEffect, useRef, useState,
 } from 'react';
 import {
-  Animated, Platform, StyleSheet,
+  Animated, Image, Platform, StyleSheet,
   Text, TouchableOpacity, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -428,6 +428,10 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
     <View style={[fi.root,{width:itemW,height:itemH}]}>
       <View style={[StyleSheet.absoluteFill,fi.bg]}/>
 
+      {/* Thumbnail natif — couvre l'écran noir pendant le buffering */}
+      {!isWeb&&!!film.poster_url&&(
+        <Image source={{uri:film.poster_url}} style={{...StyleSheet.absoluteFillObject,width:itemW,height:itemH}} resizeMode="cover"/>
+      )}
       {!isWeb&&isNear&&!!src&&!hasErr&&_VideoView&&player&&(
         <_VideoView player={player} style={StyleSheet.absoluteFill}
           contentFit="cover" nativeControls={false} allowsFullscreen={false} allowsPictureInPicture={false}/>

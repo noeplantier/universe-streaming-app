@@ -581,7 +581,7 @@ import React, {
     const [muted, setMuted]=useState(true);
     const [acting,setActing]=useState<'approve'|'reject'|null>(null);
   
-    const player=_hook(src||null,setupPlayer);
+    const player=_hook(isActive?(src||null):null,setupPlayer);
     const {isPlaying}=_useEvent(player,'playingChange',{isPlaying:false});
     const cardOp=useRef(new Animated.Value(1)).current;
     const selScale=useRef(new Animated.Value(1)).current;
@@ -622,7 +622,7 @@ import React, {
             style:{width:'100%',height:'100%',objectFit:'cover',borderRadius:14},
           })}
   
-          {!src&&!thumb&&(
+          {!src&&!reel.thumbnail_url&&(
             <View style={rc.noVideo}>
               <Ionicons name="videocam-off-outline" size={28} color={C.muted}/>
               <Text style={{color:C.muted,fontSize:10,marginTop:6}}>Aucune vidéo</Text>
