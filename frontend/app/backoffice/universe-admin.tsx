@@ -748,7 +748,11 @@ import React, {
         {activeTab==='approved'&&(
           <View style={rc.approvedRow}>
             <Ionicons name="checkmark-circle" size={13} color={C.green}/>
-            <Text style={rc.approvedTxt}>Visible · validé {fmtDate(reel.moderated_at,true)}</Text>
+            <Text style={[rc.approvedTxt,{flex:1}]}>Visible · validé {fmtDate(reel.moderated_at,true)}</Text>
+            <TouchableOpacity onPress={()=>onReject(reel.id)} activeOpacity={0.80} style={rc.rejSmall}>
+              <Ionicons name="close-circle-outline" size={14} color={C.red}/>
+              <Text style={[rc.approvedTxt,{color:C.red}]}>Rejeter</Text>
+            </TouchableOpacity>
           </View>
         )}
       </Animated.View>
@@ -793,6 +797,7 @@ import React, {
     reapproveTxt: {color:C.green,fontSize:11,fontWeight:'600',flex:1},
     approvedRow:  {flexDirection:'row',alignItems:'center',gap:6,padding:10,paddingTop:4},
     approvedTxt:  {color:C.green,fontSize:11},
+    rejSmall:     {flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:8,paddingVertical:4},
     bg:           {backgroundColor:C.bg},
   });
   
@@ -1231,9 +1236,11 @@ import React, {
             )}
   
             {reel.status==='approved'&&(
-              <TouchableOpacity style={dm.actionBtnRej} onPress={()=>{onReject(reel.id);onClose();}} activeOpacity={0.85}>
+              <TouchableOpacity style={dm.actionBtnRej}
+                onPress={()=>{onClose();setTimeout(()=>onReject(reel.id),160);}}
+                activeOpacity={0.85}>
                 <Ionicons name="close-circle" size={16} color={C.white}/>
-                <Text style={dm.actionTxt}>Rétracter la validation</Text>
+                <Text style={dm.actionTxt}>Rejeter après réflexion</Text>
               </TouchableOpacity>
             )}
           </ScrollView>

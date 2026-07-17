@@ -239,13 +239,6 @@ export default function LoginScreen() {
             </View>
           </Animated.View>
 
-          {/* ── Citation manifeste ──────────────────────────────────────── */}
-          <Animated.View style={[s.quoteWrap, {
-            opacity: quoteAnim,
-            transform: [{ translateY: quoteAnim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) }],
-          }]}>
-            <ManifestoQuote />
-          </Animated.View>
 
           {/* ── Séparateur élégant ──────────────────────────────────────── */}
           <View style={s.sep}>
