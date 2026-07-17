@@ -575,66 +575,75 @@ export default function EditProfileScreen() {
   const updateWork = useCallback((w:NotableWork)=>setForm(p=>({...p,notable_works:p.notable_works.map(x=>x.id===w.id?w:x)})),[]);
   const deleteWork = useCallback((id:string)=>setForm(p=>({...p,notable_works:p.notable_works.filter(x=>x.id!==id)})),[]);
 
+  // ── Avatar ────────────────────────────────────────────────────────────────
   const finishAvatarUpload = useCallback(async (uri: string) => {
-    if (!userId) {
-      Alert.alert('Erreur', "Utilisateur non identifié.");
-      return;
-    }
-  
     setAVL(true);
-    if (Platform.OS !== 'web') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    }
-  
+    if (Platform.OS!=='web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(()=>{});
     try {
       const url = await uploadAvatar(uri, userId);
       if (!url) {
-        Alert.alert(
-          'Erreur upload',
-          "L'upload vers le storage a échoué. Vérifiez la connexion ou les permissions Supabase."
-        );
+        Alert.alert('Erreur upload', "L'upload vers le storage a échoué. Vérifiez la connexion ou les permissions Supabase.");
         return;
       }
-  
       setAvUrl(url);
-  
-      const payload = {
-        avatar_url: url,
-        updated_at: new Date().toISOString(),
-      };
-  
-      // 1) Try update existing profile row
-      const { data: updatedRows, error: updErr } = await supabase
-        .from('profiles')
-        .update(payload)
-        .eq('id', userId)
-        .select('id');
-  
-      if (updErr) throw updErr;
-  
-      // 2) If no row exists, insert it
-      if (!updatedRows || updatedRows.length === 0) {
-        const { error: insErr } = await supabase
-          .from('profiles')
-          .insert({ id: userId, ...payload });
-  
-        if (insErr) throw insErr;
-      }
-  
-      try {
-        await SecureStore?.setItemAsync('profile_dirty', String(Date.now()));
-      } catch {}
-  
-      if (Platform.OS !== 'web') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-      }
-    } catch (e: any) {
-      console.warn('[edit] avatar db/upload error:', e);
-      Alert.alert('Erreur', e?.message ?? "Impossible d'uploader la photo.");
-    } finally {
-      setAVL(false);
-    }
+      // upsert guarantees the row is created if it doesn't exist yet
+      const { error: dbErr } = await supabase.from('profiles')
+        .upsert({ id: userId, avatar_url: url, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+      if (dbErr) console.warn('[edit] avatar db:', dbErr.message);
+      // Mark profile as dirty so NavBar and profile.tsx re-fetch the avatar
+      try { SecureStore?.setItemAsync('profile_dirty', String(Date.now())); } catch {}
+      if (Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
+    } catch(e:any) { Alert.alert('Erreur', e?.message ?? "Impossible d'uploader la photo."); }
+    finally { setAVL(false); }
   }, [userId]);
+
+  const handlePickAvatar = useCallback(async () => {
+    // expo-image-picker passe par FileReader.readAsDataURL() sur web, qui
+    // échoue sans message exploitable sur certains fichiers (ex: photos
+    // iCloud non encore téléchargées en local, HEIC). On bypass entièrement
+    // ImagePicker sur web — même <input type="file"> + blob: URI que
+    // app/settings.tsx, qui n'a jamais ce problème.
+    if (Platform.OS === 'web') {
+      if (typeof document === 'undefined') return;
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*';
+      // Must be in the DOM before .click() — iOS Safari blocks detached-element clicks
+      input.style.cssText = 'position:fixed;top:-100px;left:-100px;width:0;height:0;opacity:0;';
+      document.body.appendChild(input);
+      input.onchange = (e: any) => {
+        if (document.body.contains(input)) document.body.removeChild(input);
+        const file = e.target.files?.[0]; if (!file) return;
+        // FileReader → data: URI — avoids blob: URL revocation on iOS Safari
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const dataUrl = ev.target?.result as string;
+          if (dataUrl) finishAvatarUpload(dataUrl);
+        };
+        reader.readAsDataURL(file);
+      };
+      input.click();
+      return;
+    }
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) { Alert.alert('Permission requise',"Autorisez l'accès à votre galerie."); return; }
+    const legacyTypes = !!(ImagePicker as any).MediaTypeOptions;
+    const imageTypes: any = legacyTypes ? (ImagePicker as any).MediaTypeOptions.Images : ['images'];
+    const res = await ImagePicker.launchImageLibraryAsync({mediaTypes:imageTypes,quality:0.88,allowsEditing:true,aspect:[1,1]});
+    if (res.canceled||!res.assets?.[0]) return;
+    await finishAvatarUpload(res.assets[0].uri);
+  }, [finishAvatarUpload]);
+
+  // iOS Safari blocks programmatic input.click() — this onChange fires from a direct user tap on the overlay <input>
+  const handleWebAvatarChange = useCallback((e: any) => {
+    const file = e.target?.files?.[0]; if (!file) return;
+    e.target.value = '';
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (dataUrl) finishAvatarUpload(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  }, [finishAvatarUpload]);
 
   // ── Validation ────────────────────────────────────────────────────────────
   const validate = useCallback(():boolean => {
@@ -692,7 +701,10 @@ export default function EditProfileScreen() {
 
   const renderIdentity = () => (
     <View>
-      <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} isPro={form.is_pro} loading={avLoading} onPress={handlePickAvatar}/>
+      <View style={{alignSelf:'center',position:'relative'}}>
+        <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} isPro={form.is_pro} loading={avLoading} onPress={Platform.OS==='web'?()=>{}:handlePickAvatar}/>
+        {Platform.OS==='web'&&React.createElement('input',{type:'file',accept:'image/*',onChange:handleWebAvatarChange,style:{position:'absolute',top:0,left:0,right:0,bottom:0,opacity:0,cursor:'pointer',zIndex:10}})}
+      </View>
       <LevelPreview profile={gamiProfile}/>
       <Toggle label="Afficher mon niveau sur mon profil" subtitle="Visible publiquement sur votre profil, sinon réservé à vous" value={showLevelOnProfile} onChange={toggleShowLevel}/>
       <Divider/>
@@ -807,8 +819,4 @@ export default function EditProfileScreen() {
       </SafeAreaView>
     </View>
   );
-}
-
-function handlePickAvatar(): void {
-  throw new Error('Function not implemented.');
 }

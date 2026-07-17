@@ -117,7 +117,7 @@ const WebPlayer=memo(function WebPlayer({src,paused,isActive,muted,itemW,itemH,p
     };
   },[onPlay,onTime,onWait,onErr]);
   // poster shows the thumbnail immediately while the video loads
-  return React.createElement('video',{ref,src,muted,playsInline:true,preload:'auto',poster:poster||undefined,
+  return React.createElement('video',{ref,src,muted,playsInline:true,preload:isActive?'auto':'metadata',poster:poster||undefined,
     style:{position:'absolute',top:0,left:0,width:itemW,height:itemH,objectFit:'cover',background:'#000'}});
 });
 
@@ -149,7 +149,7 @@ const FeedItem=memo(function FeedItem({film,isActive,isNear,screenFocused,itemW,
 
   const [liked,    setLiked]   =useState(film.is_liked??false);
   // muted : contrôlé par la SideBar (prop) ou localement
-  const [_mutedLocal, setMuted]   =useState(false);
+  const [_mutedLocal, setMuted]   =useState(isWeb);  // muted by default on web — iOS Safari blocks unmuted autoplay
   const muted = mutedProp !== undefined ? mutedProp : _mutedLocal;
   const [saved,    setSaved]   =useState(film.is_saved??false);
 
