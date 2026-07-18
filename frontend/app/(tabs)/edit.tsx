@@ -420,7 +420,7 @@ const TabNav = memo(({active,onChange}:{active:Section;onChange:(s:Section)=>voi
 });
 
 // ─── Avatar Preview ───────────────────────────────────────────────────────────
-const AvatarPreview = memo(({name,url,isPro,loading,onPress}:{name:string;url:string;isPro:boolean;loading:boolean;onPress:()=>void}) => {
+const AvatarPreview = memo(({name,url,isPro,loading,onPress,onWebChange}:{name:string;url:string;isPro:boolean;loading:boolean;onPress:()=>void;onWebChange?:(e:any)=>void}) => {
   const init = useMemo(() => (name||'?').trim().split(/\s+/).map(n=>n[0]).join('').toUpperCase().slice(0,2),[name]);
   const [err,setErr] = useState(false);
   useEffect(() => setErr(false),[url]);
@@ -448,12 +448,14 @@ const AvatarPreview = memo(({name,url,isPro,loading,onPress}:{name:string;url:st
             : <Ionicons name="camera-outline" size={13} color={C.bg}/>
           }
         </View>
+        {Platform.OS==='web'&&onWebChange&&React.createElement('input',{type:'file',accept:'image/*',onChange:onWebChange,style:{position:'absolute',top:0,left:0,width:80,height:80,opacity:0,cursor:'pointer',zIndex:10}})}
       </TouchableOpacity>
       <View style={{flex:1,gap:6}}>
         <Text style={{color:C.white,fontSize:15,fontWeight:'700'}}>{name||'Votre nom'}</Text>
         <Text style={{color:C.muted,fontSize:11,lineHeight:16}}>{photoLabel}</Text>
-        <TouchableOpacity onPress={onPress} style={{paddingHorizontal:14,paddingVertical:6,borderRadius:20,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(255,255,255,0.22)',alignSelf:'flex-start',marginTop:2}} activeOpacity={0.80}>
+        <TouchableOpacity onPress={Platform.OS==='web'?()=>{}:onPress} style={{paddingHorizontal:14,paddingVertical:6,borderRadius:20,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(255,255,255,0.22)',alignSelf:'flex-start',marginTop:2,position:'relative'}} activeOpacity={0.80}>
           <Text style={{color:C.offWhite,fontSize:12,fontWeight:'600'}}>{actionLabel}</Text>
+          {Platform.OS==='web'&&onWebChange&&React.createElement('input',{type:'file',accept:'image/*',onChange:onWebChange,style:{position:'absolute',top:0,left:0,right:0,bottom:0,opacity:0,cursor:'pointer',zIndex:10}})}
         </TouchableOpacity>
       </View>
     </View>
@@ -701,10 +703,7 @@ export default function EditProfileScreen() {
 
   const renderIdentity = () => (
     <View>
-      <View style={{alignSelf:'center',position:'relative'}}>
-        <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} isPro={form.is_pro} loading={avLoading} onPress={Platform.OS==='web'?()=>{}:handlePickAvatar}/>
-        {Platform.OS==='web'&&React.createElement('input',{type:'file',accept:'image/*',onChange:handleWebAvatarChange,style:{position:'absolute',top:0,left:0,right:0,bottom:0,opacity:0,cursor:'pointer',zIndex:10}})}
-      </View>
+      <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} isPro={form.is_pro} loading={avLoading} onPress={Platform.OS==='web'?()=>{}:handlePickAvatar} onWebChange={handleWebAvatarChange}/>
       <LevelPreview profile={gamiProfile}/>
       <Toggle label="Afficher mon niveau sur mon profil" subtitle="Visible publiquement sur votre profil, sinon réservé à vous" value={showLevelOnProfile} onChange={toggleShowLevel}/>
       <Divider/>
