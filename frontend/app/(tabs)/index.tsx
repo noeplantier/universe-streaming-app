@@ -379,7 +379,7 @@ function ReelsScreenInner() {
   commitRef.current = commitIndex;
 
   // ── Scroll ────────────────────────────────────────────────────────────────
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: any[] }) => {

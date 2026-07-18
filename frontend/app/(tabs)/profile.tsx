@@ -287,8 +287,9 @@ const ProfileHeader = memo(function ProfileHeader({
   },[]);
 
   // Pré-calcul strings (perf)
-  const dn    = profile.display_name || profile.username || 'Cinéphile';
-  const init  = dn.trim().split(/\s+/).map(n=>n[0]).join('').toUpperCase().slice(0,2);
+  const cleanUsername = /^user_[0-9a-f-]{8,}$/i.test(profile.username??'') ? '' : (profile.username??'');
+  const dn    = profile.display_name || cleanUsername || '';
+  const init  = (dn||'?').trim().split(/\s+/).filter(Boolean).map((n:string)=>n[0]||'').join('').toUpperCase().slice(0,2)||'?';
   const links = useMemo(()=>[
     {k:'ig',icon:'logo-instagram' as const,url:profile.social_instagram,label:'Instagram'},
     {k:'vi',icon:'videocam-outline' as const,url:profile.social_vimeo,label:'Vimeo'},
@@ -308,7 +309,7 @@ const ProfileHeader = memo(function ProfileHeader({
   },[gamiProfile.level]);
 
   const lvlStr = String(gamiProfile.level);
-  const subLine = [profile.username&&`@${profile.username}`,profile.location].filter(Boolean).join(' · ');
+  const subLine = [cleanUsername&&`@${cleanUsername}`,profile.location].filter(Boolean).join(' · ');
 
   return (
     <View style={ph.root}>
