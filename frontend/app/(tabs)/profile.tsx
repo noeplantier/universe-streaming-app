@@ -994,45 +994,26 @@ export default function ProfileScreen() {
           />
         </SafeAreaView>
 
-        {/* ── Photo de profil obligatoire — Modal bloquant ── */}
-        <Modal
-          visible={!loading && !profile.avatar_url}
-          transparent
-          animationType="fade"
-          statusBarTranslucent
-          onRequestClose={()=>{}}
-        >
-          <View style={{flex:1,backgroundColor:'rgba(3,2,10,0.94)',alignItems:'center',justifyContent:'center',padding:28}}>
-            <LinearGradient
-              colors={['#0D2040','#070C17']}
-              style={{width:'100%',borderRadius:22,padding:30,alignItems:'center',borderWidth:1,borderColor:'rgba(245,200,66,0.22)'}}
-            >
-              <View style={{width:76,height:76,borderRadius:38,backgroundColor:'rgba(245,200,66,0.10)',alignItems:'center',justifyContent:'center',marginBottom:22,borderWidth:1,borderColor:'rgba(245,200,66,0.25)'}}>
-                <Ionicons name="camera-outline" size={36} color={C.gold}/>
-              </View>
-              <Text style={{color:C.white,fontSize:20,fontWeight:'900',textAlign:'center',marginBottom:10,letterSpacing:0.2}}>
-                Photo de profil requise
-              </Text>
-              <Text style={{color:C.muted,fontSize:13,textAlign:'center',lineHeight:21,marginBottom:30}}>
-                Votre identité Universe est incomplète.{'\n'}Une photo est nécessaire pour continuer.
-              </Text>
-              <TouchableOpacity
-                onPress={nav.avatarEdit}
-                activeOpacity={0.85}
-                style={{width:'100%',borderRadius:14,overflow:'hidden'}}
-              >
-                <LinearGradient
-                  colors={['#F5C842','#D4A800']}
-                  start={{x:0,y:0}} end={{x:1,y:0}}
-                  style={{paddingVertical:15,alignItems:'center',flexDirection:'row',justifyContent:'center',gap:9}}
-                >
-                  <Ionicons name="camera" size={18} color="#070C17"/>
-                  <Text style={{color:'#070C17',fontSize:15,fontWeight:'900',letterSpacing:0.1}}>Ajouter ma photo</Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </LinearGradient>
-          </View>
-        </Modal>
+        {/* ── Photo obligatoire ── */}
+        {!loading && !profile.avatar_url && (
+          <TouchableOpacity
+            onPress={nav.avatarEdit}
+            activeOpacity={0.82}
+            style={{
+              flexDirection:'row', alignItems:'center', gap:10,
+              marginHorizontal:H_PAD, marginBottom:12, padding:12,
+              borderRadius:14, borderWidth:1.5, borderColor:C.goldBd,
+              backgroundColor:'rgba(245,200,66,0.07)',
+            }}
+          >
+            <Ionicons name="camera-outline" size={18} color={C.gold}/>
+            <View style={{ flex:1 }}>
+              <Text style={{ color:C.gold, fontSize:12, fontWeight:'800', letterSpacing:0.2 }}>Ajoutez une photo de profil</Text>
+              <Text style={{ color:C.muted, fontSize:10, marginTop:1 }}>Votre identité Universe reste incomplète</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={14} color={C.gold}/>
+          </TouchableOpacity>
+        )}
 
         {/* Tabs */}
         <View style={{flexDirection:'row',borderTopWidth:StyleSheet.hairlineWidth,borderBottomWidth:StyleSheet.hairlineWidth,borderColor:C.border,marginTop:10}}>
