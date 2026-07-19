@@ -75,12 +75,12 @@ async function fetchSimilarWorks(work:Work): Promise<Work[]> {
   const { data } = await supabase.from('works').select('id,title,image,likes,genre,category,is_original,duration').neq('id',work.id).eq('genre',work.genre).order('likes',{ascending:false}).limit(6);
   return (data ?? []) as Work[];
 }
-// Search by genre (not title) — genre-based match is reliable and indexed
-async function fetchCreatorReels(genre:string): Promise<CreatorReel[]> {
-  if (!genre) return [];
+// Search by work_id — fetch reels specifically linked to this work
+async function fetchCreatorReels(workId:number): Promise<CreatorReel[]> {
+  if (!workId) return [];
   const { data } = await supabase.from('reels')
     .select('id,user_id,title,video_url,thumbnail_url,duration,likes_count,views_count,status,created_at')
-    .eq('genre', genre)
+    .eq('work_id', workId)
     .eq('status', 'approved')
     .order('likes_count', { ascending: false, nullsFirst: false })
     .limit(6);
@@ -329,7 +329,7 @@ export default function FilmDetailScreen() {
         setPhase2Loading(true);
         const [simItems, creatorItems] = await Promise.all([
           fetchSimilarWorks(workData),
-          fetchCreatorReels(workData.genre ?? ''),
+          fetchCreatorReels(workData.id),
         ]);
         if (dead) return;
         setPhase2Loading(false);

@@ -1392,15 +1392,20 @@ export async function tryAutoClaimDailyQuest(
     progress: def.target, completed: true,
     completed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }, { onConflict: 'user_id,quest_id' }).then(() => {}, () => {});
-  // XP via quest_progress (add_xp RPC supprimé)
-  const { data: qp } = await supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle();
-  const currentXP = (qp as any)?.xp ?? 0;
-  await supabase.from('quest_progress').upsert(
-    { user_id: userId, xp: currentXP + def.xp, updated_at: new Date().toISOString() },
-    { onConflict: 'user_id' },
-  ).then(() => {}, () => {
-    supabase.from('profiles').update({ contribution_score: currentXP + def.xp }).eq('id', userId).then(() => {}, () => {});
-  });
+  // ★ FIX: Use add_xp RPC for proper XP sync with profiles table
+  try {
+    await supabase.rpc('add_xp', { p_user_id: userId, p_xp: def.xp, p_reason: `daily_quest_${questId}` });
+  } catch (e) {
+    // Fallback: direct quest_progress update if RPC fails
+    const { data: qp } = await supabase.from('quest_progress').select('xp').eq('user_id', userId).maybeSingle();
+    const currentXP = (qp as any)?.xp ?? 0;
+    await supabase.from('quest_progress').upsert(
+      { user_id: userId, xp: currentXP + def.xp, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    ).then(() => {}, () => {
+      supabase.from('profiles').update({ contribution_score: currentXP + def.xp }).eq('id', userId).then(() => {}, () => {});
+    });
+  }
 }
 
 export function useXPMultiplier(streakDays: number, profilePct: number): XPMultiplier {

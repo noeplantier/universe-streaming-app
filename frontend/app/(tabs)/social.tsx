@@ -91,7 +91,9 @@ function timeAgo(d:string) {
   const dd=Math.floor(h/24); if(dd<7)return`il y a ${dd}j`;
   return new Date(d).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
 }
-const av = (uid:string, url?:string|null) => url ?? `https://i.pravatar.cc/80?u=${uid}`;
+// ★ FIX: Never fall back to external random avatars — use consistent initials-based placeholder
+// ★ FIX: Consistent avatar helper — never use external random avatars
+const av = (uid:string, url?:string|null): string|undefined => url ?? undefined;
 
 // ─── ★ HOOK CRITIQUES — identique au fichier original ────────────────────────
 function useCritiques(tab: FeedTab, userId: string) {
@@ -167,11 +169,11 @@ function useCritiques(tab: FeedTab, userId: string) {
       if(c.id!==id) return c;
       const liked = !c.is_liked;
       if(liked){
-        supabase.from('critique_likes').upsert({user_id:userId,critique_id:id},{onConflict:'user_id,critique_id'}).then(()=>{});
-        supabase.from('critiques').update({likes_count:c.likes_count+1}).eq('id',id).then(()=>{});
+        supabase.from('critique_likes').upsert({user_id:userId,critique_id:id},{onConflict:'user_id,critique_id'}).then(()=>{},()=>{});
+        supabase.from('critiques').update({likes_count:c.likes_count+1}).eq('id',id).then(()=>{},()=>{});
       } else {
-        supabase.from('critique_likes').delete().eq('user_id',userId).eq('critique_id',id).then(()=>{});
-        supabase.from('critiques').update({likes_count:Math.max(0,c.likes_count-1)}).eq('id',id).then(()=>{});
+        supabase.from('critique_likes').delete().eq('user_id',userId).eq('critique_id',id).then(()=>{},()=>{});
+        supabase.from('critiques').update({likes_count:Math.max(0,c.likes_count-1)}).eq('id',id).then(()=>{},()=>{});
       }
       return{...c,is_liked:liked,likes_count:c.likes_count+(liked?1:-1)};
     }));
@@ -221,7 +223,7 @@ function useCritiques(tab: FeedTab, userId: string) {
       supabase.from('critique_shares').insert({
         critique_id:critique.id, user_id:userId,
         platform:Platform.OS==='web'?'web':'native',
-      }).catch(()=>{});
+      }).then(()=>{},()=>{});
       setItems(prev=>prev.map(c=>c.id===critique.id?{...c,shares_count:(c.shares_count??0)+1}:c));
     } catch(e:any){
       if(e?.message?.includes('cancel')) return;
@@ -240,6 +242,12 @@ function useCritiques(tab: FeedTab, userId: string) {
 
   const addComment = useCallback(async(critiqueId:string,text:string)=>{
     if(!text.trim()) return;
+    // ★ FIX: Block comment if user has no avatar (identity verification)
+    const{data:profileCheck}=await supabase.from('profiles').select('avatar_url').eq('id',userId).maybeSingle();
+    if(!profileCheck?.avatar_url){
+      Alert.alert('Photo requise','Ajoutez une photo de profil pour commenter — votre identité visuelle est essentielle à la communauté.');
+      return;
+    }
     hapticMedium();
     const{data,error}=await supabase.from('critique_comments')
       .insert({critique_id:critiqueId,user_id:userId,content:text.trim()})
@@ -249,9 +257,19 @@ function useCritiques(tab: FeedTab, userId: string) {
       Alert.alert('Erreur','Impossible d\'ajouter le commentaire. Vérifie que universe_setup.sql a été exécuté.');
       return;
     }
+    // ★ FIX: Always fetch fresh profile data for the comment author
     const{data:p}=await supabase.from('profiles').select('id,display_name,avatar_url').eq('id',userId).maybeSingle();
     const newCm:Comment={...(data as Comment),profile:p??undefined,expanded:false};
     setItems(prev=>prev.map(c=>c.id===critiqueId?{...c,comments:[...(c.comments??[]),newCm]}:c));
+    // ★ FIX: Also refresh the critique author's profile in case it changed
+    setItems(prev=>prev.map(c=>{
+      if(c.id!==critiqueId) return c;
+      // If the commenter is also the critique author, update the profile
+      if(c.user_id===userId && p) {
+        return {...c, profile: { display_name: p.display_name, avatar_url: p.avatar_url }};
+      }
+      return c;
+    }));
   },[userId]);
 
   return{items,loading,refresh,toggleLike,toggleComments,expandComment,shareCritique,shareComment,addComment};
@@ -279,10 +297,23 @@ function useSocialNetwork(myId:string){
   const[activity,setActivity]=useState<ActivityItem[]>([]);
   useEffect(()=>{
     if(!myId) return;
-    supabase.from('users')
-      .select('device_id,pseudo,avatar_url,level,xp,followers_count,following_count,works_count')
-      .neq('device_id',myId).order('last_active',{ascending:false}).limit(18)
-      .then(({data})=>setMembers((data??[]) as SocialUser[]));
+    // ★ FIX: Query 'profiles' table instead of 'users'
+    supabase.from('profiles')
+      .select('id,display_name,avatar_url,username,location,website,is_pro,is_industry_contact,specialties,open_to,notable_works,equipment,social_instagram,social_vimeo,social_youtube,social_imdb,films_seen_count,following_count')
+      .neq('id',myId).order('id',{ascending:false}).limit(18)
+      .then(({data})=>{
+        const mapped = (data ?? []).map((p: any) => ({
+          device_id: p.id,
+          pseudo: p.display_name || p.username || 'Cinéphile',
+          avatar_url: p.avatar_url,
+          level: 1,
+          xp: 0,
+          followers_count: p.following_count ?? 0,
+          following_count: 0,
+          works_count: p.films_seen_count ?? 0,
+        })) as SocialUser[];
+        setMembers(mapped);
+      });
     supabase.rpc('get_user_suggestions',{viewer_id:myId}).limit(8)
       .then(({data})=>setSuggestions((data??[]) as SocialUser[]));
     supabase.from('social_activity').select('*')
@@ -585,10 +616,10 @@ const ActiveStrip = memo(({users,onPress}:{users:SocialUser[];onPress:(u:SocialU
     {users.map(u=>(
       <TouchableOpacity key={u.device_id} style={{alignItems:'center',gap:4,width:60}} onPress={()=>onPress(u)} activeOpacity={0.75}>
         <View style={{position:'relative'}}>
-          <Image
-            source={{uri:u.avatar_url??`https://i.pravatar.cc/80?u=${u.device_id}`}}
-            style={{width:52,height:52,borderRadius:26,borderWidth:2,borderColor:C.blueBorder}}
-          />
+        <Image
+          source={{uri:u.avatar_url ?? undefined}}
+          style={{width:52,height:52,borderRadius:26,borderWidth:2,borderColor:C.blueBorder}}
+        />
           <View style={strip.lvBadge}>
             <Text style={strip.lvTxt}>{u.level}</Text>
           </View>
@@ -609,7 +640,7 @@ const SuggestionCard = memo(({user,onFollow,onPress}:{user:SocialUser;onFollow:(
   const[following,setFollowing]=useState(user.is_following??false);
   return(
     <TouchableOpacity style={sg.card} onPress={()=>onPress(user)} activeOpacity={0.80}>
-      <Image source={{uri:user.avatar_url??`https://i.pravatar.cc/80?u=${user.device_id}`}} style={sg.avatar}/>
+      <Image source={{uri:user.avatar_url ?? undefined}} style={sg.avatar}/>
       <View style={sg.lvBadge}><Text style={sg.lvTxt}>{user.level}</Text></View>
       <Text style={sg.pseudo} numberOfLines={1}>{user.pseudo}</Text>
       <Text style={sg.levelName} numberOfLines={1}>{LEVEL_NAMES[user.level]??'Explorateur'}</Text>
@@ -645,7 +676,7 @@ const ActivityRow = memo(({item,onAvatarPress}:{item:ActivityItem;onAvatarPress:
   return(
     <View style={acRow.row}>
       <TouchableOpacity onPress={()=>onAvatarPress(item.actor_device_id,item.actor_pseudo)} activeOpacity={0.75}>
-        <Image source={{uri:item.actor_avatar??`https://i.pravatar.cc/80?u=${item.actor_device_id}`}} style={acRow.avatar}/>
+        <Image source={{uri:item.actor_avatar ?? undefined}} style={acRow.avatar}/>
       </TouchableOpacity>
       <View style={{flex:1}}>
         <Text style={acRow.text} numberOfLines={2}>

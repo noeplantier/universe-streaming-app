@@ -69,12 +69,14 @@ interface ProfileForm {
   notable_works:NotableWork[]; is_industry_contact:boolean; is_pro:boolean;
   contact_email:string; website:string; social_instagram:string;
   social_vimeo:string; social_youtube:string; social_imdb:string;
+  avatar_url?:string; // ★ FIX: avatar_url must be part of the form to persist on save
 }
 const EMPTY: ProfileForm = {
   display_name:'', username:'', bio:'', role:'creator', location:'',
   equipment:'', specialties:[], open_to:[], festivals:[], notable_works:[],
   is_industry_contact:false, is_pro:false, contact_email:'', website:'',
   social_instagram:'', social_vimeo:'', social_youtube:'', social_imdb:'',
+  avatar_url:'', // ★ FIX: must be in EMPTY so fetchProfile patches it into form state
 };
 type Section = 'identity'|'network';
 
@@ -96,10 +98,10 @@ async function fetchProfile(uid:string): Promise<any> {
 
 // ★ UPSERT — crée ou met à jour, jamais bloqué par la FK supprimée
 async function persistProfile(uid:string, form:ProfileForm): Promise<void> {
-  const { error } = await supabase.from('profiles').upsert(
-    { id:uid, ...form, updated_at:new Date().toISOString() },
-    { onConflict:'id' }
-  );
+  // ★ FIX: Never send empty avatar_url — it would overwrite the existing avatar in DB
+  const payload: Record<string, any> = { id:uid, ...form, updated_at:new Date().toISOString() };
+  if (!payload.avatar_url) delete payload.avatar_url;
+  const { error } = await supabase.from('profiles').upsert(payload, { onConflict:'id' });
   if (error) {
     console.error('[edit] upsert error:', error.code, error.message);
     throw new Error(error.message);
@@ -506,13 +508,16 @@ export default function EditProfileScreen() {
   const validate = useCallback(():boolean => {
     const e:Partial<Record<keyof ProfileForm,string>> = {};
     const ue = validateUsername(form.username); if (ue) e.username=ue;
+    if (!form.username.trim()) e.username = 'Nom d\'utilisateur obligatoire';
+    if (!form.display_name.trim()) e.display_name = 'Nom d\'affichage obligatoire';
+    if (!avatarUrl) e.display_name = e.display_name || 'Photo de profil obligatoire — ajoutez une image';
     if (!validUrl(form.website))       e.website='URL invalide (https://…)';
     if (!validEmail(form.contact_email)) e.contact_email='Email invalide';
     setErrors(e);
     if (e.username||e.display_name)   setSection('identity');
     else if (e.website||e.contact_email) setSection('network');
     return Object.keys(e).length===0;
-  }, [form]);
+  }, [form, avatarUrl]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -530,7 +535,10 @@ export default function EditProfileScreen() {
     setSavedOk(false);
     try {
       clearTimeout(debounce.current);
-      await persistProfile(userId, form);
+      // ★ FIX: Only include avatar_url if it's actually set — never clear it on save
+      const formWithAvatar: ProfileForm = { ...form };
+      if (avatarUrl) formWithAvatar.avatar_url = avatarUrl;
+      await persistProfile(userId, formWithAvatar);
       if (Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
       setSavedOk(true);
       Animated.sequence([
@@ -538,13 +546,15 @@ export default function EditProfileScreen() {
         Animated.delay(1800),
         Animated.timing(successFade,{toValue:0,duration:250,useNativeDriver:true}),
       ]).start(() => setSavedOk(false));
-      setTimeout(() => router.back(), 200);
+      // ★ FIX: Don't navigate back immediately — let the user see the success feedback.
+      // The profile screen will reload via useFocusEffect when they navigate back.
+      setTimeout(() => router.back(), 400);
     } catch (e:any) {
       Alert.alert('Erreur de sauvegarde',
         `${e?.message ?? 'Erreur inconnue'}\n\nAssurez-vous d'avoir exécuté universe_setup.sql dans Supabase SQL Editor.`
       );
     } finally { setSaving(false); }
-  }, [userId,form,validate,saving,shakeX,successFade,router]);
+  }, [userId,form,avatarUrl,validate,saving,shakeX,successFade,router]);
 
   // ── Sections ──────────────────────────────────────────────────────────────
   // Labels pré-calculés comme strings (évite mixing JSX number+text dans View)
