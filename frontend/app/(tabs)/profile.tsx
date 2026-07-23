@@ -98,7 +98,7 @@ interface ProfileData { display_name:string;username:string;bio:string;role:stri
 interface Badge { id:string;label:string;icon:keyof typeof Ionicons.glyphMap;earned:boolean;pts:number;desc:string }
 interface GamiStats { watchCount:number;critiqueCount:number;favCount:number;isNight:boolean;streak:number }
 type GridTab   = 0|1|2;
-type ModalType = 'favorites'|'reviews'|'watched'|'recs'|'creations';
+type ModalType = 'favorites'|'reviews'|'watched'|'recs'|'creations'|'likedVeloces'|'savedVeloces';
 
 const EMPTY_PROFILE: ProfileData = {
   display_name:'',username:'',bio:'',role:'creator',location:'',avatar_url:'',website:'',
@@ -930,13 +930,13 @@ export default function ProfileScreen() {
     if(fetchError)return<ErrorState/>;
     return(
       <View style={{marginBottom:80,gap:20}}>
-        <SecHead icon="heart-outline" label="Œuvres favorites" count={favWorks.length} onMore={favWorks.length>0?()=>setModal('favorites'):undefined}/>
+        <SecHead icon="heart-outline" label="Œuvres favorites" onMore={favWorks.length>0?()=>setModal('favorites'):undefined}/>
         {!favWorks.length?<Empty icon="heart-outline" text="Aucun favori" sub="Sauvegardez des films depuis le catalogue"/>:<HRow c={favWorks.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
-        <SecHead icon="create-outline" label="Mes critiques" count={reviews.length} onMore={reviews.length>0?()=>setModal('reviews'):undefined}/>
+        <SecHead icon="create-outline" label="Mes critiques" onMore={reviews.length>0?()=>setModal('reviews'):undefined}/>
         {!reviews.length?<Empty icon="chatbubble-outline" text="Aucune critique"/>:<HRow c={reviews.map((r,i)=><CritCard key={r.id} r={r} rank={i+1} onPress={()=>router.push(`/review/${r.id}` as any)}/>)}/>}
         <Div/>
-        <SecHead icon="eye-outline" label="Œuvres visionnées" count={watched.length} onMore={watched.length>0?()=>setModal('watched'):undefined}/>
+        <SecHead icon="eye-outline" label="Œuvres visionnées" onMore={watched.length>0?()=>setModal('watched'):undefined}/>
         {!watched.length?<Empty icon="film-outline" text="Aucun visionnage"/>:<HRow c={watched.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
         {/* <SecHead icon="shuffle-outline" label="Recommandés pour vous" onMore={recs.length>0?()=>setModal('recs'):undefined}/>
@@ -951,7 +951,7 @@ export default function ProfileScreen() {
     if(loading)return<View><SkeletonSection/></View>;
     return(
       <View style={{marginTop:5}}>
-        <SecHead icon="heart-outline" label="Véloces Favoris" count={veloceErr?undefined:likedReels.length}/>
+        <SecHead icon="heart-outline" label="Véloces Favoris" onMore={likedReels.length>0?()=>setModal('likedVeloces'):undefined}/>
         {veloceErr
           ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
           :likedReels.length===0
@@ -959,7 +959,7 @@ export default function ProfileScreen() {
             :<HRow pb={8} c={likedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
         }
         <Div/>
-        <SecHead icon="bookmark-outline" label="Véloces Enregistrés" count={veloceErr?undefined:savedReels.length}/>
+        <SecHead icon="bookmark-outline" label="Véloces Enregistrés" onMore={savedReels.length>0?()=>setModal('savedVeloces'):undefined}/>
         {veloceErr
           ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
           :savedReels.length===0
@@ -1073,7 +1073,10 @@ export default function ProfileScreen() {
       <SeeAllModal visible={modal==='reviews'}   onClose={()=>setModal(null)} type="reviews"   title="Mes critiques"     icon="create-outline"      reviews={reviews}/>
       <SeeAllModal visible={modal==='watched'}   onClose={()=>setModal(null)} type="watched"   title="Œuvres visionnées" icon="eye-outline"         works={watched}/>
       <SeeAllModal visible={modal==='recs'}      onClose={()=>setModal(null)} type="recs"      title="Recommandations"   icon="shuffle-outline"     works={recs}/>
-      <SeeAllModal visible={modal==='creations'} onClose={()=>setModal(null)} type="creations" title="Mes créations"     icon="play-circle-outline" reels={reels} hotReelId={hotId}/>
+      <SeeAllModal visible={modal==='creations'}    onClose={()=>setModal(null)} type="creations" title="Mes créations"       icon="play-circle-outline" reels={reels} hotReelId={hotId}/>
+      <SeeAllModal visible={modal==='likedVeloces'} onClose={()=>setModal(null)} type="creations" title="Véloces Favoris"     icon="heart-outline"       reels={likedReels.map(v=>({...v,duration:null,status:'approved' as const,created_at:''}))}/>
+      <SeeAllModal visible={modal==='savedVeloces'} onClose={()=>setModal(null)} type="creations" title="Véloces Enregistrés" icon="bookmark-outline"    reels={savedReels.map(v=>({...v,duration:null,status:'approved' as const,created_at:''}))}/>
+
       {uid && (
         <CosmosModal
           visible={cosmosVisible}

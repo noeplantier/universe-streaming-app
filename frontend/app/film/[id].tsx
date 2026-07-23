@@ -524,8 +524,7 @@ export default function FilmDetailScreen() {
           </View>
 
           {/* ★ Bouton Regarder — spinner pendant phase2, play dès que l'URL est prête */}
-          <TouchableOpacity style={s.watchBtn} onPress={handleWatch} activeOpacity={0.88}
-            disabled={phase2Loading && !creatorReelVideoUrl && !work.video_url}>
+          <TouchableOpacity style={s.watchBtn} onPress={()=>{}} activeOpacity={0.88}>
             <LinearGradient colors={[C.navyBright, C.navyMid]} start={{ x:0, y:0 }} end={{ x:1, y:0 }} style={s.watchGrad}>
               {phase2Loading && !creatorReelVideoUrl && !work.video_url
                 ? <ActivityIndicator size="small" color={C.white} style={{ width:38 }}/>

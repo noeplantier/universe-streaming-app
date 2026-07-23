@@ -4,6 +4,7 @@ import React, {
 import {
   ActivityIndicator,
   Animated,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -109,29 +110,56 @@ const CritiqueTab = memo(function CritiqueTab() {
   const [submitting, setSubmitting] = useState(false);
   const [done,       setDone]       = useState(false);
   const [error,      setError]      = useState<string|null>(null);
+  const [avatarUrl,  setAvatarUrl]  = useState<string|null>(null);
 
   const debounce  = useRef<ReturnType<typeof setTimeout>>();
   const scrollRef = useRef<ScrollView>(null);
+
+  // Avatar — charge la photo de profil de l'utilisateur courant
+  useEffect(() => {
+    getDeviceId().then(
+      (id) => {
+        if (!id) return;
+        supabase.from('profiles').select('avatar_url').eq('id', id).maybeSingle()
+          .then(({ data }) => { if (data?.avatar_url) setAvatarUrl(data.avatar_url); }, () => {});
+      },
+      () => {},
+    );
+  }, []);
 
   // Recherche reels
   useEffect(() => {
     clearTimeout(debounce.current);
     if (!reelSearch.trim()) { setReelList([]); return; }
     setReelBusy(true);
-    debounce.current = setTimeout(async () => {
-      const { data } = await supabase.from('reels').select('id,title,genre,year').ilike('title', `%${reelSearch}%`).order('created_at', { ascending:false }).limit(10);
-      setReelList((data ?? []) as ReelSuggestion[]);
-      setReelBusy(false);
+    debounce.current = setTimeout(() => {
+      supabase.from('reels').select('id,title,genre,year').ilike('title', `%${reelSearch}%`)
+        .order('created_at', { ascending:false }).limit(10)
+        .then(
+          ({ data }) => { setReelList((data ?? []) as ReelSuggestion[]); setReelBusy(false); },
+          () => { setReelBusy(false); },
+        );
     }, 350);
     return () => clearTimeout(debounce.current);
   }, [reelSearch]);
 
   const set = useCallback((k: keyof Form) => (v: any) => setForm(f => ({...f, [k]: v})), []);
 
+  // Unified title + reel selector: typed text = filmTitle, selecting a reel = filmTitle + reelId
+  const handleTitleSearch = useCallback((t: string) => {
+    setReelSearch(t);
+    setForm(f => ({...f, filmTitle: t, reelId: null}));
+  }, []);
+
   const selectReel = useCallback((r: ReelSuggestion|null) => {
-    if (!r) { setForm(f => ({...f, reelId:null})); }
-    else { setForm(f => ({...f, reelId:r.id, filmTitle:f.filmTitle||r.title||''})); }
-    setReelSearch(''); setReelList([]);
+    if (!r) {
+      setForm(f => ({...f, reelId: null}));
+      setReelSearch('');
+    } else {
+      setForm(f => ({...f, reelId: r.id, filmTitle: r.title ?? ''}));
+      setReelSearch(r.title ?? '');
+      setReelList([]);
+    }
   }, []);
 
   const addTag = useCallback((t: string) => {
@@ -148,35 +176,33 @@ const CritiqueTab = memo(function CritiqueTab() {
     scrollRef.current?.scrollTo({ y:0, animated:true });
   }, []);
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(() => {
     setError(null);
     if (!form.title.trim()) { setError('Le titre de la critique est obligatoire.'); return; }
     if (!form.filmTitle.trim()) { setError("Le titre de l'œuvre est obligatoire."); return; }
     if (form.content.trim().length < 20) { setError('La critique doit faire au moins 20 caractères.'); return; }
-  
     setSubmitting(true);
-  
-    try {
-      const deviceId = await getDeviceId();
-  
-      const { error: insErr } = await supabase.from('critiques').insert({
-        device_id:   deviceId, // au lieu de user_id
-        title:       form.title.trim(),
-        film_title:  form.filmTitle.trim(),
-        content:     form.content.trim(),
-        rating:      form.rating > 0 ? form.rating : null,
-        tags:        form.tags.length > 0 ? form.tags : null,
-        reel_id:     form.reelId ?? null,
-      });
-  
-      if (insErr) throw insErr;
-      setDone(true);
-      setTimeout(reset, 3000);
-    } catch (e: any) {
-      setError(e?.message ?? 'Erreur inconnue lors de la publication.');
-    } finally {
-      setSubmitting(false);
-    }
+    const payload = {
+      title:      form.title.trim(),
+      film_title: form.filmTitle.trim(),
+      content:    form.content.trim(),
+      rating:     form.rating > 0 ? form.rating : null,
+      tags:       form.tags.length > 0 ? form.tags : null,
+      reel_id:    form.reelId ?? null,
+    };
+    getDeviceId().then(
+      (deviceId) => {
+        supabase.from('critiques').insert({ device_id: deviceId, ...payload }).then(
+          ({ error: insErr }) => {
+            setSubmitting(false);
+            if (insErr) { setError(insErr.message ?? 'Erreur lors de la publication.'); }
+            else { setDone(true); setTimeout(reset, 3000); }
+          },
+          (e: any) => { setSubmitting(false); setError(e?.message ?? 'Erreur lors de la publication.'); },
+        );
+      },
+      (e: any) => { setSubmitting(false); setError(e?.message ?? 'Erreur inconnue.'); },
+    );
   }, [form, reset]);
 
   return (
@@ -185,7 +211,10 @@ const CritiqueTab = memo(function CritiqueTab() {
 
         {/* Intro */}
         <View style={ct.intro}>
-          <View style={ct.introIcon}><Ionicons name="create" size={20} color="#fff"/></View>
+          {avatarUrl
+            ? <Image source={{uri:avatarUrl}} style={ct.introAvatar}/>
+            : <View style={ct.introIcon}><Ionicons name="create" size={20} color="#fff"/></View>
+          }
           <View style={{flex:1}}>
             <Text style={ct.introTitle}>Nouvelle critique</Text>
             <Text style={ct.introSub}>Analyse un film, un reel ou une série</Text>
@@ -201,22 +230,34 @@ const CritiqueTab = memo(function CritiqueTab() {
         {/* Étape 2 — Œuvre liée */}
         <View style={ct.section}>
           <SectionHead step={2} label="Titre de l'œuvre" done={!!form.filmTitle.trim()}/>
-          <TextInput style={ct.input} value={form.filmTitle} onChangeText={set('filmTitle')} placeholder="Titre du film, série ou reel…" placeholderTextColor={C.muted} selectionColor={C.neonL} maxLength={120} returnKeyType="next" autoCapitalize="words"/>
           <View style={ct.reelPanel}>
             <View style={ct.searchBar}>
               <Ionicons name="search" size={13} color={C.muted}/>
-              <TextInput style={ct.searchInput} value={reelSearch} onChangeText={setReelSearch} placeholder="Lier un reel Universe…" placeholderTextColor={C.muted} selectionColor="#fff" autoCorrect={false} autoCapitalize="none"/>
+              <TextInput
+                style={ct.searchInput}
+                value={reelSearch}
+                onChangeText={handleTitleSearch}
+                placeholder="Titre du film, série ou reel…"
+                placeholderTextColor={C.muted}
+                selectionColor="#fff"
+                maxLength={120}
+                returnKeyType="next"
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
               {reelBusy&&<ActivityIndicator size="small" color={C.navyMid}/>}
             </View>
-            {reelList.length > 0
-              ? reelList.map(r => <ReelRow key={r.id} reel={r} selected={form.reelId===r.id} onPress={() => selectReel(form.reelId===r.id?null:r)}/>)
-              : reelSearch.trim()
-              ? <Text style={ct.emptySearch}>Aucun reel trouvé</Text>
-              : form.reelId
-              ? <ReelRow reel={{id:form.reelId,title:form.filmTitle,genre:null,year:null}} selected onPress={() => selectReel(null)}/>
-              : <Text style={ct.emptySearch}>Tapez pour lier un reel (optionnel)</Text>
+            {form.reelId
+              ? <>
+                  <ReelRow reel={{id:form.reelId,title:form.filmTitle,genre:null,year:null}} selected onPress={() => {}}/>
+                  <TouchableOpacity style={ct.unlinkBtn} onPress={() => selectReel(null)}><Ionicons name="close-circle-outline" size={13} color={C.muted}/><Text style={ct.unlinkTxt}>Retirer ce reel</Text></TouchableOpacity>
+                </>
+              : reelList.length > 0
+              ? reelList.map(r => <ReelRow key={r.id} reel={r} selected={false} onPress={() => selectReel(r)}/>)
+              : reelSearch.trim().length >= 2 && !reelBusy
+              ? <Text style={ct.emptySearch}>Aucun reel trouvé — ce titre sera utilisé tel quel</Text>
+              : <Text style={ct.emptySearch}>Saisissez le titre ou sélectionnez un reel Universe</Text>
             }
-            {!!form.reelId&&<TouchableOpacity style={ct.unlinkBtn} onPress={() => selectReel(null)}><Ionicons name="close-circle-outline" size={13} color={C.muted}/><Text style={ct.unlinkTxt}>Retirer ce reel</Text></TouchableOpacity>}
           </View>
         </View>
 
@@ -277,6 +318,7 @@ const ct = StyleSheet.create({
   scroll:       { paddingHorizontal:16, paddingTop:4 },
   intro:        { flexDirection:'row', alignItems:'center', gap:14, backgroundColor:C.navyMid, borderRadius:16, padding:16, borderWidth:StyleSheet.hairlineWidth, borderColor:C.border, marginBottom:20 },
   introIcon:    { width:42, height:42, borderRadius:21, backgroundColor:C.navyHigh, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:C.borderBr },
+  introAvatar:  { width:42, height:42, borderRadius:21, borderWidth:1, borderColor:C.borderBr },
   introTitle:   { color:C.white, fontSize:15, fontWeight:'800' },
   introSub:     { color:C.muted, fontSize:11, marginTop:2 },
   section:      { marginBottom:24 },
