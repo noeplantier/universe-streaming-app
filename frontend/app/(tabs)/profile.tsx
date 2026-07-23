@@ -98,7 +98,7 @@ interface ProfileData { display_name:string;username:string;bio:string;role:stri
 interface Badge { id:string;label:string;icon:keyof typeof Ionicons.glyphMap;earned:boolean;pts:number;desc:string }
 interface GamiStats { watchCount:number;critiqueCount:number;favCount:number;isNight:boolean;streak:number }
 type GridTab   = 0|1|2;
-type ModalType = 'favorites'|'reviews'|'watched'|'recs'|'creations';
+type ModalType = 'favorites'|'reviews'|'watched'|'recs'|'creations'|'likedVeloces'|'savedVeloces';
 
 const EMPTY_PROFILE: ProfileData = {
   display_name:'',username:'',bio:'',role:'creator',location:'',avatar_url:'',website:'',
@@ -286,15 +286,25 @@ const ProfileHeader = memo(function ProfileHeader({
     return()=>{gl.stop();rg.stop();};
   },[]);
 
-  // Pré-calcul strings (perf)
-  const dn    = profile.display_name || profile.username || 'Cinéphile';
-  const init  = dn.trim().split(/\s+/).map(n=>n[0]).join('').toUpperCase().slice(0,2);
+  // ★ PREMIUM UX: Pré-calcul strings + gradient avatar ring
+  const cleanUsername = /^user_[0-9a-f-]{8,}$/i.test(profile.username??'') ? '' : (profile.username??'');
+  const dn    = profile.display_name || cleanUsername || '';
+  const init  = (dn||'?').trim().split(/\s+/).filter(Boolean).map((n:string)=>n[0]||'').join('').toUpperCase().slice(0,2)||'?';
   const links = useMemo(()=>[
     {k:'ig',icon:'logo-instagram' as const,url:profile.social_instagram,label:'Instagram'},
     {k:'vi',icon:'videocam-outline' as const,url:profile.social_vimeo,label:'Vimeo'},
     {k:'yt',icon:'logo-youtube' as const,url:profile.social_youtube,label:'YouTube'},
     {k:'ws',icon:'globe-outline' as const,url:profile.website,label:'Portfolio'},
   ].filter(l=>!!l.url),[profile.social_instagram,profile.social_vimeo,profile.social_youtube,profile.website]);
+  
+  // ★ Premium: Gradient ring color based on level
+  const ringGradient = useMemo(()=>{
+    const l = gamiProfile.level;
+    if(l>=9) return ['#F5C842','#E6B830'];
+    if(l>=7) return ['#C084FC','#A855F7'];
+    if(l>=5) return ['#5A96E6','#3B82F6'];
+    return ['rgba(255,255,255,0.3)','rgba(255,255,255,0.1)'];
+  },[gamiProfile.level]);
 
   const ringScale = ringAnim;
 
@@ -307,11 +317,29 @@ const ProfileHeader = memo(function ProfileHeader({
     return C.mid;
   },[gamiProfile.level]);
 
-  const lvlStr = String(gamiProfile.level);
-  const subLine = [profile.username&&`@${profile.username}`,profile.location].filter(Boolean).join(' · ');
+  // ★ Premium: Bio preview with ellipsis
+  const bioPreview = useMemo(()=>{
+    if(!profile.bio) return null;
+    return profile.bio.length > 80 ? profile.bio.slice(0,80)+'…' : profile.bio;
+  },[profile.bio]);
+
+  // Sub-line: role and/or location
+  const subLine = useMemo(()=>{
+    const role = ROLE_LABELS[profile.role] ?? 'Cinéaste';
+    if(profile.location) return `${role} · ${profile.location}`;
+    return role;
+  },[profile.role, profile.location]);
 
   return (
     <View style={ph.root}>
+      {/* ★ Premium: Subtle gradient overlay at top */}
+      <LinearGradient
+        colors={['rgba(90,150,230,0.06)','transparent']}
+        style={StyleSheet.absoluteFillObject}
+        start={{x:0,y:0}} end={{x:0,y:0.4}}
+        pointerEvents="none"
+      />
+      
       {/* ── Top bar : UNIVERSE · role · [backoffice | settings] ── */}
       <View style={ph.topBar}>
         <View style={ph.topLeft}>
@@ -334,12 +362,18 @@ const ProfileHeader = memo(function ProfileHeader({
         {/* Avatar — tap implicite → édition */}
         <TouchableOpacity onPress={onAvatarEdit} activeOpacity={0.82} style={{flexShrink:0}}>
           <View style={{position:'relative',width:RING_SIZE,height:RING_SIZE,alignItems:'center',justifyContent:'center'}}>
-            {/* Ring pulsant */}
+            {/* ★ Premium: Gradient ring pulsant */}
             <Animated.View style={[ph.ring,{
               borderColor:`${levelColor}55`,
               transform:[{scale:ringScale}],
               opacity:glowAnim,
-            }]}/>
+            }]}>
+              <LinearGradient
+                colors={ringGradient}
+                style={StyleSheet.absoluteFillObject}
+                start={{x:0,y:0}} end={{x:1,y:1}}
+              />
+            </Animated.View>
             {/* Avatar image / fallback */}
             {profile.avatar_url&&!imgErr
               ? <Image source={{uri:profile.avatar_url}} style={ph.avatar} resizeMode="cover" onError={()=>setImgErr(true)}/>
@@ -382,7 +416,7 @@ const ProfileHeader = memo(function ProfileHeader({
           </View>
 
           <View style={ph.bioLine}>
-            {!!profile.bio&&<Text style={ph.bio} numberOfLines={1}>{profile.bio}</Text>}
+            {!!bioPreview&&<Text style={ph.bio} numberOfLines={1}>{bioPreview}</Text>}
           </View>
         </View>
 
@@ -392,8 +426,8 @@ const ProfileHeader = memo(function ProfileHeader({
   );
 });
 
-const ph = StyleSheet.create({
-  root:       {position:'relative'},
+  const ph = StyleSheet.create({
+  root:       {position:'relative',overflow:'hidden'},
   // Top bar — UX/UI identique aux icônes pro/notifications de social.tsx
   topBar:     {flexDirection:'row',justifyContent:'space-between',alignItems:'center',paddingHorizontal:H_PAD,paddingTop:6,paddingBottom:12},
   topLeft:    {flexDirection:'row',alignItems:'center',gap:5},
@@ -406,7 +440,7 @@ const ph = StyleSheet.create({
   // Identity row — hauteur fixe (gouvernée par l'avatar 90px), relative pour ancrer le badge niveau
   identRow:   {position:'relative',flexDirection:'row',alignItems:'flex-start',paddingHorizontal:H_PAD,marginBottom:14,gap:16},
   // Avatar
-  ring:       {position:'absolute',top:0,left:0,right:0,bottom:0,width:RING_SIZE,height:RING_SIZE,borderRadius:RING_SIZE/2,borderWidth:1.5},
+  ring:       {position:'absolute',top:0,left:0,right:0,bottom:0,width:RING_SIZE,height:RING_SIZE,borderRadius:RING_SIZE/2,borderWidth:1.5,overflow:'hidden'},
   avatar:     {width:AVATAR_SIZE,height:AVATAR_SIZE,borderRadius:AVATAR_SIZE/2,backgroundColor:C.navyMid},
   avatarFb:   {alignItems:'center',justifyContent:'center'},
   avatarInit: {color:C.white,fontSize:26,fontWeight:'900'},
@@ -430,7 +464,7 @@ const ph = StyleSheet.create({
   socialRow:  {flexDirection:'row',alignItems:'center',gap:6,marginLeft:2},
   socialIcon: {width:20,height:20,borderRadius:10,backgroundColor:C.faint,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,alignItems:'center',justifyContent:'center'},
   bioLine:    {height:17,justifyContent:'center',marginTop:2},
-  bio:        {color:C.mid,fontSize:12,lineHeight:16},
+  bio:        {color:C.mid,fontSize:12,lineHeight:16,fontStyle:'italic'},
   // Niveau discreet — ancré à identRow (loin des icônes du haut), jamais la hauteur ne varie
   levelAbs:   {position:'absolute',top:0,right:0,flexDirection:'row',alignItems:'center',gap:3,paddingHorizontal:7,paddingVertical:3,borderRadius:8,borderWidth:StyleSheet.hairlineWidth},
   levelAbsTxt:{fontSize:9,fontWeight:'800',letterSpacing:0.3},
@@ -776,12 +810,9 @@ export default function ProfileScreen() {
   const [levelUp,       setLevelUp]      = useState<{ level: number; title: string } | null>(null);
 
   const { score, level, badges } = useLocalGamification(uid);
-  const isFirstLoad = useRef(false);
-
   useEffect(()=>{
     getDeviceId().then(deviceId=>{
       setUid(deviceId);
-      isFirstLoad.current=true;
       loadAll(deviceId);
       loadStreak(deviceId);
       loadShowLevel(deviceId);
@@ -789,8 +820,10 @@ export default function ProfileScreen() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
 
+  // ★ FIX: Re-fetch profile data every time the screen gains focus
+  // (e.g. after saving in edit.tsx). No isFirstLoad guard — always reload.
   useFocusEffect(useCallback(()=>{
-    if(!uid||!isFirstLoad.current)return;
+    if(!uid)return;
     loadAll(uid);
     loadShowLevel(uid);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -897,13 +930,13 @@ export default function ProfileScreen() {
     if(fetchError)return<ErrorState/>;
     return(
       <View style={{marginBottom:80,gap:20}}>
-        <SecHead icon="heart-outline" label="Œuvres favorites" count={favWorks.length} onMore={favWorks.length>0?()=>setModal('favorites'):undefined}/>
+        <SecHead icon="heart-outline" label="Œuvres favorites" onMore={favWorks.length>0?()=>setModal('favorites'):undefined}/>
         {!favWorks.length?<Empty icon="heart-outline" text="Aucun favori" sub="Sauvegardez des films depuis le catalogue"/>:<HRow c={favWorks.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
-        <SecHead icon="create-outline" label="Mes critiques" count={reviews.length} onMore={reviews.length>0?()=>setModal('reviews'):undefined}/>
+        <SecHead icon="create-outline" label="Mes critiques" onMore={reviews.length>0?()=>setModal('reviews'):undefined}/>
         {!reviews.length?<Empty icon="chatbubble-outline" text="Aucune critique"/>:<HRow c={reviews.map((r,i)=><CritCard key={r.id} r={r} rank={i+1} onPress={()=>router.push(`/review/${r.id}` as any)}/>)}/>}
         <Div/>
-        <SecHead icon="eye-outline" label="Œuvres visionnées" count={watched.length} onMore={watched.length>0?()=>setModal('watched'):undefined}/>
+        <SecHead icon="eye-outline" label="Œuvres visionnées" onMore={watched.length>0?()=>setModal('watched'):undefined}/>
         {!watched.length?<Empty icon="film-outline" text="Aucun visionnage"/>:<HRow c={watched.map((f,i)=><PortraitCard key={f.id} item={f} rank={i+1}/>)}/>}
         <Div/>
         {/* <SecHead icon="shuffle-outline" label="Recommandés pour vous" onMore={recs.length>0?()=>setModal('recs'):undefined}/>
@@ -918,7 +951,7 @@ export default function ProfileScreen() {
     if(loading)return<View><SkeletonSection/></View>;
     return(
       <View style={{marginTop:5}}>
-        <SecHead icon="heart-outline" label="Véloces Favoris" count={veloceErr?undefined:likedReels.length}/>
+        <SecHead icon="heart-outline" label="Véloces Favoris" onMore={likedReels.length>0?()=>setModal('likedVeloces'):undefined}/>
         {veloceErr
           ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
           :likedReels.length===0
@@ -926,7 +959,7 @@ export default function ProfileScreen() {
             :<HRow pb={8} c={likedReels.map(r=><VeloceCard key={r.id} item={r}/>)}/>
         }
         <Div/>
-        <SecHead icon="bookmark-outline" label="Véloces Enregistrés" count={veloceErr?undefined:savedReels.length}/>
+        <SecHead icon="bookmark-outline" label="Véloces Enregistrés" onMore={savedReels.length>0?()=>setModal('savedVeloces'):undefined}/>
         {veloceErr
           ?<Empty icon="alert-circle-outline" text="Permissions manquantes" sub="Exécuter fix_rls_liked_saved_reels.sql dans le Dashboard Supabase"/>
           :savedReels.length===0
@@ -1040,7 +1073,10 @@ export default function ProfileScreen() {
       <SeeAllModal visible={modal==='reviews'}   onClose={()=>setModal(null)} type="reviews"   title="Mes critiques"     icon="create-outline"      reviews={reviews}/>
       <SeeAllModal visible={modal==='watched'}   onClose={()=>setModal(null)} type="watched"   title="Œuvres visionnées" icon="eye-outline"         works={watched}/>
       <SeeAllModal visible={modal==='recs'}      onClose={()=>setModal(null)} type="recs"      title="Recommandations"   icon="shuffle-outline"     works={recs}/>
-      <SeeAllModal visible={modal==='creations'} onClose={()=>setModal(null)} type="creations" title="Mes créations"     icon="play-circle-outline" reels={reels} hotReelId={hotId}/>
+      <SeeAllModal visible={modal==='creations'}    onClose={()=>setModal(null)} type="creations" title="Mes créations"       icon="play-circle-outline" reels={reels} hotReelId={hotId}/>
+      <SeeAllModal visible={modal==='likedVeloces'} onClose={()=>setModal(null)} type="creations" title="Véloces Favoris"     icon="heart-outline"       reels={likedReels.map(v=>({...v,duration:null,status:'approved' as const,created_at:''}))}/>
+      <SeeAllModal visible={modal==='savedVeloces'} onClose={()=>setModal(null)} type="creations" title="Véloces Enregistrés" icon="bookmark-outline"    reels={savedReels.map(v=>({...v,duration:null,status:'approved' as const,created_at:''}))}/>
+
       {uid && (
         <CosmosModal
           visible={cosmosVisible}

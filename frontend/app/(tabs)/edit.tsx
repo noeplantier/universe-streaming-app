@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { supabase }     from '@/lib/supabase';
 import GalaxyBackground from '@/components/social/GalaxyBackground';
 import { getDeviceId }  from '@/services/api';
+import { useGamification } from '@/contexts/GamificationSystem';
 
 // SecureStore — natif seulement
 const SecureStore: any = Platform.select({
@@ -58,9 +59,6 @@ const ROLES = [
   {key:'creator',  label:'Créateur·rice',      icon:'sparkles-outline'                   as const},
   {key:'other',    label:'Autre',              icon:'ellipsis-horizontal-circle-outline' as const},
 ];
-const GENRES    = ['Drame','Thriller','Science-Fiction','Documentaire','Animation','Court-métrage','Expérimental','Biopic','Horreur','Comédie','Romance','Action','Fantastique','Policier','Musical','Essai'];
-const COLLABS   = ['Co-réalisation','Casting','Co-production','Scénarisation','Montage','Composition musicale','Direction photo','Distribution','Mentorat','Projection festival','Écriture'];
-const FESTIVALS = ['Cannes','Sundance','Berlin','Tribeca','SXSW','Toronto (TIFF)','Venise','Annecy','Hot Docs','Clermont-Ferrand','Rotterdam (IFFR)','AFI Fest','New York (NYFF)','Sarajevo'];
 const PROFILE_SELECT = 'display_name,username,bio,role,location,equipment,specialties,open_to,festivals,notable_works,is_industry_contact,is_pro,contact_email,website,social_instagram,social_vimeo,social_youtube,social_imdb,avatar_url';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -71,44 +69,19 @@ interface ProfileForm {
   notable_works:NotableWork[]; is_industry_contact:boolean; is_pro:boolean;
   contact_email:string; website:string; social_instagram:string;
   social_vimeo:string; social_youtube:string; social_imdb:string;
+  avatar_url?:string; // ★ FIX: avatar_url must be part of the form to persist on save
 }
 const EMPTY: ProfileForm = {
   display_name:'', username:'', bio:'', role:'creator', location:'',
   equipment:'', specialties:[], open_to:[], festivals:[], notable_works:[],
   is_industry_contact:false, is_pro:false, contact_email:'', website:'',
   social_instagram:'', social_vimeo:'', social_youtube:'', social_imdb:'',
+  avatar_url:'', // ★ FIX: must be in EMPTY so fetchProfile patches it into form state
 };
-type Section = 'identity'|'cinema'|'network';
+type Section = 'identity'|'network';
 
-// ─── Gamification ─────────────────────────────────────────────────────────────
-function cinephileLevel(s:number):{n:number;label:string;pct:number;nextAt:number} {
-  const L = [
-    {at:0,  n:1, l:'Spectateur curieux'  },
-    {at:50, n:2, l:'Explorateur indé'    },
-    {at:150,n:3, l:'Critique amateur'    },
-    {at:400,n:4, l:'Curateur underground'},
-    {at:900,n:5, l:'Ambassadeur cinéma'  },
-  ];
-  const cur = [...L].reverse().find(x => s >= x.at) ?? L[0];
-  const ni  = L.findIndex(x => x.n === cur.n) + 1;
-  const nxt = L[ni] ?? L[L.length-1];
-  return { n:cur.n, label:cur.l, pct:cur.n===5?1:Math.min(1,(s-cur.at)/(nxt.at-cur.at)), nextAt:nxt.at };
-}
-function useGamification(uid:string) {
-  const [sc, setSc] = useState(0);
-  useEffect(() => {
-    if (!uid) return;
-    Promise.all([
-      supabase.from('user_history').select('work_id',{count:'exact',head:true}).eq('user_id',uid),
-      supabase.from('critiques').select('id',{count:'exact',head:true}).eq('user_id',uid),
-      supabase.from('user_favorites').select('work_id',{count:'exact',head:true}).eq('user_id',uid),
-    ]).then(([h,c,f]) => setSc((h.count??0)*3+(c.count??0)*8+(f.count??0)*2)).catch(()=>{});
-  }, [uid]);
-  return { score:sc, level:cinephileLevel(sc) };
-}
 
 // ─── DB ───────────────────────────────────────────────────────────────────────
-const genId      = () => Math.random().toString(36).slice(2,9);
 const validUrl   = (u:string) => !u || /^https?:\/\/.+/.test(u);
 const validEmail = (e:string) => !e || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 function validateUsername(u:string):string|null {
@@ -125,10 +98,10 @@ async function fetchProfile(uid:string): Promise<any> {
 
 // ★ UPSERT — crée ou met à jour, jamais bloqué par la FK supprimée
 async function persistProfile(uid:string, form:ProfileForm): Promise<void> {
-  const { error } = await supabase.from('profiles').upsert(
-    { id:uid, ...form, updated_at:new Date().toISOString() },
-    { onConflict:'id' }
-  );
+  // ★ FIX: Never send empty avatar_url — it would overwrite the existing avatar in DB
+  const payload: Record<string, any> = { id:uid, ...form, updated_at:new Date().toISOString() };
+  if (!payload.avatar_url) delete payload.avatar_url;
+  const { error } = await supabase.from('profiles').upsert(payload, { onConflict:'id' });
   if (error) {
     console.error('[edit] upsert error:', error.code, error.message);
     throw new Error(error.message);
@@ -280,25 +253,7 @@ const Toggle = memo(function Toggle({label,subtitle,value,onChange}:{label:strin
   );
 });
 
-const Chips = memo(({items,selected,onToggle}:{items:string[];selected:string[];onToggle:(v:string)=>void}) => (
-  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8,paddingHorizontal:PAD}}>
-    {items.map(item => {
-      const on = selected.includes(item);
-      return (
-        <TouchableOpacity key={item} style={[chp.pill, on&&chp.pillOn]} onPress={()=>onToggle(item)} activeOpacity={0.75}>
-          {on && <Ionicons name="checkmark" size={10} color={C.bg}/>}
-          <Text style={[chp.txt, on&&chp.txtOn]}>{item}</Text>
-        </TouchableOpacity>
-      );
-    })}
-  </View>
-));
-const chp = StyleSheet.create({
-  pill:  {flexDirection:'row',alignItems:'center',gap:5,paddingHorizontal:13,paddingVertical:8,borderRadius:24,backgroundColor:C.glass,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border},
-  pillOn:{backgroundColor:C.white,borderColor:C.white},
-  txt:   {color:C.muted,fontSize:12,fontWeight:'500'},
-  txtOn: {color:C.bg,fontWeight:'700'},
-});
+
 
 const RoleGrid = memo(({selected,onChange}:{selected:string;onChange:(v:string)=>void}) => (
   <View style={{flexDirection:'row',flexWrap:'wrap',gap:10,paddingHorizontal:PAD}}>
@@ -320,23 +275,6 @@ const rg = StyleSheet.create({
   lblOn: {color:C.bg,fontWeight:'700'},
 });
 
-const WorkCard = memo(({work,onUpdate,onDelete}:{work:NotableWork;onUpdate:(w:NotableWork)=>void;onDelete:(id:string)=>void}) => (
-  <View style={{marginHorizontal:PAD,marginBottom:12,borderRadius:14,borderWidth:StyleSheet.hairlineWidth,borderColor:C.borderHi,backgroundColor:C.glass,padding:14}}>
-    <View style={{flexDirection:'row',alignItems:'center',gap:10,marginBottom:12}}>
-      <View style={{width:3,height:3,borderRadius:1.5,backgroundColor:C.white}}/>
-      <Text style={{flex:1,color:C.offWhite,fontSize:12,fontWeight:'600'}} numberOfLines={1}>{work.title||"Titre de l'œuvre"}</Text>
-      <TouchableOpacity onPress={()=>onDelete(work.id)} hitSlop={10}><Ionicons name="close" size={14} color={C.muted}/></TouchableOpacity>
-    </View>
-    <View style={{flexDirection:'row',gap:10}}>
-      <TextInput style={{flex:1,color:C.white,fontSize:13,paddingVertical:5}} value={work.title} onChangeText={v=>onUpdate({...work,title:v})} placeholder="Titre" placeholderTextColor="rgba(255,255,255,0.18)" selectionColor={C.white}/>
-      <TextInput style={{width:68,color:C.white,fontSize:13,paddingVertical:5,textAlign:'center'}} value={work.year} onChangeText={v=>onUpdate({...work,year:v})} placeholder="Année" placeholderTextColor="rgba(255,255,255,0.18)" keyboardType="numeric" maxLength={4} selectionColor={C.white}/>
-    </View>
-    <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.border,marginVertical:9}}/>
-    <TextInput style={{color:C.white,fontSize:13,paddingVertical:5}} value={work.role} onChangeText={v=>onUpdate({...work,role:v})} placeholder="Votre rôle" placeholderTextColor="rgba(255,255,255,0.18)" selectionColor={C.white}/>
-    <View style={{height:StyleSheet.hairlineWidth,backgroundColor:C.border,marginVertical:9}}/>
-    <TextInput style={{color:C.white,fontSize:12,paddingVertical:5}} value={work.url} onChangeText={v=>onUpdate({...work,url:v})} placeholder="Lien (https://…)" placeholderTextColor="rgba(255,255,255,0.14)" keyboardType="url" autoCapitalize="none" selectionColor={C.white}/>
-  </View>
-));
 
 const SocRow = memo(({icon,label,value,onChange,placeholder}:{icon:keyof typeof Ionicons.glyphMap;label:string;value:string;onChange:(v:string)=>void;placeholder:string}) => {
   const fa = useRef(new Animated.Value(0)).current;
@@ -356,10 +294,10 @@ const SocRow = memo(({icon,label,value,onChange,placeholder}:{icon:keyof typeof 
 });
 
 const TabNav = memo(({active,onChange}:{active:Section;onChange:(s:Section)=>void}) => {
-  const LABELS: Record<Section,string> = {identity:'Identité',cinema:'Cinéma',network:'Réseaux'};
+  const LABELS: Record<Section,string> = {identity:'Identité',network:'Réseaux'};
   return (
     <View style={{flexDirection:'row',borderBottomWidth:StyleSheet.hairlineWidth,borderBottomColor:C.border}}>
-      {(['identity','cinema','network'] as Section[]).map(k => {
+      {(['identity','network'] as Section[]).map(k => {
         const on = active===k;
         return (
           <TouchableOpacity key={k} style={{flex:1,alignItems:'center',paddingVertical:13,position:'relative'}} onPress={()=>onChange(k)} activeOpacity={0.80}>
@@ -373,15 +311,13 @@ const TabNav = memo(({active,onChange}:{active:Section;onChange:(s:Section)=>voi
 });
 
 // ─── Avatar Preview ───────────────────────────────────────────────────────────
-const AvatarPreview = memo(({name,url,level,isPro,loading,onPress}:{name:string;url:string;level:number;isPro:boolean;loading:boolean;onPress:()=>void}) => {
-  const init = useMemo(() => (name||'?').trim().split(/\s+/).map(n=>n[0]).join('').toUpperCase().slice(0,2),[name]);
+const AvatarPreview = memo(({name,url,isPro,loading,onPress,onWebChange}:{name:string;url:string;isPro:boolean;loading:boolean;onPress:()=>void;onWebChange?:(e:any)=>void}) => {
+  const init = useMemo(() => (name||'?').trim().split(/\s+/).filter(Boolean).map((n:string)=>n[0]||'').join('').toUpperCase().slice(0,2)||'?',[name]);
   const [err,setErr] = useState(false);
   useEffect(() => setErr(false),[url]);
   const hasAvatar = !!(url&&!err);
-  // ★ Textes définis avant le JSX — pas de mixing dans View
   const photoLabel  = hasAvatar ? 'Photo de profil active' : 'Monogramme — ajoutez une photo';
   const actionLabel = hasAvatar ? 'Changer la photo' : 'Ajouter une photo';
-  const levelStr    = String(level);
   return (
     <View style={{flexDirection:'row',alignItems:'center',gap:20,paddingHorizontal:PAD,paddingVertical:22}}>
       <TouchableOpacity onPress={onPress} activeOpacity={0.88} style={{position:'relative'}}>
@@ -390,9 +326,6 @@ const AvatarPreview = memo(({name,url,level,isPro,loading,onPress}:{name:string;
             ? <Image source={{uri:url}} style={{width:80,height:80}} resizeMode="cover" onError={()=>setErr(true)}/>
             : <View style={{flex:1,alignItems:'center',justifyContent:'center'}}><Text style={{color:C.white,fontSize:26,fontWeight:'900',letterSpacing:-0.5}}>{init}</Text></View>
           }
-        </View>
-        <View style={{position:'absolute',top:-4,right:-4,width:22,height:22,borderRadius:11,backgroundColor:C.navyMid,borderWidth:1.5,borderColor:C.border,alignItems:'center',justifyContent:'center'}}>
-          <Text style={{color:C.white,fontSize:9,fontWeight:'900'}}>{levelStr}</Text>
         </View>
         {isPro && (
           <View style={{position:'absolute',bottom:0,right:0,width:20,height:20,borderRadius:10,backgroundColor:C.navyMid,borderWidth:1.5,borderColor:'rgba(255,255,255,0.28)',alignItems:'center',justifyContent:'center'}}>
@@ -405,12 +338,14 @@ const AvatarPreview = memo(({name,url,level,isPro,loading,onPress}:{name:string;
             : <Ionicons name="camera-outline" size={13} color={C.bg}/>
           }
         </View>
+        {Platform.OS==='web'&&onWebChange&&React.createElement('input',{type:'file',accept:'image/*',onChange:onWebChange,style:{position:'absolute',top:0,left:0,width:80,height:80,opacity:0,cursor:'pointer',zIndex:10}})}
       </TouchableOpacity>
       <View style={{flex:1,gap:6}}>
         <Text style={{color:C.white,fontSize:15,fontWeight:'700'}}>{name||'Votre nom'}</Text>
         <Text style={{color:C.muted,fontSize:11,lineHeight:16}}>{photoLabel}</Text>
-        <TouchableOpacity onPress={onPress} style={{paddingHorizontal:14,paddingVertical:6,borderRadius:20,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(255,255,255,0.22)',alignSelf:'flex-start',marginTop:2}} activeOpacity={0.80}>
+        <TouchableOpacity onPress={Platform.OS==='web'?()=>{}:onPress} style={{paddingHorizontal:14,paddingVertical:6,borderRadius:20,borderWidth:StyleSheet.hairlineWidth,borderColor:'rgba(255,255,255,0.22)',alignSelf:'flex-start',marginTop:2,position:'relative'}} activeOpacity={0.80}>
           <Text style={{color:C.offWhite,fontSize:12,fontWeight:'600'}}>{actionLabel}</Text>
+          {Platform.OS==='web'&&onWebChange&&React.createElement('input',{type:'file',accept:'image/*',onChange:onWebChange,style:{position:'absolute',top:0,left:0,right:0,bottom:0,opacity:0,cursor:'pointer',zIndex:10}})}
         </TouchableOpacity>
       </View>
     </View>
@@ -446,7 +381,7 @@ const GamiBanner = memo(({level,score}:{level:{n:number;label:string;pct:number;
           <View style={{height:3,borderRadius:2,backgroundColor:'rgba(255,255,255,0.07)',overflow:'hidden'}}>
             <Animated.View style={{height:'100%',borderRadius:2,backgroundColor:C.white,width:barWidth}}/>
           </View>
-          {level.n < 5 && (
+          {level.n < 10 && level.nextAt > score && (
             <Text style={{color:C.muted,fontSize:10}}>{nextLabel}</Text>
           )}
         </View>
@@ -477,7 +412,9 @@ export default function EditProfileScreen() {
   formRef.current   = form;
   uidRef.current    = userId;
 
-  const { score, level } = useGamification(userId);
+  const { profile: gamiProfile } = useGamification(userId, [], { skipBadges: true });
+  const score = gamiProfile.xp;
+  const level = { n: gamiProfile.level, label: gamiProfile.title, pct: gamiProfile.pct, nextAt: gamiProfile.xp + gamiProfile.xpToNext };
 
   // ── Init UUID device ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -515,14 +452,6 @@ export default function EditProfileScreen() {
     autoSave();
   }, [autoSave]);
 
-  const toggleArr = useCallback((key:'specialties'|'open_to'|'festivals', item:string) => {
-    setForm(p => { const arr=p[key] as string[]; return {...p,[key]:arr.includes(item)?arr.filter(x=>x!==item):[...arr,item]}; });
-    autoSave();
-  }, [autoSave]);
-
-  const addWork    = useCallback(()=>setForm(p=>({...p,notable_works:[...p.notable_works,{id:genId(),title:'',year:'',role:'',url:''}]})),[]);
-  const updateWork = useCallback((w:NotableWork)=>setForm(p=>({...p,notable_works:p.notable_works.map(x=>x.id===w.id?w:x)})),[]);
-  const deleteWork = useCallback((id:string)=>setForm(p=>({...p,notable_works:p.notable_works.filter(x=>x.id!==id)})),[]);
 
   // ── Avatar ────────────────────────────────────────────────────────────────
   const handlePickAvatar = useCallback(async () => {
@@ -545,17 +474,50 @@ export default function EditProfileScreen() {
     finally { setAVL(false); }
   }, [userId]);
 
+  // iOS Safari: programmatic input.click() est bloqué par la contrainte user-gesture.
+  // L'overlay <input> dans AvatarPreview déclenche ce callback directement via un vrai tap.
+  const handleWebAvatarChange = useCallback((e: any) => {
+    const file = e.target?.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setAVL(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (!dataUrl) { setAVL(false); return; }
+      uploadAvatar(dataUrl, userId).then(
+        (url) => {
+          setAVL(false);
+          if (url) {
+            setAvUrl(url);
+            supabase.from('profiles').update({avatar_url:url,updated_at:new Date().toISOString()}).eq('id',userId)
+              .then(()=>{}, (err:any)=>console.warn('[edit] avatar db:',err?.message));
+            try { SecureStore?.setItemAsync('profile_dirty', String(Date.now())); } catch {}
+          } else {
+            Alert.alert('Erreur upload',"Exécutez universe_setup.sql dans Supabase SQL Editor d'abord.");
+          }
+        },
+        () => { setAVL(false); Alert.alert('Erreur',"Impossible d'uploader la photo."); }
+      );
+    };
+    reader.onerror = () => { setAVL(false); Alert.alert('Erreur',"Impossible de lire le fichier."); };
+    reader.readAsDataURL(file);
+  }, [userId]);
+
   // ── Validation ────────────────────────────────────────────────────────────
   const validate = useCallback(():boolean => {
     const e:Partial<Record<keyof ProfileForm,string>> = {};
     const ue = validateUsername(form.username); if (ue) e.username=ue;
+    if (!form.username.trim()) e.username = 'Nom d\'utilisateur obligatoire';
+    if (!form.display_name.trim()) e.display_name = 'Nom d\'affichage obligatoire';
+    if (!avatarUrl) e.display_name = e.display_name || 'Photo de profil obligatoire — ajoutez une image';
     if (!validUrl(form.website))       e.website='URL invalide (https://…)';
     if (!validEmail(form.contact_email)) e.contact_email='Email invalide';
     setErrors(e);
     if (e.username||e.display_name)   setSection('identity');
     else if (e.website||e.contact_email) setSection('network');
     return Object.keys(e).length===0;
-  }, [form]);
+  }, [form, avatarUrl]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -573,7 +535,10 @@ export default function EditProfileScreen() {
     setSavedOk(false);
     try {
       clearTimeout(debounce.current);
-      await persistProfile(userId, form);
+      // ★ FIX: Only include avatar_url if it's actually set — never clear it on save
+      const formWithAvatar: ProfileForm = { ...form };
+      if (avatarUrl) formWithAvatar.avatar_url = avatarUrl;
+      await persistProfile(userId, formWithAvatar);
       if (Platform.OS!=='web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(()=>{});
       setSavedOk(true);
       Animated.sequence([
@@ -581,25 +546,23 @@ export default function EditProfileScreen() {
         Animated.delay(1800),
         Animated.timing(successFade,{toValue:0,duration:250,useNativeDriver:true}),
       ]).start(() => setSavedOk(false));
-      setTimeout(() => router.back(), 200);
+      // ★ FIX: Don't navigate back immediately — let the user see the success feedback.
+      // The profile screen will reload via useFocusEffect when they navigate back.
+      setTimeout(() => router.back(), 400);
     } catch (e:any) {
       Alert.alert('Erreur de sauvegarde',
         `${e?.message ?? 'Erreur inconnue'}\n\nAssurez-vous d'avoir exécuté universe_setup.sql dans Supabase SQL Editor.`
       );
     } finally { setSaving(false); }
-  }, [userId,form,validate,saving,shakeX,successFade,router]);
+  }, [userId,form,avatarUrl,validate,saving,shakeX,successFade,router]);
 
   // ── Sections ──────────────────────────────────────────────────────────────
   // Labels pré-calculés comme strings (évite mixing JSX number+text dans View)
   const roleLabel   = ROLES.find(r=>r.key===form.role)?.label;
-  const specBadge   = form.specialties.length > 0    ? `${form.specialties.length}` : undefined;
-  const festBadge   = form.festivals.length > 0      ? `${form.festivals.length}` : undefined;
-  const worksBadge  = form.notable_works.length > 0  ? `${form.notable_works.length}` : undefined;
-  const openToBadge = form.open_to.length > 0        ? `${form.open_to.length}` : undefined;
 
   const renderIdentity = () => (
     <View>
-      <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} level={level.n} isPro={form.is_pro} loading={avLoading} onPress={handlePickAvatar}/>
+      <AvatarPreview name={form.display_name||form.username||'?'} url={avatarUrl} isPro={form.is_pro} loading={avLoading} onPress={Platform.OS==='web'?()=>{}:handlePickAvatar} onWebChange={handleWebAvatarChange}/>
       <GamiBanner level={level} score={score}/>
       <Field label="Nom d'affichage"   value={form.display_name}     onChange={v=>patch('display_name',v)}       placeholder="Cinéaste Anonyme"          maxLength={60}  icon="person-outline"/>
       <Field label="Nom d'utilisateur" value={form.username}         onChange={v=>patch('username',v.toLowerCase().replace(/[^a-z0-9._-]/g,''))} placeholder="monprofil" maxLength={30} icon="at-outline" error={errors.username} hint="Lettres, chiffres, . _ -"/>
@@ -609,37 +572,6 @@ export default function EditProfileScreen() {
       <RoleGrid selected={form.role} onChange={v=>patch('role',v)}/>
       <Divider/>
       <Field label="Localisation" value={form.location} onChange={v=>patch('location',v)} placeholder="Paris, France" icon="location-outline"/>
-    </View>
-  );
-
-  const renderCinema = () => (
-    <View>
-      <SHead label="Genres maîtrisés" badge={specBadge}/>
-      <Chips items={GENRES} selected={form.specialties} onToggle={item=>toggleArr('specialties',item)}/>
-      <Divider/>
-      <Field label="Équipement & outils" value={form.equipment} onChange={v=>patch('equipment',v)} placeholder="Sony FX6, DaVinci Resolve…" multiline maxLength={220} icon="camera-outline"/>
-      <Divider/>
-      <SHead label="Festivals" badge={festBadge}/>
-      <Chips items={FESTIVALS} selected={form.festivals} onToggle={item=>toggleArr('festivals',item)}/>
-      <Divider/>
-      <SHead label="Œuvres notables" badge={worksBadge}/>
-      {form.notable_works.map(w => <WorkCard key={w.id} work={w} onUpdate={updateWork} onDelete={deleteWork}/>)}
-      <TouchableOpacity style={{flexDirection:'row',alignItems:'center',gap:8,marginHorizontal:PAD,marginTop:4,marginBottom:8,paddingVertical:13,borderRadius:13,borderWidth:StyleSheet.hairlineWidth,borderColor:C.border,justifyContent:'center',backgroundColor:C.glass}} onPress={addWork} activeOpacity={0.80}>
-        <Ionicons name="add" size={14} color={C.muted}/>
-        <Text style={{color:C.muted,fontSize:12,fontWeight:'600'}}>Ajouter une œuvre</Text>
-      </TouchableOpacity>
-      <Divider/>
-      <SHead label="Disponibilités" badge={openToBadge}/>
-      <Chips items={COLLABS} selected={form.open_to} onToggle={item=>toggleArr('open_to',item)}/>
-      <Divider mt={24} mb={0}/>
-      <Toggle label="Professionnel du secteur" subtitle="Activité dans l'industrie cinématographique" value={form.is_pro} onChange={v=>patch('is_pro',v)}/>
-      <Toggle label="Contact professionnel" subtitle="Visible par vos connexions Universe" value={form.is_industry_contact} onChange={v=>patch('is_industry_contact',v)}/>
-      {form.is_industry_contact && (
-        <View>
-          <Divider mt={8} mb={8}/>
-          <Field label="Email professionnel" value={form.contact_email} onChange={v=>patch('contact_email',v)} placeholder="contact@exemple.com" keyboardType="email-address" icon="mail-outline" error={errors.contact_email}/>
-        </View>
-      )}
     </View>
   );
 
@@ -653,6 +585,15 @@ export default function EditProfileScreen() {
       <SocRow icon="videocam-outline" label="Vimeo"     value={form.social_vimeo}     onChange={v=>patch('social_vimeo',v)}     placeholder="https://vimeo.com/moi"/>
       <SocRow icon="logo-youtube"     label="YouTube"   value={form.social_youtube}   onChange={v=>patch('social_youtube',v)}   placeholder="https://youtube.com/@machaîne"/>
       <SocRow icon="film-outline"     label="IMDb"      value={form.social_imdb}       onChange={v=>patch('social_imdb',v)}      placeholder="https://imdb.com/name/nm..."/>
+      <Divider mt={24} mb={0}/>
+      <Toggle label="Professionnel du secteur" subtitle="Activité dans l'industrie cinématographique" value={form.is_pro} onChange={v=>patch('is_pro',v)}/>
+      <Toggle label="Contact professionnel" subtitle="Visible par vos connexions Universe" value={form.is_industry_contact} onChange={v=>patch('is_industry_contact',v)}/>
+      {form.is_industry_contact && (
+        <View>
+          <Divider mt={8} mb={8}/>
+          <Field label="Email professionnel" value={form.contact_email} onChange={v=>patch('contact_email',v)} placeholder="contact@exemple.com" keyboardType="email-address" icon="mail-outline" error={errors.contact_email}/>
+        </View>
+      )}
     </View>
   );
 
@@ -695,7 +636,6 @@ export default function EditProfileScreen() {
         <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined} keyboardVerticalOffset={96}>
           <ScrollView ref={scrollRef} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{paddingBottom:100}}>
             {section==='identity' && renderIdentity()}
-            {section==='cinema'   && renderCinema()}
             {section==='network'  && renderNetwork()}
 
             {/* ★ Success — Animated.View séparé pour éviter text node */}

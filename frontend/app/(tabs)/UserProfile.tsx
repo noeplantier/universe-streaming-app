@@ -36,7 +36,7 @@ import {
 } from 'react-native';
 import { LinearGradient }              from 'expo-linear-gradient';
 import { Ionicons }                    from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar }                   from 'expo-status-bar';
 import * as Haptics                    from 'expo-haptics';
@@ -770,6 +770,16 @@ export default function UserProfileScreen() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[deviceId]);
+
+  // ★ FIX: Re-fetch profile data every time the screen gains focus
+  useFocusEffect(useCallback(()=>{
+    if(!deviceId)return;
+    loadAll(deviceId);
+    loadGami(deviceId);
+    loadPrivacy(deviceId);
+    loadFollowState(myId??'',deviceId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[deviceId,myId]));
 
   const isSelf = myId!==null && myId===deviceId;
 

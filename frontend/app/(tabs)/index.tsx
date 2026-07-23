@@ -185,10 +185,9 @@ function useReelsFeed(feedKey: MenuKey, affinity: Record<string, number> = {}) {
     let dead = false;
     setLoading(true); setError(null); setFilms([]);
     pageRef.current = 0; hasMoreRef.current = true; loadingMore.current = false;
-    fetchApprovedPage(0, feedKey)
-      .then(rows => {
+    fetchApprovedPage(0, feedKey).then(
+      (rows) => {
         if (!dead) {
-          // ★ Rerank page 0 si le user a des préférences genre (feed global seulement)
           const aff = affinityRef.current;
           const hasAff = feedKey === ALL_GENRES_KEY && Object.keys(aff).length > 0;
           const ranked = hasAff
@@ -198,31 +197,34 @@ function useReelsFeed(feedKey: MenuKey, affinity: Record<string, number> = {}) {
           hasMoreRef.current = rows.length === PAGE_SIZE;
           setLoading(false);
         }
-      })
-      .catch(e => {
+      },
+      (e) => {
         if (!dead) {
           console.error('[reels]', e);
           setError('Erreur de chargement.');
           setLoading(false);
         }
-      });
+      },
+    );
     return () => { dead = true; };
   }, [feedKey]);
 
-  const loadMore = useCallback(async () => {
+  const loadMore = useCallback(() => {
     if (loadingMore.current || !hasMoreRef.current) return;
     loadingMore.current = true;
     const next = pageRef.current + 1;
-    try {
-      const rows = await fetchApprovedPage(next, feedKeyRef.current);
-      setFilms(prev => [...prev, ...rows.map(mapReel)]);
-      pageRef.current = next;
-      hasMoreRef.current = rows.length === PAGE_SIZE;
-    } catch (e) {
-      console.error('[reels:loadMore]', e);
-    } finally {
-      loadingMore.current = false;
-    }
+    fetchApprovedPage(next, feedKeyRef.current).then(
+      (rows) => {
+        setFilms(prev => [...prev, ...rows.map(mapReel)]);
+        pageRef.current = next;
+        hasMoreRef.current = rows.length === PAGE_SIZE;
+        loadingMore.current = false;
+      },
+      (e) => {
+        console.error('[reels:loadMore]', e);
+        loadingMore.current = false;
+      },
+    );
   }, []);
 
   // ── Realtime — ne réinjecte/maj que si le reel appartient au genre actif ──
@@ -282,6 +284,34 @@ function useReelsFeed(feedKey: MenuKey, affinity: Record<string, number> = {}) {
 
   return { films, loading, error, loadMore, toggleLike, incrementViews, updateSaved, updateLiked };
 }
+
+const SkeletonReel = React.memo(function SkeletonReel({ w, h }: { w: number; h: number }) {
+  const pulse = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulse, { toValue: 0.9, duration: 800, useNativeDriver: true }),
+      Animated.timing(pulse, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+  return (
+    <View style={{ width: w, height: h, backgroundColor: '#070C17' }}>
+      <Animated.View style={{ flex: 1, opacity: pulse }}>
+        <View style={{ position: 'absolute', bottom: 100, left: 20, right: 80, gap: 10 }}>
+          <View style={{ height: 18, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.12)', width: '70%' }} />
+          <View style={{ height: 13, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.07)', width: '48%' }} />
+          <View style={{ height: 13, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.05)', width: '36%' }} />
+        </View>
+        <View style={{ position: 'absolute', right: 16, bottom: 160, gap: 22, alignItems: 'center' }}>
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' }} />
+        </View>
+      </Animated.View>
+    </View>
+  );
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ReelsScreenInner — consomme le contexte (doit être enfant du Provider)
@@ -379,7 +409,7 @@ function ReelsScreenInner() {
   commitRef.current = commitIndex;
 
   // ── Scroll ────────────────────────────────────────────────────────────────
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
 
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: any[] }) => {
@@ -480,9 +510,7 @@ function ReelsScreenInner() {
     return (
       <View style={s.root}>
         <StatusBar style="light" translucent />
-        <View style={s.center}>
-          <Text style={s.loadTxt}>Chargement…</Text>
-        </View>
+        <SkeletonReel w={W} h={H} />
       </View>
     );
   }
@@ -552,7 +580,7 @@ function ReelsScreenInner() {
         onScroll={onScroll}
         scrollEventThrottle={16}
         onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
+        onEndReachedThreshold={0.7}
         windowSize={5}
         maxToRenderPerBatch={2}
         initialNumToRender={2}

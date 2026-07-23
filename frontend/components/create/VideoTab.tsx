@@ -210,8 +210,9 @@ interface Form {
   year:         string; // ISO "YYYY-MM-DD" — sélectionné via calendrier
   synopsis:     string;
   participants: string; // noms séparés par des virgules
+  work_id:      string | number | null; // ★ lien vers l'œuvre (film/[id].tsx)
 }
-const EMPTY: Form = { title:'', genre:'', director:'', year:'', synopsis:'', participants:'' };
+const EMPTY: Form = { title:'', genre:'', director:'', year:'', synopsis:'', participants:'', work_id:null };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS — module-level
@@ -998,6 +999,7 @@ const VideoTab = memo(function VideoTab() {
         year:          form.year.trim()         || null,
         synopsis:      form.synopsis.trim()     || null,
         participants:  form.participants.trim() || null,
+        work_id:       form.work_id ? Number(form.work_id) : null, // ★ lien vers l'œuvre
         duration:      video.duration ? Math.round(video.duration / 1000) : null,
         likes_count:   0,
         views_count:   0,

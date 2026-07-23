@@ -5,6 +5,7 @@ import {
   View, Text, StyleSheet, Image, FlatList, RefreshControl,
   TouchableOpacity, ActivityIndicator, Platform,
   ScrollView, TextInput, Alert, Share, Animated, Dimensions,
+  Easing, Linking,
 } from 'react-native';
 import { SafeAreaView }   from 'react-native-safe-area-context';
 import { StatusBar }      from 'expo-status-bar';
@@ -91,7 +92,9 @@ function timeAgo(d:string) {
   const dd=Math.floor(h/24); if(dd<7)return`il y a ${dd}j`;
   return new Date(d).toLocaleDateString('fr-FR',{day:'2-digit',month:'short'});
 }
-const av = (uid:string, url?:string|null) => url ?? `https://i.pravatar.cc/80?u=${uid}`;
+// ★ FIX: Never fall back to external random avatars — use consistent initials-based placeholder
+// ★ FIX: Consistent avatar helper — never use external random avatars
+const av = (uid:string, url?:string|null): string|undefined => url ?? undefined;
 
 // ─── ★ HOOK CRITIQUES — identique au fichier original ────────────────────────
 function useCritiques(tab: FeedTab, userId: string) {
@@ -167,11 +170,11 @@ function useCritiques(tab: FeedTab, userId: string) {
       if(c.id!==id) return c;
       const liked = !c.is_liked;
       if(liked){
-        supabase.from('critique_likes').upsert({user_id:userId,critique_id:id},{onConflict:'user_id,critique_id'}).then(()=>{});
-        supabase.from('critiques').update({likes_count:c.likes_count+1}).eq('id',id).then(()=>{});
+        supabase.from('critique_likes').upsert({user_id:userId,critique_id:id},{onConflict:'user_id,critique_id'}).then(()=>{},()=>{});
+        supabase.from('critiques').update({likes_count:c.likes_count+1}).eq('id',id).then(()=>{},()=>{});
       } else {
-        supabase.from('critique_likes').delete().eq('user_id',userId).eq('critique_id',id).then(()=>{});
-        supabase.from('critiques').update({likes_count:Math.max(0,c.likes_count-1)}).eq('id',id).then(()=>{});
+        supabase.from('critique_likes').delete().eq('user_id',userId).eq('critique_id',id).then(()=>{},()=>{});
+        supabase.from('critiques').update({likes_count:Math.max(0,c.likes_count-1)}).eq('id',id).then(()=>{},()=>{});
       }
       return{...c,is_liked:liked,likes_count:c.likes_count+(liked?1:-1)};
     }));
@@ -207,26 +210,59 @@ function useCritiques(tab: FeedTab, userId: string) {
     }));
   },[]);
 
-  const shareCritique = useCallback(async(critique:Critique)=>{
+  const shareCritique = useCallback((critique:Critique)=>{
     const msg = `"${critique.title}" — ${critique.film_title}\n\n${critique.content.slice(0,160)}…\n\nUniverse · Cinéma indépendant`;
-    try {
-      if(Platform.OS!=='web'){
-        await Share.share({message:msg,title:critique.title});
-      } else if(typeof navigator!=='undefined' && (navigator as any).share){
-        await (navigator as any).share({title:critique.title,text:msg});
-      } else {
-        await (navigator as any).clipboard.writeText(msg);
-        Alert.alert('Copié !','Critique copiée dans le presse-papier.');
+    const doShare = async () => {
+      try {
+        if(Platform.OS!=='web'){
+          await Share.share({message:msg,title:critique.title});
+        } else if(typeof navigator!=='undefined'&&(navigator as any).share){
+          await (navigator as any).share({title:critique.title,text:msg});
+        } else {
+          await (navigator as any).clipboard.writeText(msg);
+          Alert.alert('Copié !','Critique copiée dans le presse-papier.');
+        }
+        supabase.from('critique_shares').insert({
+          critique_id:critique.id, user_id:userId,
+          platform:Platform.OS==='web'?'web':'native',
+        }).then(()=>{},()=>{});
+        setItems(prev=>prev.map(c=>c.id===critique.id?{...c,shares_count:(c.shares_count??0)+1}:c));
+      } catch(e:any){
+        if(e?.message?.includes('cancel')) return;
+        console.warn('[Social] share:', e?.message);
       }
-      supabase.from('critique_shares').insert({
-        critique_id:critique.id, user_id:userId,
-        platform:Platform.OS==='web'?'web':'native',
-      }).catch(()=>{});
-      setItems(prev=>prev.map(c=>c.id===critique.id?{...c,shares_count:(c.shares_count??0)+1}:c));
-    } catch(e:any){
-      if(e?.message?.includes('cancel')) return;
-      console.warn('[Social] share:', e?.message);
-    }
+    };
+    const doInstagram = () => {
+      if(Platform.OS==='web'){
+        if(typeof navigator!=='undefined'&&(navigator as any).clipboard){
+          (navigator as any).clipboard.writeText(msg).then(
+            ()=>Alert.alert('Copié !','Ouvrez Instagram et collez dans votre Story.'),
+            ()=>{},
+          );
+        }
+      } else {
+        Linking.canOpenURL('instagram://app').then(
+          (can)=>{
+            if(can){
+              Linking.openURL('instagram://app').then(()=>{},()=>{});
+              setTimeout(()=>Alert.alert('Instagram ouvert 📸','Collez dans votre Story :\n\n'+msg.slice(0,100)+'…'),800);
+            } else {
+              Share.share({message:msg,title:critique.title}).then(()=>{},()=>{});
+            }
+          },
+          ()=>Share.share({message:msg}).then(()=>{},()=>{}),
+        );
+      }
+    };
+    Alert.alert(
+      'Partager la critique',
+      `"${critique.title}"`,
+      [
+        {text:'Partager',onPress:doShare},
+        {text:'Story Instagram 📸',onPress:doInstagram},
+        {text:'Annuler',style:'cancel'},
+      ],
+    );
   },[userId]);
 
   const shareComment = useCallback(async(critique:Critique, comment:Comment)=>{
@@ -240,6 +276,12 @@ function useCritiques(tab: FeedTab, userId: string) {
 
   const addComment = useCallback(async(critiqueId:string,text:string)=>{
     if(!text.trim()) return;
+    // ★ FIX: Block comment if user has no avatar (identity verification)
+    const{data:profileCheck}=await supabase.from('profiles').select('avatar_url').eq('id',userId).maybeSingle();
+    if(!profileCheck?.avatar_url){
+      Alert.alert('Photo requise','Ajoutez une photo de profil pour commenter — votre identité visuelle est essentielle à la communauté.');
+      return;
+    }
     hapticMedium();
     const{data,error}=await supabase.from('critique_comments')
       .insert({critique_id:critiqueId,user_id:userId,content:text.trim()})
@@ -249,9 +291,19 @@ function useCritiques(tab: FeedTab, userId: string) {
       Alert.alert('Erreur','Impossible d\'ajouter le commentaire. Vérifie que universe_setup.sql a été exécuté.');
       return;
     }
+    // ★ FIX: Always fetch fresh profile data for the comment author
     const{data:p}=await supabase.from('profiles').select('id,display_name,avatar_url').eq('id',userId).maybeSingle();
     const newCm:Comment={...(data as Comment),profile:p??undefined,expanded:false};
     setItems(prev=>prev.map(c=>c.id===critiqueId?{...c,comments:[...(c.comments??[]),newCm]}:c));
+    // ★ FIX: Also refresh the critique author's profile in case it changed
+    setItems(prev=>prev.map(c=>{
+      if(c.id!==critiqueId) return c;
+      // If the commenter is also the critique author, update the profile
+      if(c.user_id===userId && p) {
+        return {...c, profile: { display_name: p.display_name, avatar_url: p.avatar_url }};
+      }
+      return c;
+    }));
   },[userId]);
 
   return{items,loading,refresh,toggleLike,toggleComments,expandComment,shareCritique,shareComment,addComment};
@@ -279,10 +331,23 @@ function useSocialNetwork(myId:string){
   const[activity,setActivity]=useState<ActivityItem[]>([]);
   useEffect(()=>{
     if(!myId) return;
-    supabase.from('users')
-      .select('device_id,pseudo,avatar_url,level,xp,followers_count,following_count,works_count')
-      .neq('device_id',myId).order('last_active',{ascending:false}).limit(18)
-      .then(({data})=>setMembers((data??[]) as SocialUser[]));
+    // ★ FIX: Query 'profiles' table instead of 'users'
+    supabase.from('profiles')
+      .select('id,display_name,avatar_url,username,location,website,is_pro,is_industry_contact,specialties,open_to,notable_works,equipment,social_instagram,social_vimeo,social_youtube,social_imdb,films_seen_count,following_count')
+      .neq('id',myId).order('id',{ascending:false}).limit(18)
+      .then(({data})=>{
+        const mapped = (data ?? []).map((p: any) => ({
+          device_id: p.id,
+          pseudo: p.display_name || p.username || 'Cinéphile',
+          avatar_url: p.avatar_url,
+          level: 1,
+          xp: 0,
+          followers_count: p.following_count ?? 0,
+          following_count: 0,
+          works_count: p.films_seen_count ?? 0,
+        })) as SocialUser[];
+        setMembers(mapped);
+      });
     supabase.rpc('get_user_suggestions',{viewer_id:myId}).limit(8)
       .then(({data})=>setSuggestions((data??[]) as SocialUser[]));
     supabase.from('social_activity').select('*')
@@ -395,7 +460,10 @@ const CritiqueCard = memo(function CritiqueCard({
           activeOpacity={0.80}
           onPress={()=>onAvatarPress(item.user_id, dn)}
         >
-          <Image source={{uri:avUri}} style={crd.avatar}/>
+          {avUri
+            ? <Image source={{uri:avUri}} style={crd.avatar}/>
+            : <View style={[crd.avatar,{backgroundColor:C.navyMid,alignItems:'center',justifyContent:'center'}]}><Text style={{color:C.mid,fontSize:12,fontWeight:'800'}}>{dn.slice(0,2).toUpperCase()}</Text></View>
+          }
           <View style={{flex:1,gap:1}}>
             <Text style={crd.authorName} numberOfLines={1}>{dn}</Text>
             <Text style={crd.date}>{timeAgo(item.created_at)}</Text>
@@ -471,7 +539,10 @@ const CritiqueCard = memo(function CritiqueCard({
             <View key={cm.id} style={crd.cmRow}>
               {/* ★ AJOUT : avatar du commentateur cliquable */}
               <TouchableOpacity onPress={()=>onAvatarPress(cm.user_id, cm.profile?.display_name??'Cinéphile')}>
-                <Image source={{uri:av(cm.user_id,cm.profile?.avatar_url)}} style={crd.cmAvatar}/>
+                {av(cm.user_id,cm.profile?.avatar_url)
+                  ? <Image source={{uri:av(cm.user_id,cm.profile?.avatar_url)}} style={crd.cmAvatar}/>
+                  : <View style={[crd.cmAvatar,{backgroundColor:C.navyMid,alignItems:'center',justifyContent:'center'}]}><Text style={{color:C.mid,fontSize:9,fontWeight:'800'}}>{(cm.profile?.display_name??'?').slice(0,1).toUpperCase()}</Text></View>
+                }
               </TouchableOpacity>
               <View style={crd.cmBody}>
                 <View style={{flexDirection:'row',alignItems:'center',gap:6}}>
@@ -577,31 +648,44 @@ const nr=StyleSheet.create({
   role:   {color:C.muted,fontSize:8.5},
 });
 
-// ─── AJOUT: Strip membres actifs ─────────────────────────────────────────────
+// ─── Strip membres actifs — aura dorée animée ─────────────────────────────────
+const AvatarWithAura = memo(function AvatarWithAura({u,onPress}:{u:SocialUser;onPress:()=>void}) {
+  const glowOp = useRef(new Animated.Value(0.26)).current;
+  useEffect(()=>{
+    const l = Animated.loop(Animated.sequence([
+      Animated.timing(glowOp,{toValue:0.95,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),
+      Animated.timing(glowOp,{toValue:0.26,duration:2600,easing:Easing.inOut(Easing.ease),useNativeDriver:true}),
+    ]));
+    l.start();
+    return ()=>l.stop();
+  },[glowOp]);
+  const glowStyle:any = {
+    position:'absolute',top:-4,bottom:-4,left:-4,right:-4,borderRadius:30,
+    ...(Platform.OS==='web'
+      ?{boxShadow:'0 0 18px 6px rgba(245, 200, 66, 0), 0 0 7px 2px rgba(245, 200, 66, 0)'}
+      :{shadowColor:C.gold,shadowOffset:{width:0,height:0},shadowOpacity:0.82,shadowRadius:14,elevation:8}),
+  };
+  return(
+    <TouchableOpacity style={{alignItems:'center',gap:4,width:60}} onPress={onPress} activeOpacity={0.75}>
+      <View style={{position:'relative',width:52,height:52}}>
+        <Animated.View style={[glowStyle,{opacity:glowOp}]} pointerEvents="none"/>
+        <Image source={{uri:u.avatar_url??undefined}} style={{width:52,height:52,borderRadius:26,borderWidth:2,borderColor:C.gold}}/>
+      </View>
+      <Text style={strip.pseudo} numberOfLines={1}>{u.pseudo}</Text>
+    </TouchableOpacity>
+  );
+});
 const ActiveStrip = memo(({users,onPress}:{users:SocialUser[];onPress:(u:SocialUser)=>void})=>(
   <ScrollView horizontal showsHorizontalScrollIndicator={false}
     contentContainerStyle={{paddingHorizontal:EDGE,gap:14}}
     style={{marginBottom:4}}>
     {users.map(u=>(
-      <TouchableOpacity key={u.device_id} style={{alignItems:'center',gap:4,width:60}} onPress={()=>onPress(u)} activeOpacity={0.75}>
-        <View style={{position:'relative'}}>
-          <Image
-            source={{uri:u.avatar_url??`https://i.pravatar.cc/80?u=${u.device_id}`}}
-            style={{width:52,height:52,borderRadius:26,borderWidth:2,borderColor:C.blueBorder}}
-          />
-          <View style={strip.lvBadge}>
-            <Text style={strip.lvTxt}>{u.level}</Text>
-          </View>
-        </View>
-        <Text style={strip.pseudo} numberOfLines={1}>{u.pseudo}</Text>
-      </TouchableOpacity>
+      <AvatarWithAura key={u.device_id} u={u} onPress={()=>onPress(u)}/>
     ))}
   </ScrollView>
 ));
 const strip=StyleSheet.create({
-  lvBadge: {position:'absolute',bottom:-3,right:-3,width:17,height:17,borderRadius:8.5,backgroundColor:C.bg,borderWidth:1.5,borderColor:C.violetBd,alignItems:'center',justifyContent:'center'},
-  lvTxt:   {fontSize:8,fontWeight:'900',color:C.violet},
-  pseudo:  {fontSize:10,color:C.mid,textAlign:'center',maxWidth:60},
+  pseudo:{fontSize:10,color:C.mid,textAlign:'center',maxWidth:60},
 });
 
 // ─── AJOUT: Suggestion card ───────────────────────────────────────────────────
@@ -609,7 +693,7 @@ const SuggestionCard = memo(({user,onFollow,onPress}:{user:SocialUser;onFollow:(
   const[following,setFollowing]=useState(user.is_following??false);
   return(
     <TouchableOpacity style={sg.card} onPress={()=>onPress(user)} activeOpacity={0.80}>
-      <Image source={{uri:user.avatar_url??`https://i.pravatar.cc/80?u=${user.device_id}`}} style={sg.avatar}/>
+      <Image source={{uri:user.avatar_url ?? undefined}} style={sg.avatar}/>
       <View style={sg.lvBadge}><Text style={sg.lvTxt}>{user.level}</Text></View>
       <Text style={sg.pseudo} numberOfLines={1}>{user.pseudo}</Text>
       <Text style={sg.levelName} numberOfLines={1}>{LEVEL_NAMES[user.level]??'Explorateur'}</Text>
@@ -645,7 +729,7 @@ const ActivityRow = memo(({item,onAvatarPress}:{item:ActivityItem;onAvatarPress:
   return(
     <View style={acRow.row}>
       <TouchableOpacity onPress={()=>onAvatarPress(item.actor_device_id,item.actor_pseudo)} activeOpacity={0.75}>
-        <Image source={{uri:item.actor_avatar??`https://i.pravatar.cc/80?u=${item.actor_device_id}`}} style={acRow.avatar}/>
+        <Image source={{uri:item.actor_avatar ?? undefined}} style={acRow.avatar}/>
       </TouchableOpacity>
       <View style={{flex:1}}>
         <Text style={acRow.text} numberOfLines={2}>
