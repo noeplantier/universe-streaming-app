@@ -4,7 +4,7 @@ import type { PropsWithChildren } from "react";
 
 export default function Root({ children }: PropsWithChildren) {
   return (
-    <html lang="en" style={{ height: "100%" }}>
+    <html lang="en" style={{ width: "100%", height: "100%", overflow: "hidden", background: "#03000A" }}>
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
@@ -21,7 +21,8 @@ export default function Root({ children }: PropsWithChildren) {
         <style
           dangerouslySetInnerHTML={{
             __html: `
-              body > div:first-child { position: fixed !important; top: 0; left: 0; right: 0; bottom: 0; }
+              html, body { width: 100%; height: 100%; min-height: 100%; margin: 0; overflow: hidden; background: #03000A; }
+              body > div:first-child { position: fixed !important; inset: 0; width: 100%; height: 100%; overflow: hidden; background: #03000A; }
               [role="tablist"] [role="tab"] * { overflow: visible !important; }
               [role="heading"], [role="heading"] * { overflow: visible !important; }
             `,
@@ -31,6 +32,7 @@ export default function Root({ children }: PropsWithChildren) {
       <body
         style={{
           margin: 0,
+          width: "100%",
           height: "100%",
           overflow: "hidden",
           display: "flex",
