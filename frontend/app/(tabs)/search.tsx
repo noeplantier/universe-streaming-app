@@ -518,7 +518,7 @@ export default function SearchScreen(){
         {(originals.length>0||loading)&&<><RowSection title="Originaux Universe" sub="Créations exclusives" count={loading?undefined:originals.length} items={originals} loading={loading} portrait/>{DIV}</>}
         {(courts.length>0||loading)&&<><RowSection title="Courts métrages" sub="Moins de 60 min" count={loading?undefined:courts.length} items={courts} loading={loading} portrait={false}/>{DIV}</>}
         {(moyens.length>0||loading)&&<><RowSection title="Moyens métrages" sub="60 – 100 min" count={loading?undefined:moyens.length} items={moyens} loading={loading} portrait={false}/>{DIV}</>}
-        {(longs.length>0||loading)&&<RowSection title="Mini-séries & longs" sub="100 min+" count={loading?undefined:longs.length} items={longs} loading={loading} portrait={false}/>}
+        {(longs.length>0||loading)&&<RowSection title="Mini-séries" sub="100 min+" count={loading?undefined:longs.length} items={longs} loading={loading} portrait={false}/>}
         <View style={{height:0}}/>
       </Animated.ScrollView>
     </View>

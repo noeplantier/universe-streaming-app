@@ -10,7 +10,7 @@
  * CDN en prod), ce qui garantit que le bundle JS est toujours injecté.
  */
 
-const CACHE     = 'universe-pwa-v1';
+const CACHE     = 'universe-pwa-v2';
 const PRECACHE  = ['/manifest.json'];  // on ne précache PAS /index.html
 
 // ── Install : précache minimal (pas index.html) ────────────────────────────
@@ -74,24 +74,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 4. Fichiers statiques (JS, CSS, images, fonts) → Cache-first
-  //    Mis en cache lors du premier chargement, servis depuis le cache ensuite.
+  // Ne jamais mettre en cache les réponses API, JSON ou les données de session.
+  if (!['script', 'style', 'image', 'font'].includes(request.destination)) return;
+
+  // 4. Ressources → Network-first pour servir rapidement les mises à jour;
+  //    le cache ne sert que de secours hors ligne.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
-        // Ne cache que les réponses valides (pas les 404, erreurs réseau…)
-        if (
-          !response ||
-          response.status !== 200 ||
-          response.type === 'opaque'
-        ) {
-          return response;
-        }
-        const toCache = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(request, toCache));
-        return response;
-      });
-    })
+    fetch(request).then((response) => {
+      if (response?.status === 200 && response.type !== 'opaque') {
+        const copy = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(request, copy));
+      }
+      return response;
+    }).catch(() => caches.match(request).then((cached) => cached || new Response('Offline', { status: 503 })))
   );
 });

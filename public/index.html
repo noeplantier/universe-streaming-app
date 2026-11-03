@@ -9,8 +9,8 @@
     />
 
     <!-- ── Thème & PWA ─────────────────────────────────────────────────── -->
-    <meta name="theme-color" content="#070C17" />
-    <meta name="background_color" content="#070C17" />
+    <meta name="theme-color" content="#0D2240" />
+    <meta name="background_color" content="#03020A" />
     <meta name="application-name" content="Universe" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -92,5 +92,10 @@
     </noscript>
     <div id="root"></div>
     <script src="/main.js" defer></script>
+    <script>
+      if ('serviceWorker' in navigator && location.protocol === 'https:') {
+        window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+      }
+    </script>
   </body>
 </html>

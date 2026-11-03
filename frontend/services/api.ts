@@ -30,6 +30,20 @@ export interface User {
   reviews_count:       number;
 }
 
+export type Permission = 'backoffice' | 'upload_work' | 'edit_epk' | 'select_cover' | 'read_opportunities' | 'create_opportunities' | 'premium_reward';
+const ROLE_PERMISSIONS: Record<string, readonly Permission[]> = {
+  admin: ['backoffice', 'upload_work', 'edit_epk', 'select_cover', 'read_opportunities', 'create_opportunities', 'premium_reward'],
+  realisateur_producteur: ['upload_work', 'edit_epk', 'select_cover', 'read_opportunities', 'create_opportunities'],
+  guest: ['read_opportunities'],
+  real: ['read_opportunities', 'create_opportunities'],
+};
+
+/** Vérification centralisée des permissions UI. La validation serveur reste obligatoire. */
+export function canAccess(user: Pick<User, 'role'> | null | undefined, permission: Permission): boolean {
+  const role = user?.role?.trim().toLowerCase();
+  return !!role && (ROLE_PERMISSIONS[role] ?? []).includes(permission);
+}
+
 export interface SeenFilm {
   work_id:    number;
   watched_at: string;

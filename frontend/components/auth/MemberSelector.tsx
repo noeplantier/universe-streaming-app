@@ -1,14 +1,14 @@
 /**
  * components/auth/MemberSelector.tsx — Sélecteur de membre équipe Universe
  *
- * Affiche les 8 membres sous forme de chips horizontaux scrollables.
+ * Affiche les 7 profils d’équipe en grille responsive sans défilement horizontal.
  * Chaque chip montre les initiales du membre dans un cercle coloré.
  * La sélection déclenche onSelect(displayName).
  */
 
 import React, { memo } from 'react';
 import {
-  Pressable, ScrollView, StyleSheet, Text, View,
+  Pressable, StyleSheet, Text, View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -21,7 +21,8 @@ export const TEAM_MEMBERS = [
   { name: 'Sharl',     initials: 'SH', color: ['#F59E0B','#B45309'] as [string,string] },
   { name: 'Enzo',      initials: 'EN', color: ['#EF4444','#991B1B'] as [string,string] },
   { name: 'NOX',       initials: 'NX', color: ['#8B5CF6','#6D28D9'] as [string,string] },
-  { name: 'Mathys',      initials: 'MT', color: ['#F43F5E','#BE123C'] as [string,string] },
+  { name: 'Guest',     initials: 'GU', color: ['#F43F5E','#BE123C'] as [string,string] },
+  { name: 'Real',      initials: 'RE', color: ['#38BDF8','#1D4ED8'] as [string,string] },
 
 ] as const;
 
@@ -39,12 +40,7 @@ interface Props {
 // ─────────────────────────────────────────────────────────────────────────────
 export default memo(function MemberSelector({ selected, onSelect, disabled }: Props) {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={s.row}
-      bounces
-    >
+    <View style={s.row}>
       {TEAM_MEMBERS.map(m => {
         const isSelected = selected === m.name;
         return (
@@ -80,7 +76,7 @@ export default memo(function MemberSelector({ selected, onSelect, disabled }: Pr
           </Pressable>
         );
       })}
-    </ScrollView>
+    </View>
   );
 });
 
@@ -89,21 +85,24 @@ export default memo(function MemberSelector({ selected, onSelect, disabled }: Pr
 // ─────────────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   row: {
-    paddingHorizontal: 24,
-    gap: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 4,
   },
 
   chip: {
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    gap: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.10)',
     backgroundColor: 'rgba(255,255,255,0.04)',
-    minWidth: 72,
+    minWidth: 68,
   },
   chipSelected: {
     borderColor: 'rgba(139,92,246,0.5)',
@@ -114,9 +113,9 @@ const s = StyleSheet.create({
   },
 
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -137,7 +136,7 @@ const s = StyleSheet.create({
 
   name: {
     color: 'rgba(255,255,255,0.55)',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
     letterSpacing: 0.3,
   },

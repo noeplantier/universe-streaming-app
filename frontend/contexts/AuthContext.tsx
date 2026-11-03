@@ -25,13 +25,13 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 // ─── GUEST FALLBACK (réseau indisponible au 1er lancement) ───────────────────
 const GUEST_USER: User = {
-  id:                  'hugo-chassaing',
-  username:            'Hugo Chassaing',
-  display_name:        'Hugo Chassaing',
+  id:                  'universe-guest',
+  username:            'Guest',
+  display_name:        'Guest',
   email:               'guest@universe.com',
   avatar_url:          'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTJAonSMhABsc42klQbsziDZ0ga-xmluRvfLQ&s',
   bio:                 'Bienvenue dans UNIVERSE 🌌',
-  role:                'creator',
+  role:                'guest',
   location:            '',
   website:             '',
   is_verified:         false,
