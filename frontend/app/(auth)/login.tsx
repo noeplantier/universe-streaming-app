@@ -109,22 +109,17 @@ const LogoRing = React.memo(function LogoRing() {
     return () => { glowLoop.stop(); scaleLoop.stop(); };
   }, [glow, scale]);
 
-  const borderColor = glow.interpolate({
-    inputRange: [0.35, 1],
-    outputRange: ['rgba(245,200,66,0.50)', 'rgba(255,226,145,0.98)'],
-  });
   const auraOpacity = glow.interpolate({
     inputRange: [0.35, 1],
-    outputRange: [0.55, 1],
+    outputRange: [0.18, 0.42],
   });
   const auraShadow = Platform.OS === 'web'
-    ? ({ boxShadow: '0 0 28px rgba(245,200,66,0.38)' } as any)
-    : { shadowColor: C.gold, shadowRadius: 24, shadowOpacity: 0.78, shadowOffset: { width: 0, height: 0 }, elevation: 16 };
+    ? ({ boxShadow: '0 0 18px rgba(245,200,66,0.22)' } as any)
+    : { shadowColor: C.gold, shadowRadius: 16, shadowOffset: { width: 0, height: 0 }, elevation: 7 };
 
   return (
     <Animated.View style={[lr.wrap, { transform: [{ scale }] }]}>
-      <Animated.View pointerEvents="none" style={[lr.halo, { borderColor, opacity: auraOpacity }, auraShadow]} />
-      <Animated.View style={[lr.core, { borderColor }, auraShadow]}>
+      <Animated.View style={[lr.core, auraShadow, Platform.OS !== 'web' ? { shadowOpacity: auraOpacity } : undefined]}>
         <Image
           source={require('../../assets/images/logouniverse2.png')}
           style={lr.logo}
@@ -312,14 +307,9 @@ const lr = StyleSheet.create({
     width: 104, height: 104,
     alignItems: 'center', justifyContent: 'center',
   },
-  halo: {
-    position: 'absolute', top: 0, left: 0,
-    width: 104, height: 104, borderRadius: 28,
-    borderWidth: 1.5,
-  },
   core: {
     width: 90, height: 90, borderRadius: 24,
-    borderWidth: 2, padding: 2,
+    borderWidth: 0, padding: 2,
     backgroundColor: '#0D2240',
     alignItems: 'center',
     justifyContent: 'center',
