@@ -17,6 +17,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -89,59 +90,47 @@ const ManifestoQuote = React.memo(function ManifestoQuote() {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// LogoRing — anneau animé avec glow gold/blue
+// LogoRing — logo Universe réel avec aura dorée
 // ─────────────────────────────────────────────────────────────────────────────
 const LogoRing = React.memo(function LogoRing() {
-  const glow  = useRef(new Animated.Value(0.3)).current;
+  const glow  = useRef(new Animated.Value(0.35)).current;
   const scale = useRef(new Animated.Value(1)).current;
-  const rot   = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const glowLoop = Animated.loop(Animated.sequence([
-      Animated.timing(glow, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
-      Animated.timing(glow, { toValue: 0.3, duration: 2200, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      Animated.timing(glow, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
+      Animated.timing(glow, { toValue: 0.35, duration: 2400, easing: Easing.inOut(Easing.ease), useNativeDriver: false }),
     ]));
     const scaleLoop = Animated.loop(Animated.sequence([
-      Animated.timing(scale, { toValue: 1.06, duration: 2800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 1, duration: 2800, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 1.035, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 1, duration: 3000, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
     ]));
-    const rotLoop = Animated.loop(Animated.timing(rot, {
-      toValue: 1, duration: 16000, easing: Easing.linear, useNativeDriver: true,
-    }));
-    glowLoop.start(); scaleLoop.start(); rotLoop.start();
-    return () => { glowLoop.stop(); scaleLoop.stop(); rotLoop.stop(); };
-  }, []);
+    glowLoop.start(); scaleLoop.start();
+    return () => { glowLoop.stop(); scaleLoop.stop(); };
+  }, [glow, scale]);
 
   const borderColor = glow.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: ['rgba(90,150,230,0.25)', 'rgba(245,200,66,0.65)', 'rgba(139,92,246,0.45)'],
+    inputRange: [0.35, 1],
+    outputRange: ['rgba(245,200,66,0.50)', 'rgba(255,226,145,0.98)'],
   });
-  const shadowColor = glow.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['rgba(90,150,230,0)', 'rgba(245,200,66,0.35)'],
+  const auraOpacity = glow.interpolate({
+    inputRange: [0.35, 1],
+    outputRange: [0.55, 1],
   });
-  const spin = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const auraShadow = Platform.OS === 'web'
+    ? ({ boxShadow: '0 0 28px rgba(245,200,66,0.38)' } as any)
+    : { shadowColor: C.gold, shadowRadius: 24, shadowOpacity: 0.78, shadowOffset: { width: 0, height: 0 }, elevation: 16 };
 
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      {/* Halo rotatif externe */}
-      <Animated.View style={[lr.halo, {
-        borderColor,
-        transform: [{ rotate: spin }],
-        ...(Platform.OS !== 'web' ? {} : { boxShadow: '0 0 24px rgba(245,200,66,0.3)' } as any),
-      }]} />
-      {/* Core — fond glass */}
-      <Animated.View style={[lr.core, {
-        borderColor,
-        ...(Platform.OS !== 'web'
-          ? { shadowColor, shadowRadius: 28, shadowOpacity: 1, shadowOffset: { width: 0, height: 0 }, elevation: 16 }
-          : { boxShadow: '0 0 32px rgba(245,200,66,0.25)' } as any),
-      }]}>
-        <LinearGradient
-          colors={['rgba(13,32,64,0.95)', 'rgba(6,16,31,0.98)']}
-          style={StyleSheet.absoluteFillObject}
+    <Animated.View style={[lr.wrap, { transform: [{ scale }] }]}>
+      <Animated.View pointerEvents="none" style={[lr.halo, { borderColor, opacity: auraOpacity }, auraShadow]} />
+      <Animated.View style={[lr.core, { borderColor }, auraShadow]}>
+        <Image
+          source={require('../../assets/images/logouniverse2.png')}
+          style={lr.logo}
+          resizeMode="contain"
+          accessibilityLabel="Logo Universe"
         />
-        <Ionicons name="film-outline" size={32} color={C.white} />
       </Animated.View>
     </Animated.View>
   );
@@ -319,20 +308,24 @@ export default function LoginScreen() {
 // Styles — LogoRing
 // ─────────────────────────────────────────────────────────────────────────────
 const lr = StyleSheet.create({
+  wrap: {
+    width: 104, height: 104,
+    alignItems: 'center', justifyContent: 'center',
+  },
   halo: {
-    position: 'absolute',
-    width: 96, height: 96, borderRadius: 48,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    top: -4, left: -4,
+    position: 'absolute', top: 0, left: 0,
+    width: 104, height: 104, borderRadius: 28,
+    borderWidth: 1.5,
   },
   core: {
-    width: 88, height: 88, borderRadius: 22,
-    borderWidth: 1.5,
+    width: 90, height: 90, borderRadius: 24,
+    borderWidth: 2, padding: 2,
+    backgroundColor: '#0D2240',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  logo: { width: 84, height: 84, borderRadius: 20 },
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -367,21 +360,21 @@ const q = StyleSheet.create({
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   safe: { flex: 1 },
-  scroll: { flexGrow: 1, paddingTop: 20 },
+  scroll: { flexGrow: 1, paddingTop: 8 },
 
   // Header
   header: {
     alignItems: 'center',
-    paddingTop: 24,
-    paddingBottom: 28,
-    gap: 18,
+    paddingTop: 10,
+    paddingBottom: 16,
+    gap: 12,
   },
   brandBlock: { alignItems: 'center', gap: 6 },
   brand: {
     color: C.white,
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '900',
-    letterSpacing: 10,
+    letterSpacing: 7,
     textTransform: 'uppercase',
   },
   taglineRow: {
@@ -409,14 +402,14 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 44,
-    marginVertical: 22,
+    marginVertical: 14,
     gap: 8,
   },
   sepLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: 'rgba(255,255,255,0.09)' },
   sepDot:  { width: 4, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.15)' },
 
   // Section membre
-  section: { gap: 14, paddingBottom: 6 },
+  section: { gap: 10, paddingBottom: 6 },
   labelRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -447,16 +440,18 @@ const s = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: 'rgba(13,32,64,0.55)',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(90,150,230,0.25)',
+    borderColor: 'rgba(245,200,66,0.32)',
     alignSelf: 'stretch',
   },
   pinAvatar: {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: 'rgba(90,150,230,0.18)',
-    borderWidth: 1, borderColor: 'rgba(90,150,230,0.35)',
+    backgroundColor: 'rgba(13,34,64,0.95)',
+    borderWidth: 1, borderColor: 'rgba(245,200,66,0.78)',
     alignItems: 'center', justifyContent: 'center',
+    shadowColor: C.gold, shadowRadius: 9, shadowOpacity: 0.5,
+    shadowOffset: { width: 0, height: 0 }, elevation: 5,
   },
-  pinAvatarTxt: { color: C.blue, fontSize: 13, fontWeight: '900' },
+  pinAvatarTxt: { color: C.white, fontSize: 13, fontWeight: '900' },
   pinLabel: { color: C.muted, fontSize: 10, fontWeight: '500' },
   pinName:  { color: C.white, fontSize: 15, fontWeight: '800', letterSpacing: -0.3 },
 
@@ -483,7 +478,7 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    marginTop: 36,
+    marginTop: 22,
     paddingHorizontal: 24,
     paddingBottom: 8,
   },

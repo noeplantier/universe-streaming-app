@@ -1,153 +1,214 @@
 /**
  * components/auth/MemberSelector.tsx — Sélecteur de membre équipe Universe
- *
- * Affiche les 7 profils d’équipe en grille responsive sans défilement horizontal.
- * Chaque chip montre les initiales du membre dans un cercle coloré.
- * La sélection déclenche onSelect(displayName).
+ * Les groupes sont purement visuels : onSelect continue de recevoir le même nom.
  */
-
 import React, { memo } from 'react';
-import {
-  Pressable, StyleSheet, Text, View,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Membres de l'équipe Universe
-// ─────────────────────────────────────────────────────────────────────────────
 export const TEAM_MEMBERS = [
-  { name: 'Chassaing', initials: 'CH', color: ['#0EA5E9','#0369A1'] as [string,string] },
-  { name: 'BSE',       initials: 'BS', color: ['#10B981','#047857'] as [string,string] },
-  { name: 'Sharl',     initials: 'SH', color: ['#F59E0B','#B45309'] as [string,string] },
-  { name: 'Enzo',      initials: 'EN', color: ['#EF4444','#991B1B'] as [string,string] },
-  { name: 'NOX',       initials: 'NX', color: ['#8B5CF6','#6D28D9'] as [string,string] },
-  { name: 'Guest',     initials: 'GU', color: ['#F43F5E','#BE123C'] as [string,string] },
-  { name: 'Real',      initials: 'RE', color: ['#38BDF8','#1D4ED8'] as [string,string] },
-
+  { name: 'Chassaing', initials: 'CH', group: 'admin' },
+  { name: 'BSE',       initials: 'BS', group: 'admin' },
+  { name: 'Sharl',     initials: 'SH', group: 'admin' },
+  { name: 'Enzo',      initials: 'EN', group: 'admin' },
+  { name: 'NOX',       initials: 'NX', group: 'admin' },
+  { name: 'Guest',     initials: 'GU', group: 'guest' },
+  { name: 'Real',      initials: 'RE', group: 'real' },
 ] as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Props
-// ─────────────────────────────────────────────────────────────────────────────
-interface Props {
-  selected?:  string | null;
-  onSelect:   (name: string) => void;
-  disabled?:  boolean;
-}
+type TeamMember = typeof TEAM_MEMBERS[number];
+type Props = {
+  selected?: string | null;
+  onSelect: (name: string) => void;
+  disabled?: boolean;
+};
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MemberSelector
-// ─────────────────────────────────────────────────────────────────────────────
-export default memo(function MemberSelector({ selected, onSelect, disabled }: Props) {
+const MemberTile = memo(function MemberTile({
+  member, selected, disabled, layout, onSelect,
+}: {
+  member: TeamMember;
+  selected: boolean;
+  disabled: boolean;
+  layout: 'compact' | 'row';
+  onSelect: (name: string) => void;
+}) {
+  const isRow = layout === 'row';
+  const caption = member.group === 'guest' ? 'Compte invité' : 'Compte distinct';
+
   return (
-    <View style={s.row}>
-      {TEAM_MEMBERS.map(m => {
-        const isSelected = selected === m.name;
-        return (
-          <Pressable
-            key={m.name}
-            onPress={() => !disabled && onSelect(m.name)}
-            disabled={disabled}
-            style={({ pressed }) => [
-              s.chip,
-              isSelected && s.chipSelected,
-              pressed && !disabled && !isSelected && s.chipPressed,
-            ]}
-            accessibilityLabel={`Se connecter en tant que ${m.name}`}
-            accessibilityRole="button"
-          >
-            {/* Avatar avec gradient couleur du membre */}
-            <LinearGradient
-              colors={m.color}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={[s.avatar, isSelected && s.avatarSelected]}
-            >
-              <Text style={s.initials}>{m.initials}</Text>
-            </LinearGradient>
+    <Pressable
+      onPress={() => !disabled && onSelect(member.name)}
+      disabled={disabled}
+      accessibilityLabel={`Se connecter en tant que ${member.name}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected, disabled }}
+      style={({ pressed }) => [
+        isRow ? s.tileRow : s.tileCompact,
+        selected && s.tileSelected,
+        pressed && !disabled && s.tilePressed,
+        disabled && s.tileDisabled,
+      ]}
+    >
+      <View style={[s.avatarAura, selected && s.avatarAuraSelected]}>
+        <View style={s.avatarCore}>
+          <Text style={s.initials}>{member.initials}</Text>
+        </View>
+      </View>
+      <View style={isRow ? s.rowText : undefined}>
+        <Text style={[s.name, selected && s.nameSelected]} numberOfLines={1}>
+          {member.name}
+        </Text>
+        {isRow && <Text style={s.caption} numberOfLines={1}>{caption}</Text>}
+      </View>
+      {selected && <View style={s.selectedMark} />}
+    </Pressable>
+  );
+});
 
-            {/* Nom */}
-            <Text style={[s.name, isSelected && s.nameSelected]} numberOfLines={1}>
-              {m.name}
-            </Text>
+export default memo(function MemberSelector({ selected, onSelect, disabled = false }: Props) {
+  const admins = TEAM_MEMBERS.filter(member => member.group === 'admin');
+  const distinctAccounts = TEAM_MEMBERS.filter(member => member.group !== 'admin');
 
-            {/* Indicateur de sélection */}
-            {isSelected && <View style={[s.indicator, { backgroundColor: m.color[0] }]} />}
-          </Pressable>
-        );
-      })}
+  return (
+    <View style={s.wrap}>
+      <View style={s.adminPanel}>
+        <View style={s.headingRow}>
+          <View style={s.headingMark} />
+          <Text style={s.heading}>ADMINISTRATEURS</Text>
+          <Text style={s.count}>05</Text>
+        </View>
+        <View style={s.adminGrid}>
+          {admins.map(member => (
+            <MemberTile
+              key={member.name}
+              member={member}
+              selected={selected === member.name}
+              disabled={disabled}
+              layout="compact"
+              onSelect={onSelect}
+            />
+          ))}
+        </View>
+      </View>
+
+      <View style={s.distinctRow}>
+        {distinctAccounts.map(member => (
+          <View key={member.name} style={s.distinctPanel}>
+            <View style={s.headingRow}>
+              <View style={s.headingMark} />
+              <Text style={s.heading}>{member.group === 'guest' ? 'GUEST' : 'REAL'}</Text>
+            </View>
+            <MemberTile
+              member={member}
+              selected={selected === member.name}
+              disabled={disabled}
+              layout="row"
+              onSelect={onSelect}
+            />
+          </View>
+        ))}
+      </View>
     </View>
   );
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Styles
-// ─────────────────────────────────────────────────────────────────────────────
+const gold = '#F5C842';
+const webAura = Platform.OS === 'web'
+  ? ({ boxShadow: '0 0 13px rgba(245,200,66,0.28)' } as any)
+  : {};
+
 const s = StyleSheet.create({
-  row: {
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 4,
-  },
-
-  chip: {
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 7,
-    paddingVertical: 6,
+  wrap: { gap: 9, paddingHorizontal: 16 },
+  adminPanel: {
+    padding: 9,
     borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(245,200,66,0.20)',
+    backgroundColor: 'rgba(8,24,48,0.70)',
+  },
+  headingRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 7 },
+  headingMark: { width: 4, height: 4, borderRadius: 2, backgroundColor: gold },
+  heading: { color: 'rgba(255,226,145,0.86)', fontSize: 8, fontWeight: '800', letterSpacing: 1.6 },
+  count: { marginLeft: 'auto', color: 'rgba(255,255,255,0.38)', fontSize: 8, fontWeight: '700', letterSpacing: 1 },
+  adminGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: 5, rowGap: 5 },
+  distinctRow: { flexDirection: 'row', gap: 8 },
+  distinctPanel: {
+    flex: 1,
+    padding: 8,
+    borderRadius: 15,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(245,200,66,0.18)',
+    backgroundColor: 'rgba(8,24,48,0.56)',
+  },
+  tileCompact: {
+    flexGrow: 1,
+    flexBasis: 52,
+    maxWidth: 68,
+    minHeight: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 2,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
+  },
+  tileRow: {
+    width: '100%',
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 5,
+    paddingHorizontal: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245,200,66,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.025)',
+  },
+  tileSelected: {
+    borderColor: 'rgba(255,222,128,0.90)',
+    backgroundColor: 'rgba(245,200,66,0.09)',
+    ...(Platform.OS === 'web' ? ({ boxShadow: '0 0 16px rgba(245,200,66,0.28)' } as any) : { elevation: 4 }),
+  },
+  tilePressed: { backgroundColor: 'rgba(245,200,66,0.08)' },
+  tileDisabled: { opacity: 0.55 },
+  avatarAura: {
+    width: 43,
+    height: 43,
+    borderRadius: 22,
     borderWidth: 1.5,
-    borderColor: 'rgba(255,255,255,0.10)',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    minWidth: 68,
+    borderColor: 'rgba(245,200,66,0.72)',
+    backgroundColor: '#0D2240',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: gold,
+    shadowRadius: 8,
+    shadowOpacity: 0.50,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5,
+    ...webAura,
   },
-  chipSelected: {
-    borderColor: 'rgba(139,92,246,0.5)',
-    backgroundColor: 'rgba(139,92,246,0.12)',
+  avatarAuraSelected: {
+    borderColor: '#FFE291',
+    shadowOpacity: 0.9,
+    shadowRadius: 12,
   },
-  chipPressed: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  avatarCore: {
+    width: 35,
+    height: 35,
+    borderRadius: 18,
+    backgroundColor: '#173A70',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.32)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarSelected: {
-    shadowColor: '#8B5CF6',
-    shadowRadius: 12,
-    shadowOpacity: 0.7,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8,
-  },
-
-  initials: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-
-  name: {
-    color: 'rgba(255,255,255,0.55)',
-    fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 0.3,
-  },
-  nameSelected: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-
-  indicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
+  initials: { color: '#FFFFFF', fontSize: 13, fontWeight: '800', letterSpacing: 0.4 },
+  rowText: { flex: 1, minWidth: 0 },
+  name: { color: 'rgba(255,255,255,0.74)', fontSize: 9.5, fontWeight: '700', letterSpacing: 0.25, textAlign: 'center' },
+  nameSelected: { color: '#FFFFFF' },
+  caption: { color: 'rgba(255,255,255,0.38)', fontSize: 7.5, marginTop: 1 },
+  selectedMark: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#FFE291' },
 });
