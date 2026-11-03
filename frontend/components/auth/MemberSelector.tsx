@@ -7,10 +7,10 @@ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 export const TEAM_MEMBERS = [
   { name: 'Chassaing', initials: 'CH', group: 'admin' },
-  { name: 'BSE',       initials: 'BS', group: 'admin' },
   { name: 'Sharl',     initials: 'SH', group: 'admin' },
+  { name: 'BSE',       initials: 'BS', group: 'admin' },
   { name: 'Enzo',      initials: 'EN', group: 'admin' },
-  { name: 'NOX',       initials: 'NX', group: 'admin' },
+  { name: 'Noé',       initials: 'NO', group: 'admin' },
   { name: 'Guest',     initials: 'GU', group: 'guest' },
   { name: 'Real',      initials: 'RE', group: 'real' },
 ] as const;
