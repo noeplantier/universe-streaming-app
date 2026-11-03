@@ -14,8 +14,9 @@ export default function Root({ children }: PropsWithChildren) {
         />
         <meta name="theme-color" content="#0D2240" />
         <link rel="manifest" href="/manifest.json" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+        <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+        <link rel="icon" href="/icons/favicon.ico" />
         <script
           dangerouslySetInnerHTML={{
             __html: "if ('serviceWorker' in navigator && location.protocol === 'https:') { window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {})); }",
